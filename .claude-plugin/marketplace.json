@@ -1,6 +1,6 @@
 {
   "name": "catalan-adobe-skills",
-  "description": "Claude Code skills by @anthropic-catalan — demo narration, workflow automation, and more.",
+  "description": "Claude Code skills by @catalan-adobe — demo narration, workflow automation, and more.",
   "owner": {
     "name": "catalan-adobe"
   },
@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "catalan-skills",
-      "source": "./catalan-skills",
+      "source": "./",
       "description": "Demo narration and workflow skills for Claude Code",
       "version": "1.0.0",
       "author": {

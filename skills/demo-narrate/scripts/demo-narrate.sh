@@ -67,9 +67,9 @@ ensure_edge_tts() {
   echo "edge-tts not found. Installing..." >&2
 
   if command -v uv &>/dev/null; then
-    uv tool install edge-tts 2>&1
+    uv tool install edge-tts >&2
   elif command -v pipx &>/dev/null; then
-    pipx install edge-tts 2>&1
+    pipx install edge-tts >&2
   else
     echo "Error: need uv or pipx to install edge-tts." >&2
     echo "  brew install uv   # then re-run" >&2
@@ -99,14 +99,13 @@ get_fps() {
 # Count files matching a glob pattern safely (no ls)
 count_files() {
   local pattern="$1"
-  local files=()
-  # shellcheck disable=SC2206
-  files=($pattern)
-  if [[ -e "${files[0]}" ]]; then
-    echo "${#files[@]}"
-  else
-    echo "0"
-  fi
+  local count=0
+  local f
+  # Intentional unquoted glob expansion — pattern is always internal
+  for f in $pattern; do
+    [[ -e "$f" ]] && (( count++ )) || true
+  done
+  echo "$count"
 }
 
 cmd_deps() {
@@ -143,6 +142,11 @@ cmd_extract() {
     exit 1
   fi
 
+  if ! [[ "$fps" =~ ^[0-9]*\.?[0-9]+$ ]] || [[ "$(echo "$fps == 0" | bc -l)" == "1" ]]; then
+    echo "Error: fps must be a positive number, got: $fps" >&2
+    exit 1
+  fi
+
   # Output next to the video file, not in cwd
   local video_dir video_base outdir
   video_dir="$(cd "$(dirname "$video")" && pwd)"
@@ -151,16 +155,33 @@ cmd_extract() {
 
   mkdir -p "$outdir"
 
-  local duration
-  duration=$(ffprobe -v error -show_entries format=duration \
-    -of csv=p=0 "$video" | cut -d. -f1)
+  local duration_full duration
+  duration_full=$(ffprobe -v error -show_entries format=duration \
+    -of csv=p=0 "$video")
+
+  if [[ -z "$duration_full" ]]; then
+    echo "Error: could not read video duration (is '$video' a valid video file?)" >&2
+    exit 1
+  fi
+
+  duration=$(echo "$duration_full" | cut -d. -f1)
 
   local frame_count
-  frame_count=$(echo "$duration * $fps" | bc | cut -d. -f1)
+  frame_count=$(printf "%.0f" "$(echo "$duration_full * $fps" | bc -l)")
 
   local interval
   interval=$(printf "%.1f" "$(echo "scale=2; 1 / $fps" | bc)")
   interval="every ${interval}s"
+
+  # Choose tile dimensions to match actual frame count
+  local tile_spec
+  if (( frame_count <= 4 )); then
+    tile_spec="${frame_count}x1"
+  elif (( frame_count <= 12 )); then
+    tile_spec="4x$(( (frame_count + 3) / 4 ))"
+  else
+    tile_spec="5x4"
+  fi
 
   echo "Video: $video (${duration}s)"
   echo "Extracting ~${frame_count} frames (${interval}, fps=${fps})..."
@@ -172,9 +193,9 @@ cmd_extract() {
     -q:v 2 \
     "${outdir}/frame_%04d.jpg"
 
-  # Contact sheets: 5 columns x 4 rows = 20 frames per sheet
+  # Contact sheets with dynamic tile dimensions
   ffmpeg -y -loglevel error -i "$video" \
-    -vf "fps=${fps},scale=384:-2,drawtext=text='%{pts\:hms}':x=5:y=5:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=3,tile=5x4" \
+    -vf "fps=${fps},scale=384:-2,drawtext=text='%{pts\:hms}':x=5:y=5:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=3,tile=${tile_spec}" \
     "${outdir}/sheet_%03d.jpg"
 
   local sheet_count individual_count
@@ -204,7 +225,7 @@ cmd_tts() {
   local dur
   dur=$(ffprobe -v error -show_entries format=duration \
     -of csv=p=0 "$output" 2>/dev/null | cut -d. -f1)
-  echo "Audio: $output (${dur}s)"
+  echo "Audio: $output (${dur:-?}s)"
 }
 
 # Parse timing file into parallel arrays.
@@ -217,8 +238,7 @@ parse_timing_file() {
   while IFS=$' \t' read -r filename offset_s; do
     line_num=$((line_num + 1))
     [[ -z "$filename" || "$filename" == "#"* ]] && continue
-    # Validate offset is a number
-    if ! [[ "$offset_s" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+    if ! [[ "$offset_s" =~ ^[0-9]*\.?[0-9]+$ ]]; then
       echo "Error: timing.txt line $line_num: invalid offset '$offset_s' (must be a number)" >&2
       exit 1
     fi
@@ -263,8 +283,12 @@ cmd_tts_acts_dry_run() {
       window=$(echo "${TIMING_OFFSETS[i+1]} - ${TIMING_OFFSETS[i]}" | bc)
       local max_s
       max_s=$(echo "$window - $silence_gap" | bc)
+      if (( $(echo "$max_s <= 0" | bc -l) )); then
+        printf "  %-30s OVERLAP (window is %ss — check timing order)\n" "$txt_name" "$window"
+        continue
+      fi
       max_label="${max_s}s"
-      budget="~$(echo "$max_s * 2" | bc | cut -d. -f1) words"
+      budget="~$(printf "%.0f" "$(echo "$max_s * 2" | bc)") words"
     else
       max_label="(none)"
       budget="no limit"
@@ -319,7 +343,7 @@ cmd_tts_acts() {
   for ((i = 0; i < TIMING_COUNT; i++)); do
     if (( i + 1 < TIMING_COUNT )); then
       local max_dur
-      max_dur=$(echo "${TIMING_OFFSETS[i+1]} - ${TIMING_OFFSETS[i]} - $silence_gap" | bc | cut -d. -f1)
+      max_dur=$(printf "%.0f" "$(echo "${TIMING_OFFSETS[i+1]} - ${TIMING_OFFSETS[i]} - $silence_gap" | bc -l)")
       if (( max_dur < 1 )); then max_dur=1; fi
       max_durs+=("$max_dur")
     else
@@ -343,12 +367,21 @@ cmd_tts_acts() {
       continue
     fi
 
-    # First pass: generate at normal rate
-    edge-tts --file "$txt_path" --voice "$voice" \
-      --write-media "$mp3_path" 2>/dev/null
+    # First pass: generate at normal rate (measurement)
+    if ! edge-tts --file "$txt_path" --voice "$voice" \
+      --write-media "$mp3_path"; then
+      echo "  ERROR ${txt_name} (edge-tts failed)" >&2
+      has_errors=1
+      continue
+    fi
 
     local dur
     dur=$(get_duration "$mp3_path")
+    if [[ -z "$dur" ]]; then
+      echo "  ERROR ${txt_name} (could not read duration from generated MP3)" >&2
+      has_errors=1
+      continue
+    fi
 
     # If no max (last act), just report and move on
     if [[ -z "$max" ]]; then
@@ -368,8 +401,9 @@ cmd_tts_acts() {
     fi
 
     # Doesn't fit — calculate needed rate increase
+    # Round up to ensure the rate increase is sufficient
     local rate_pct
-    rate_pct=$(echo "($dur / $max_f - 1) * 100" | bc -l | cut -d. -f1)
+    rate_pct=$(echo "scale=0; ($dur * 100 + $max_f - 1) / $max_f - 100" | bc -l)
 
     if (( rate_pct > MAX_RATE )); then
       # Rate alone won't fix it — report the problem
@@ -383,9 +417,18 @@ cmd_tts_acts() {
     # Try rate adjustment, escalating until it fits or we hit MAX_RATE
     local applied_rate=$rate_pct
     while true; do
-      edge-tts --file "$txt_path" --voice "$voice" \
-        --rate "+${applied_rate}%" --write-media "$mp3_path" 2>/dev/null
+      if ! edge-tts --file "$txt_path" --voice "$voice" \
+        --rate "+${applied_rate}%" --write-media "$mp3_path"; then
+        echo "  ERROR ${txt_name} (edge-tts failed at +${applied_rate}%)" >&2
+        has_errors=1
+        break
+      fi
       dur=$(get_duration "$mp3_path")
+      if [[ -z "$dur" ]]; then
+        echo "  ERROR ${txt_name} (could not read duration after rate adjust)" >&2
+        has_errors=1
+        break
+      fi
 
       if (( $(echo "$dur <= $max_f" | bc -l) )); then
         break  # fits
@@ -446,7 +489,7 @@ cmd_merge() {
   local dur
   dur=$(ffprobe -v error -show_entries format=duration \
     -of csv=p=0 "$output" 2>/dev/null | cut -d. -f1)
-  echo "Output: $output (${dur}s)"
+  echo "Output: $output (${dur:-?}s)"
 }
 
 cmd_merge_acts() {
@@ -480,7 +523,11 @@ cmd_merge_acts() {
       continue
     fi
     local offset_ms
-    offset_ms=$(echo "${TIMING_OFFSETS[i]} * 1000" | bc | cut -d. -f1)
+    offset_ms=$(printf "%.0f" "$(echo "${TIMING_OFFSETS[i]} * 1000" | bc -l)")
+    if [[ -z "$offset_ms" ]]; then
+      echo "Warning: could not compute offset for ${TIMING_FILES[i]}, skipping" >&2
+      continue
+    fi
     inputs+=(-i "$mp3")
     filters+=("[${idx}]adelay=${offset_ms}|${offset_ms}[a${idx}]")
     labels+=("[a${idx}]")
@@ -509,7 +556,7 @@ cmd_merge_acts() {
   local dur
   dur=$(ffprobe -v error -show_entries format=duration \
     -of csv=p=0 "$output" 2>/dev/null | cut -d. -f1)
-  echo "Output: $output (${dur}s)"
+  echo "Output: $output (${dur:-?}s)"
 }
 
 cmd_fade_intro() {
@@ -533,8 +580,8 @@ cmd_fade_intro() {
 
   # Extract first frame (cleaned up on exit or error)
   local tmp_frame
-  tmp_frame="$(mktemp /tmp/fade_frame_XXXXXX.jpg)"
-  trap 'rm -f "$tmp_frame" 2>/dev/null' EXIT
+  tmp_frame="$(mktemp "${TMPDIR:-/tmp}/fade_frame_XXXXXX.jpg")"
+  trap 'rm -f "$tmp_frame" 2>/dev/null' EXIT INT TERM
 
   ffmpeg -y -loglevel error -i "$video" \
     -vf "select=eq(n\,0)" -vsync vfr -q:v 2 -frames:v 1 \
@@ -568,12 +615,17 @@ cmd_voices() {
   ensure_edge_tts
   echo "Popular English voices for demo narration:"
   echo ""
-  edge-tts --list-voices 2>/dev/null | grep -E "en-(US|GB)" | head -20
+  edge-tts --list-voices 2>/dev/null | grep -E "en-(US|GB)" | head -20 || true
   echo ""
   echo "All voices: edge-tts --list-voices"
 }
 
-case "${1:-}" in
+if [[ -z "${1:-}" ]]; then
+  usage
+  exit 0
+fi
+
+case "$1" in
   extract)      shift; cmd_extract "$@" ;;
   tts)          shift; cmd_tts "$@" ;;
   tts-acts)     shift; cmd_tts_acts "$@" ;;
@@ -583,5 +635,9 @@ case "${1:-}" in
   voices)       cmd_voices ;;
   deps)         cmd_deps ;;
   -h|--help|help) usage ;;
-  *) usage ;;
+  *)
+    echo "Error: unknown command: $1" >&2
+    usage >&2
+    exit 1
+    ;;
 esac

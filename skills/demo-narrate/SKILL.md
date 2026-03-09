@@ -1,6 +1,6 @@
 ---
 name: demo-narrate
-description: Analyze a silent demo video and produce a timed voice-over with per-act audio clips merged onto the video. Takes a screen recording, extracts frames, uses parallel subagents with project context to describe each frame, writes a word-budgeted script structured into acts, generates TTS audio per act, and merges everything back. Fully end-to-end. Use when the user wants to narrate a demo, add voice-over to a screen recording, or improve a demo with AI narration.
+description: Use when the user wants to narrate a demo, add voice-over to a screen recording, or create AI narration for a silent video. End-to-end pipeline that extracts frames, analyzes with parallel subagents, writes a word-budgeted voice-over script, generates TTS audio per act, and merges everything back.
 ---
 
 # Demo Narrate
@@ -30,16 +30,29 @@ ffmpeg and edge-tts (both auto-installed if missing).
 All ffmpeg and edge-tts operations go through the helper script bundled
 with this skill at `scripts/demo-narrate.sh`.
 
-**Locating the script:** The script lives relative to this SKILL.md
-file. To find the absolute path, run:
+**Locating the script:** Use `${CLAUDE_SKILL_DIR}` to resolve the
+path relative to this SKILL.md:
 
 ```bash
-find ~/.claude -path "*/demo-narrate/scripts/demo-narrate.sh" -type f 2>/dev/null | head -1
+NARRATE_SH="${CLAUDE_SKILL_DIR}/scripts/demo-narrate.sh"
 ```
 
-Store the result in a variable (e.g., `NARRATE_SH`) and use it for
-all subsequent commands. If not found, the user may have installed
-the skill standalone — ask them for the path.
+If `CLAUDE_SKILL_DIR` is not set (older Claude Code or standalone
+install), fall back to a search:
+
+```bash
+if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
+  NARRATE_SH="${CLAUDE_SKILL_DIR}/scripts/demo-narrate.sh"
+else
+  NARRATE_SH="$(command -v demo-narrate.sh 2>/dev/null || \
+    find ~/.claude -path "*/demo-narrate/scripts/demo-narrate.sh" -type f 2>/dev/null | head -1)"
+fi
+if [[ -z "$NARRATE_SH" || ! -f "$NARRATE_SH" ]]; then
+  echo "Error: demo-narrate.sh not found. Ask the user for the path." >&2
+fi
+```
+
+Store the result in `NARRATE_SH` and use it for all subsequent commands.
 
 Commands:
 - `extract <video> [fps]` — extract frames and contact sheets
@@ -49,17 +62,17 @@ Commands:
 - `fade-intro <video> [secs] [out]` — add fade-in from black
 - `deps` — check dependencies
 - `voices` — list available TTS voices
-- `tts <file> [voice]` — single-file TTS (legacy, for non-act workflows)
-- `merge <video> <audio> [out]` — single-file merge (legacy)
+- `tts <file> [voice]` — single-file TTS (manual single-file workflow, not used by pipeline)
+- `merge <video> <audio> [out]` — single-file merge (manual single-file workflow, not used by pipeline)
 
 ## Execution
 
 ### Step 0: Check Dependencies
 
-Locate the script and check dependencies:
+Locate the script (see "Shell Script" above) and check dependencies:
 
 ```bash
-NARRATE_SH="$(find ~/.claude -path "*/demo-narrate/scripts/demo-narrate.sh" -type f 2>/dev/null | head -1)"
+NARRATE_SH="${CLAUDE_SKILL_DIR}/scripts/demo-narrate.sh"
 "$NARRATE_SH" deps
 ```
 
@@ -84,8 +97,9 @@ user about FPS if the video is unusually long (>5 minutes) or fast.
 "$NARRATE_SH" extract "<video>"
 ```
 
-Frames and contact sheets are created next to the video file in a
-`<basename>_frames/` directory.
+Frames and contact sheets (grids of up to 20 frames each, sized
+dynamically for shorter videos) are created next to the video file
+in a `<basename>_frames/` directory.
 
 Report: filename, duration, frame count, sheet count.
 
@@ -144,6 +158,21 @@ Save to <frames_dir>/sheet_NNN_analysis.txt"
 After all agents complete, read and concatenate their analyses into
 a single chronological timeline. Present it to the user.
 
+If a subagent fails or returns an empty analysis, re-run it
+individually. The pipeline can proceed with partial analysis,
+but gaps will produce weaker narration for those time segments.
+
+### Output Directory
+
+Create an output directory for narration artifacts next to the video:
+`<basename>_narration/`. This is where timing.txt, per-act scripts,
+and generated audio will live. All subsequent steps refer to this
+as `<output_dir>`.
+
+```bash
+mkdir -p "<video_dir>/<basename>_narration"
+```
+
 ### Step 4: Write the Voice-Over Script (Per-Act, Word-Budgeted)
 
 This is the critical step. The script must be structured into **acts**
@@ -161,7 +190,8 @@ Before writing, ask the user a single combined question:
 
 Defaults if the user says "go with defaults": mixed, AriaNeural, yes.
 These choices affect the script (audience), TTS (voice), and timing
-file (fade shifts all offsets).
+file (fade shifts all offsets). For more voices beyond these defaults,
+run `"$NARRATE_SH" voices`.
 
 #### 4b. Define acts and write timing file
 
@@ -182,24 +212,29 @@ act5_verification.mp3 40
 act6_assembly.mp3 55
 ```
 
-With 0.5s fade-in (all offsets shifted by +1, rounded up):
+With 0.5s fade-in (each offset + 0.5):
 ```
-act1_opening.mp3 1
-act2_extraction.mp3 7
-act3_decomposition.mp3 16
-act4_parallel.mp3 26
-act5_verification.mp3 41
-act6_assembly.mp3 56
+act1_opening.mp3 0.5
+act2_extraction.mp3 6.5
+act3_decomposition.mp3 15.5
+act4_parallel.mp3 25.5
+act5_verification.mp3 40.5
+act6_assembly.mp3 55.5
 ```
 
 **If using fade-intro (decided in Step 4a):** add the fade duration
 to every offset. The fade prepends extra time to the video, so all
-content shifts forward. Round fractional shifts up to the nearest
-integer for simplicity.
+content shifts forward. Fractional offsets are supported in
+timing.txt (the script accepts floats), so use exact values like
+`0.5` instead of rounding up to integers.
 
 #### 4c. Check word budgets
 
 Edge-tts AriaNeural speaks at approximately **2 words per second**.
+Use this for initial budgeting — the `tts-acts` command measures
+actual duration and adjusts rate, so the budget is a starting point.
+Other voices may differ (GuyNeural is ~10% slower).
+
 Each act must include a **1-second silence gap** before the next act
 starts (breathing room for the viewer). The word budget per act:
 
@@ -209,9 +244,13 @@ word_budget = max_audio x 2
 ```
 
 A 10-second window gets 9s of audio = ~18 words. A 15-second window
-gets 14s = ~28 words. Write slightly under budget — the `tts-acts`
-command can speed up by up to +15% to compensate, but trimming text
-is better than speeding up the voice.
+gets 14s = ~28 words. **For the last act**, use the remaining video
+time as the budget: `(video_duration - last_act_start - 1) x 2`.
+Audio past the video end gets silently truncated.
+
+Write slightly under budget — the `tts-acts` command can speed up
+by up to +15% to compensate, but trimming text is better than
+speeding up the voice.
 
 Run `--dry-run` to see the budgets derived from timing.txt:
 
@@ -256,11 +295,11 @@ The command reads the timing file, calculates the max duration for
 each act (next act's start - this act's start - 1s silence gap),
 and generates TTS with automatic rate adjustment:
 
-1. Generates at normal rate (+0%)
-2. If audio exceeds the max duration, calculates the needed speed-up
-3. If within +15%, regenerates with `--rate +N%`, escalating in +3%
-   increments until it fits
-4. If it exceeds +15% even after escalation, reports **LONG** — trim
+1. Generates at normal rate (+0%) as a measurement pass
+2. If audio exceeds the max duration, calculates the exact speed-up needed
+3. If the needed speed-up is within +15%, regenerates at that rate
+   (and escalates in +3% increments if edge-tts undershoots)
+4. If it needs more than +15%, reports **LONG** immediately — trim
    the text and re-run
 
 Status labels in the output:
@@ -288,8 +327,8 @@ fade-from-black effect, and concatenates it with the original video.
 The output is slightly longer (re-encoded as libx264 crf=18 for
 seamless concat).
 
-**Important:** If using fade-intro, the timing offsets in timing.txt
-must be shifted by the fade duration. The command reminds you of this.
+Verify that timing.txt offsets already account for the fade duration
+(done in Step 4b). The command output will remind you of the shift.
 
 ### Step 7: Merge Audio onto Video
 
@@ -326,8 +365,11 @@ user to review.
 
 ## Important Notes
 
+- **Existing audio tracks** in the input video will be replaced by the
+  narration. To preserve original audio mixed with narration, the user
+  should pre-process with ffmpeg or use a video editor for final assembly.
 - **2 words/second** is the key rate for edge-tts AriaNeural. Use this
-  to calculate word budgets. Other voices may differ slightly.
+  to calculate word budgets. Other voices may differ (~10% for GuyNeural).
 - **1-second silence gap** between acts prevents overlap and gives the
   viewer breathing room. Enforced by `tts-acts`.
 - **Plain text only** in act files. Any markdown, time codes, or headers
@@ -340,9 +382,10 @@ user to review.
   can also import individual clips into a video editor for fine-tuning.
 - **normalize=0** on amix prevents volume from getting louder as acts
   finish. All clips play at consistent volume throughout the video.
-- Contact sheets compress 20 frames into one image, keeping the number
-  of subagents small (typically 2-5 for a demo video).
-- edge-tts is free with no API key, account, or usage limits.
+- Contact sheets compress up to 20 frames into one image (fewer for
+  short videos), keeping the number of subagents small (typically 2-5).
+- edge-tts is currently free with no API key, account, or usage limits
+  (as of 2026; this is an unofficial Microsoft Edge TTS interface).
 - If the user wants to skip TTS and record their own voice, stop after
   Step 4 — the per-act scripts are the deliverable.
 
@@ -351,5 +394,7 @@ user to review.
 This skill can also be used without the full plugin:
 
 1. Copy `SKILL.md` to `~/.claude/commands/demo-narrate.md`
-2. Copy `scripts/demo-narrate.sh` somewhere on your PATH
-3. Update the script path in the SKILL.md if needed
+2. Copy `scripts/demo-narrate.sh` to `~/.local/bin/demo-narrate.sh`
+   and `chmod +x` it (must be on your PATH)
+3. The fallback in the "Shell Script" section will find it via
+   `command -v demo-narrate.sh` — no path edits needed
