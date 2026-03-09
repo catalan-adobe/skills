@@ -1,0 +1,11 @@
+{
+  "name": "catalan-skills",
+  "description": "Demo narration and workflow skills for Claude Code. Includes demo-narrate: end-to-end voice-over generation for screen recordings.",
+  "version": "1.0.0",
+  "author": {
+    "name": "catalan-adobe"
+  },
+  "repository": "https://github.com/catalan-adobe/skills",
+  "license": "MIT",
+  "keywords": ["demo", "narration", "voice-over", "tts", "video", "workflow"]
+}
