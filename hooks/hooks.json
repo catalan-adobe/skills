@@ -1,0 +1,16 @@
+{
+  "description": "Memory triage reminder — nudges you to review auto memory when finishing a branch",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/memory-triage-reminder.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
