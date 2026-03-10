@@ -11,20 +11,23 @@ Assess a user's AI fluency based on Anthropic's 4D AI Fluency Framework (Dakan, 
 
 ### Step 1: Collect Evidence and Classify Behaviors
 
-Run `assess.py` to scan Claude Code sessions and classify all 18 observable behaviors. The script lives next to this SKILL.md — substitute the actual path when running.
+First, ask the user:
+1. "Where are your Claude Code sessions? The default is `~/.claude/projects/` — is that correct, or should I scan a different directory?"
+
+Then run `assess.py` to scan and classify all 18 observable behaviors. The script lives next to this SKILL.md — substitute the actual path when running.
 
 ```bash
 # Default: scan ~/.claude/projects/, classify with Claude Haiku
 python3 /path/to/skills/ai-fluency-assessment/assess.py \
   --output-dir .ai-fluency --max-sessions 6000
 
-# Custom sessions directory
+# Custom sessions directory (e.g., exported sessions, another machine's data)
 python3 /path/to/skills/ai-fluency-assessment/assess.py \
   --sessions-dir <PATH> --output-dir .ai-fluency --max-sessions 6000
 
 # Fast/free fallback (regex only, 11 behaviors, less accurate)
 python3 /path/to/skills/ai-fluency-assessment/assess.py \
-  --sessions-dir <PATH> --output-dir .ai-fluency --max-sessions 6000 --regex-only
+  --output-dir .ai-fluency --max-sessions 6000 --regex-only
 ```
 
 **Use `--max-sessions 6000`** to capture all sessions. Many session files are subagent files with no user messages, so even with thousands of files the scan is fast.
