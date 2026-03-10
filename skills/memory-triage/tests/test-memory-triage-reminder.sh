@@ -6,8 +6,8 @@ set -euo pipefail
 # Uses a temp directory with fake memory files to test all conditions.
 # Exit code 0 = all tests pass, non-zero = failure.
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-HOOK="$SCRIPT_DIR/scripts/memory-triage-reminder.sh"
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+HOOK="$REPO_ROOT/scripts/memory-triage-reminder.sh"
 
 PASS=0
 FAIL=0
