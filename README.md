@@ -40,6 +40,17 @@ chmod +x ~/.local/bin/demo-narrate.sh
 
 ## Available Skills
 
+### memory-triage
+
+Review Claude Code auto memory accumulated during a task and promote
+valuable findings to shared project config (CLAUDE.md, `.claude/rules/`,
+or global CLAUDE.md). Prevents knowledge silos by surfacing debugging
+gotchas, architecture decisions, and project conventions for the team.
+
+**Dependencies:** none
+
+See [SKILL.md](skills/memory-triage/SKILL.md) for details.
+
 ### demo-narrate
 
 End-to-end voice-over generation for demo videos. Takes a silent screen
