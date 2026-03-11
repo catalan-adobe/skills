@@ -157,10 +157,10 @@ Parse the metadata JSON for chapter information:
 "$DIGEST_SH" info "<workdir>"
 ```
 
-**Short videos (< 10 minutes):** Skip chunking entirely. Use the
-full transcript + all contact sheets in a single analysis pass
-(Step 5 without subagents). This avoids unnecessary overhead for
-content that fits comfortably in one context window.
+**Short videos (< 10 minutes):** Skip chunking entirely. Read the
+full transcript AND every contact sheet image (using the Read tool)
+in a single analysis pass (Step 5 without subagents). This avoids
+unnecessary overhead for content that fits in one context window.
 
 **Longer videos with chapters:** Use chapters as segment boundaries.
 Map each frame and transcript segment to its chapter by timecode.
@@ -177,12 +177,21 @@ For each chunk, prepare:
 ### Step 5: Parallel Subagent Analysis
 
 For short videos (< 10 min), analyze directly without subagents —
-read the transcript and contact sheets yourself and produce the
-summary inline. Skip to Step 6.
+read the transcript and ALL contact sheets yourself (use the Read
+tool on each sheet image) and produce the summary inline. Skip to
+Step 6.
 
 For longer videos, spawn one Agent per chunk, ALL IN PARALLEL.
-Each subagent gets the chunk's transcript segment and contact
-sheet image(s).
+Each subagent MUST receive both the transcript segment AND the
+contact sheet image path(s) for its chunk. Never skip the visual
+frames — even talking-head videos have moments where on-screen
+text, graphics, or body language adds context the audio misses.
+
+**Mapping contact sheets to chunks:** Contact sheets are numbered
+sequentially (sheet_001.jpg, sheet_002.jpg, ...) with up to 20
+frames each at 30-second intervals. Use the burned-in timestamps
+on the frames to determine which sheet(s) cover each chunk's time
+window. A chunk may span parts of two sheets — include both.
 
 For each chunk:
 
@@ -203,8 +212,17 @@ Summary depth: <brief|detailed|full>
 <timestamped transcript lines for this segment>
 
 ## Visual Frames
-Read the contact sheet image at <path>. These are scene-detected
-keyframes with burned-in timestamps from this segment.
+IMPORTANT: You MUST read the contact sheet image(s) listed below
+using the Read tool before writing your summary. These are scene-
+detected keyframes with burned-in timestamps from this segment.
+
+Contact sheet(s) for this segment:
+- <absolute_path_to_sheet_NNN.jpg>
+
+After reading, note what is visible: slides, code, diagrams, UI
+state, text overlays, presenter gestures, or scene changes. If
+the visuals are mostly static (e.g., talking head), say so briefly
+and focus on the transcript — but still read the image to confirm.
 
 ## Task
 Produce a section summary combining what is said (transcript) with
