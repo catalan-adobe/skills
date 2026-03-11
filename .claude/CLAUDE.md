@@ -31,7 +31,8 @@ Recommended workflow:
 2. **Plan** — use `superpowers:writing-plans` to create an implementation plan
 3. **Implement** — use `superpowers:subagent-driven-development` for parallel implementation
 4. **Evaluate** — use `skill-creator:skill-creator` to run test cases (with-skill vs baseline)
-5. **Ship** — feature branch → PR → squash merge
+5. **Live test** — test on real content before shipping; eval frameworks miss platform-specific bugs and edge cases
+6. **Ship** — feature branch → PR → squash merge
 
 ## Available Skills
 
