@@ -232,7 +232,7 @@ cmd_process() {
   if command -v sips >/dev/null; then
     scale_cmd="sips"
   elif command -v convert >/dev/null; then
-    scale_cmd="magick"
+    scale_cmd="convert"
   else
     echo "Error: no image scaler found (sips or ImageMagick)" >&2
     exit 1
