@@ -75,6 +75,18 @@ kawaii, flat, glossy, sketch, pixel.
 
 See [SKILL.md](skills/gemini-icon-set/SKILL.md) for the full workflow.
 
+### video-digest
+
+Multimodal video summarization. Downloads a video (YouTube or any
+yt-dlp-supported URL), extracts transcript (YouTube captions or
+Whisper), pulls scene-detected keyframes, and produces a summary
+with clickable timestamped YouTube links. Supports parallel chunk
+analysis for long videos and adjustable depth (brief/detailed/full).
+
+**Dependencies:** yt-dlp, ffmpeg (required); whisper-ctranslate2 (optional, auto-installed)
+
+See [SKILL.md](skills/video-digest/SKILL.md) for the full pipeline.
+
 ## License
 
 MIT

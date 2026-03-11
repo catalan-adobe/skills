@@ -1,11 +1,11 @@
 {
   "name": "catalan-skills",
-  "description": "Claude Code skills: memory-triage (promote auto memory to shared config), demo-narrate (voice-over generation for screen recordings), ai-fluency-assessment (4D fluency framework), gemini-icon-set (colorful icon sets via Imagen 4).",
+  "description": "Claude Code skills: memory-triage (promote auto memory to shared config), demo-narrate (voice-over generation for screen recordings), ai-fluency-assessment (4D fluency framework), gemini-icon-set (colorful icon sets via Imagen 4), video-digest (multimodal video summarization).",
   "version": "1.0.0",
   "author": {
     "name": "catalan-adobe"
   },
   "repository": "https://github.com/catalan-adobe/skills",
   "license": "MIT",
-  "keywords": ["memory", "triage", "knowledge-sharing", "demo", "narration", "voice-over", "tts", "video", "fluency", "icons", "imagen", "gemini", "icon-set"]
+  "keywords": ["memory", "triage", "knowledge-sharing", "demo", "narration", "voice-over", "tts", "video", "fluency", "icons", "imagen", "gemini", "icon-set", "youtube", "summarize", "digest", "transcript", "yt-dlp"]
 }

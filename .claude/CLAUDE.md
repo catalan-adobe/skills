@@ -41,3 +41,4 @@ Recommended workflow:
 | `demo-narrate` | End-to-end voice-over for demo videos |
 | `ai-fluency-assessment` | AI fluency assessment using Anthropic's 4D framework |
 | `gemini-icon-set` | Generate colorful icon sets using Google Imagen 4 |
+| `video-digest` | Multimodal video summarization with timestamped YouTube links |
