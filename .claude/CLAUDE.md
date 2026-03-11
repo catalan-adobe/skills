@@ -28,3 +28,4 @@ docs/plans/              Design specs
 | `memory-triage` | Review auto memory and promote findings to shared config |
 | `demo-narrate` | End-to-end voice-over for demo videos |
 | `ai-fluency-assessment` | AI fluency assessment using Anthropic's 4D framework |
+| `gemini-icon-set` | Generate colorful icon sets using Google Imagen 4 |
