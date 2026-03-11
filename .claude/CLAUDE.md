@@ -5,21 +5,33 @@ Claude Code skills plugin. Each skill is a self-contained directory under `skill
 ## Project Structure
 
 ```
-.claude-plugin/          Plugin manifest (plugin.json, marketplace.json)
-skills/<name>/SKILL.md   Skills (distributed with the plugin)
-scripts/                 Hook and utility scripts (distributed with the plugin)
-hooks/hooks.json         Plugin hook configuration (auto-discovered on install)
-tests/<name>/            Tests (repo-only, NOT distributed with the plugin)
-docs/plans/              Design specs
+.claude-plugin/                    Plugin manifest (plugin.json, marketplace.json)
+skills/<name>/SKILL.md             Skill prompt (distributed with the plugin)
+skills/<name>/scripts/             Helper scripts bundled with the skill
+skills/<name>/references/          Reference docs loaded on demand
+hooks/hooks.json                   Plugin hook configuration (auto-discovered on install)
+tests/<name>/                      Tests (repo-only, NOT distributed with the plugin)
+docs/plans/                        Design specs and implementation plans
 ```
 
 ## Conventions
 
 - Skills are pure prompt (SKILL.md) when possible — no dependencies
-- Helper scripts go in `scripts/` at the repo root, referenced via `${CLAUDE_PLUGIN_ROOT}`
+- Helper scripts go in `skills/<name>/scripts/`, referenced via `${CLAUDE_SKILL_DIR}/scripts/`
+- SKILL.md must include a fallback search if `CLAUDE_SKILL_DIR` is not set
 - Tests go in `tests/<skill-name>/`, never under `skills/` (anything under `skills/` ships to users)
 - Design specs follow `docs/plans/YYYY-MM-DD-<topic>-design.md`
 - Update README.md, plugin.json, and marketplace.json when adding a new skill
+
+## Creating New Skills
+
+Recommended workflow:
+
+1. **Brainstorm** — use `superpowers:brainstorming` to design the skill (clarify scope, pick approach)
+2. **Plan** — use `superpowers:writing-plans` to create an implementation plan
+3. **Implement** — use `superpowers:subagent-driven-development` for parallel implementation
+4. **Evaluate** — use `skill-creator:skill-creator` to run test cases (with-skill vs baseline)
+5. **Ship** — feature branch → PR → squash merge
 
 ## Available Skills
 
