@@ -250,39 +250,77 @@ cmd_transcript() {
     if [[ -n "$vtt_file" && -f "$vtt_file" ]]; then
       echo "Parsing captions: $(basename "$vtt_file")"
       # Convert VTT to timestamped plain text
+      # YouTube auto-captions use rolling 3-block cycles with zero-duration
+      # carry-over blocks. We skip zero-duration blocks and extract only the
+      # NEW text (the line with <c> timing tags) from each real block, then
+      # merge into sentences grouped every ~5 seconds.
       python3 -c "
 import re, sys
 
-lines = open(sys.argv[1], encoding='utf-8').read()
+raw = open(sys.argv[1], encoding='utf-8').read()
+raw = re.sub(r'WEBVTT.*?\n\n', '', raw, flags=re.DOTALL)
+raw = re.sub(r'&nbsp;', ' ', raw)
 
-# Remove VTT header and styling
-lines = re.sub(r'WEBVTT.*?\n\n', '', lines, flags=re.DOTALL)
-lines = re.sub(r'<[^>]+>', '', lines)
-lines = re.sub(r'&nbsp;', ' ', lines)
-
-seen = set()
-output = []
-for block in re.split(r'\n\n+', lines.strip()):
+# Parse all cue blocks, skip zero-duration ones
+phrases = []
+for block in re.split(r'\n\n+', raw.strip()):
     block_lines = block.strip().split('\n')
-    # Find timestamp line
     ts_line = None
-    text_lines = []
     for line in block_lines:
-        if re.match(r'\d{2}:\d{2}:\d{2}\.\d{3}\s*-->', line):
-            ts_line = line
-        elif ts_line is not None and line.strip():
-            text_lines.append(line.strip())
-    if ts_line and text_lines:
-        # Extract start time
-        m = re.match(r'(\d{2}):(\d{2}):(\d{2})\.\d{3}', ts_line)
+        m = re.match(r'(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})', line)
         if m:
-            h, mn, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            ts = f'{mn + h*60:02d}:{s:02d}'
-            text = ' '.join(text_lines)
-            # Deduplicate repeated lines
-            if text not in seen:
-                seen.add(text)
-                output.append(f'[{ts}] {text}')
+            ts_line = line
+            start_str, end_str = m.group(1), m.group(2)
+            break
+    if not ts_line:
+        continue
+
+    # Parse start/end times
+    def parse_ts(s):
+        h, m2, rest = s.split(':')
+        sec, ms = rest.split('.')
+        return int(h)*3600 + int(m2)*60 + int(sec) + int(ms)/1000
+    start_t = parse_ts(start_str)
+    end_t = parse_ts(end_str)
+
+    # Skip zero-duration carry-over blocks
+    if end_t - start_t < 0.05:
+        continue
+
+    # Extract only the NEW text line (has <c> timing tags)
+    text_lines = [l for l in block_lines if l.strip() and not re.match(r'\d{2}:\d{2}:', l)]
+    new_text = None
+    for tl in text_lines:
+        if '<c>' in tl or re.search(r'<\d{2}:\d{2}', tl):
+            new_text = re.sub(r'<[^>]+>', '', tl).strip()
+            break
+    # If no tagged line, use last non-empty text line
+    if not new_text and text_lines:
+        new_text = re.sub(r'<[^>]+>', '', text_lines[-1]).strip()
+    if new_text:
+        phrases.append((start_t, new_text))
+
+# Merge phrases into ~5-second groups
+output = []
+if phrases:
+    group_start = phrases[0][0]
+    group_words = []
+    for t, text in phrases:
+        if t - group_start >= 5 and group_words:
+            h = int(group_start) // 3600
+            m2 = (int(group_start) % 3600) // 60
+            s = int(group_start) % 60
+            ts = f'{m2 + h*60:02d}:{s:02d}'
+            output.append(f'[{ts}] {\" \".join(group_words)}')
+            group_start = t
+            group_words = []
+        group_words.append(text)
+    if group_words:
+        h = int(group_start) // 3600
+        m2 = (int(group_start) % 3600) // 60
+        s = int(group_start) % 60
+        ts = f'{m2 + h*60:02d}:{s:02d}'
+        output.append(f'[{ts}] {\" \".join(group_words)}')
 
 with open(sys.argv[2], 'w') as f:
     f.write('\n'.join(output) + '\n')
