@@ -63,6 +63,18 @@ merges everything onto the video.
 See [SKILL.md](skills/demo-narrate/SKILL.md) for the
 full pipeline documentation.
 
+### gemini-icon-set
+
+Generate production-quality colorful icon sets using Google Imagen 4.
+Suggests icons based on project context, generates 1024px PNGs, removes
+backgrounds, downscales to all target sizes (16-256px), and delivers an
+interactive review gallery for iterative refinement. Five style presets:
+kawaii, flat, glossy, sketch, pixel.
+
+**Dependencies:** GEMINI_API_KEY, rembg (auto-installed), sips (macOS) or ImageMagick
+
+See [SKILL.md](skills/gemini-icon-set/SKILL.md) for the full workflow.
+
 ## License
 
 MIT
