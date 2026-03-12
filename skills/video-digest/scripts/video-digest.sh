@@ -86,6 +86,22 @@ get_duration() {
   ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" 2>/dev/null
 }
 
+# Get video ID from first video or info.json in workdir
+get_video_id() {
+  local workdir="$1" f
+  f=$(find "$workdir" -maxdepth 1 -type f \
+    \( -name "*.mp4" -o -name "*.webm" -o -name "*.mkv" \) | head -1)
+  if [[ -n "$f" ]]; then
+    basename "$f" | sed 's/\.[^.]*$//'
+    return
+  fi
+  f=$(find "$workdir" -maxdepth 1 -name "*.info.json" -type f | head -1)
+  if [[ -n "$f" ]]; then
+    basename "$f" .info.json
+    return
+  fi
+}
+
 # Count files matching a glob pattern
 count_files() {
   local pattern="$1"
@@ -223,14 +239,18 @@ cmd_transcript() {
 
   # Try YouTube captions first (unless --force-whisper)
   if [[ $force_whisper -eq 0 ]]; then
+    local vid_id
+    vid_id=$(get_video_id "$workdir")
+    local vtt_pattern="${vid_id:-*}"
+
     local vtt_file
-    vtt_file=$(find "$workdir" -maxdepth 1 -name "*.vtt" -type f | head -1)
+    vtt_file=$(find "$workdir" -maxdepth 1 -name "${vtt_pattern}*.vtt" -type f | head -1)
 
     # If no VTT exists, try downloading captions
     if [[ -z "$vtt_file" ]]; then
       ensure_ytdlp
       local info_json
-      info_json=$(find "$workdir" -maxdepth 1 -name "*.info.json" -type f | head -1)
+      info_json=$(find "$workdir" -maxdepth 1 -name "${vtt_pattern}*.info.json" -type f | head -1)
       if [[ -n "$info_json" ]]; then
         local video_url
         video_url=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('webpage_url',''))" "$info_json")
@@ -241,7 +261,7 @@ cmd_transcript() {
             --skip-download \
             -o "${workdir}/%(id)s" \
             "$video_url" 2>/dev/null || true
-          vtt_file=$(find "$workdir" -maxdepth 1 -name "*.vtt" -type f | head -1)
+          vtt_file=$(find "$workdir" -maxdepth 1 -name "${vtt_pattern}*.vtt" -type f | head -1)
         fi
       fi
     fi
@@ -432,10 +452,14 @@ cmd_frames() {
 
   # Extract scene-detected keyframes with timestamps
   echo "Detecting scenes and extracting keyframes..."
-  ffmpeg -y -loglevel error -i "$video" \
-    -vf "select=gt(scene\,$threshold),scale=640:-2,drawtext=text='%{pts\:hms}':x=10:y=10:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=5" \
+  local need_fallback=0
+  if ! ffmpeg -y -loglevel error -i "$video" \
+    -vf "select=gt(scene\,$threshold),format=yuvj420p,scale=640:360,drawtext=text='%{pts\:hms}':x=10:y=10:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=5" \
     -vsync vfr -q:v 2 \
-    "${frames_dir}/frame_%04d.jpg"
+    "${frames_dir}/frame_%04d.jpg"; then
+    echo "Scene detection failed, falling back to interval sampling..."
+    need_fallback=1
+  fi
 
   # Extract timecodes via ffmpeg showinfo filter (more reliable than ffprobe lavfi)
   ffmpeg -i "$video" \
@@ -447,7 +471,6 @@ cmd_frames() {
   frame_count=$(count_files "${frames_dir}/frame_*.jpg")
 
   # Auto-fallback to interval sampling when too few frames for the video length
-  local need_fallback=0
   if [[ "$frame_count" -eq 0 ]]; then
     need_fallback=1
   elif [[ "$frame_count" -lt 5 && "$duration_int" -gt 120 ]]; then
@@ -463,7 +486,7 @@ cmd_frames() {
     local fps
     fps=$(echo "scale=4; 1/30" | bc)
     ffmpeg -y -loglevel error -i "$video" \
-      -vf "fps=${fps},scale=640:-2,drawtext=text='%{pts\:hms}':x=10:y=10:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=5" \
+      -vf "fps=${fps},format=yuvj420p,scale=640:360,drawtext=text='%{pts\:hms}':x=10:y=10:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=5" \
       -q:v 2 \
       "${frames_dir}/frame_%04d.jpg"
     frame_count=$(count_files "${frames_dir}/frame_*.jpg")
@@ -487,11 +510,11 @@ cmd_frames() {
     local sheet_fps
     sheet_fps=$(echo "scale=4; 1/30" | bc)
     ffmpeg -y -loglevel error -i "$video" \
-      -vf "fps=${sheet_fps},scale=384:-2,drawtext=text='%{pts\:hms}':x=5:y=5:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=3,tile=${tile_spec}" \
+      -vf "fps=${sheet_fps},format=yuvj420p,scale=384:216,drawtext=text='%{pts\:hms}':x=5:y=5:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=3,tile=${tile_spec}" \
       "${frames_dir}/sheet_%03d.jpg"
   else
     ffmpeg -y -loglevel error -i "$video" \
-      -vf "select=gt(scene\,$threshold),scale=384:-2,drawtext=text='%{pts\:hms}':x=5:y=5:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=3,tile=${tile_spec}" \
+      -vf "select=gt(scene\,$threshold),format=yuvj420p,scale=384:216,drawtext=text='%{pts\:hms}':x=5:y=5:fontsize=14:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=3,tile=${tile_spec}" \
       -vsync vfr \
       "${frames_dir}/sheet_%03d.jpg"
   fi
@@ -518,8 +541,10 @@ cmd_info() {
     exit 1
   fi
 
+  local vid_id
+  vid_id=$(get_video_id "$workdir")
   local info_json
-  info_json=$(find "$workdir" -maxdepth 1 -name "*.info.json" -type f | head -1)
+  info_json=$(find "$workdir" -maxdepth 1 -name "${vid_id:-*}*.info.json" -type f | head -1)
 
   if [[ -z "$info_json" || ! -f "$info_json" ]]; then
     echo "Error: no info.json found in $workdir" >&2
