@@ -178,8 +178,9 @@ For each chunk, prepare:
 
 For short videos (< 10 min), analyze directly without subagents —
 read the transcript and ALL contact sheets yourself (use the Read
-tool on each sheet image) and produce the summary inline. Skip to
-Step 6.
+tool on each sheet image) and produce the summary inline. While
+analyzing, identify notable frames for the screenshot gallery
+(same criteria as subagents — see below). Skip to Step 6.
 
 For longer videos, spawn one Agent per chunk, ALL IN PARALLEL.
 Each subagent MUST receive both the transcript segment AND the
@@ -245,6 +246,14 @@ Format your output as:
 **Key moments:**
 - [MM:SS] <description>
 
+**Notable frames** (ONLY if genuinely important visual content —
+diagrams, key slides, code, demos, charts, significant UI state):
+- [MM:SS] what makes this frame important
+
+Be aggressive: most frames are NOT notable. A talking head, generic
+title slide, or static screen is NOT notable. Only flag frames where
+the visual IS the content a reader would want to see.
+
 Save output to <workdir>/chunk_<N>_summary.txt"
 )
 ```
@@ -262,12 +271,40 @@ metadata JSON.
 Build YouTube deep links using the format:
 `https://youtube.com/watch?v=<VIDEO_ID>&t=<SECONDS>`
 
+**Prepare assets directory:**
+
+Create `<workdir>/assets/` and populate it:
+
+1. **Thumbnail:** Find the downloaded thumbnail in workdir (usually
+   `<id>.webp` or `<id>.jpg` from `--write-thumbnail`). Copy to
+   `assets/<video_id>_thumbnail.jpg`, converting if needed:
+   ```bash
+   ffmpeg -y -loglevel error -i "<workdir>/<thumbnail>" "<workdir>/assets/<video_id>_thumbnail.jpg"
+   ```
+2. **Screenshots:** Collect notable frames flagged by subagents (or
+   from your own analysis for short videos). Match their timestamps
+   against `frames/timecodes.txt` (line N = `frame_<N zero-padded
+   to 4>.jpg`) to find the closest frame file. Copy selected frames
+   to `assets/<video_id>_screenshot_01.jpg`, `<video_id>_screenshot_02.jpg`, etc.
+
+   Apply aggressive filtering — only include frames where the visual
+   is genuinely important: architecture diagrams, key slides, code
+   demos, charts, significant UI states. Skip talking heads, generic
+   titles, and static screens. Aim for 3-8 screenshots even for long
+   videos. If no frames are notable, omit the Screenshots section.
+
+For local files (no yt-dlp download), omit the URL line and thumbnail
+if no thumbnail was downloaded.
+
 Structure the final markdown:
 
 ```markdown
 # Video Digest: <Title>
 
-**Channel:** <uploader> | **Duration:** <duration> | **Date:** <date>
+**Channel:** <uploader> | **Duration:** <duration> | **Date:** <date>\
+**URL:** <source-url>
+
+![Video thumbnail](assets/<video_id>_thumbnail.jpg)
 
 ## tl;dw
 <2-3 sentence overview — always present regardless of depth>
@@ -284,11 +321,23 @@ Structure the final markdown:
 ## Key Moments
 - [MM:SS](youtube-deep-link) — <description>
 - ...
+
+## Screenshots
+
+> Curated frames — only visually significant moments.
+
+![<description>](assets/<video_id>_screenshot_01.jpg)
+*[MM:SS](youtube-deep-link) — <description>*
+
+...
 ```
 
 For `brief` depth: tl;dw + Contents with one-line descriptions only.
 For `detailed` depth: full structure as above.
 For `full` depth: full structure plus exhaustive notes per section.
+
+The Screenshots section is included at ALL depth levels when notable
+frames exist. Omit it entirely if no frames were flagged as notable.
 
 ### Step 7: Output
 
@@ -298,7 +347,7 @@ Print a condensed preview to stdout:
 
 ```
 Video Digest: <Title>
-Duration: MM:SS | Sections: N | Frames analyzed: N
+Duration: MM:SS | Sections: N | Frames analyzed: N | Screenshots: N
 
 tl;dw
 <2-3 sentence overview>
@@ -309,6 +358,7 @@ Sections
 - ...
 
 Full summary: <workdir>/digest.md
+Assets: <workdir>/assets/
 ```
 
 ## Important Notes
