@@ -87,6 +87,18 @@ analysis for long videos and adjustable depth (brief/detailed/full).
 
 See [SKILL.md](skills/video-digest/SKILL.md) for the full pipeline.
 
+### cdp-connect
+
+Connect Claude Code to an existing Chrome browser via Chrome DevTools
+Protocol. Zero dependencies — uses Node 22 built-in WebSocket. Navigate,
+click, type, screenshot, evaluate JS, read accessibility tree, and
+monitor console/network events against any Chrome running with
+`--remote-debugging-port`.
+
+**Dependencies:** Node 22+ (built-in WebSocket and fetch)
+
+See [SKILL.md](skills/cdp-connect/SKILL.md) for the full command reference.
+
 ## License
 
 MIT
