@@ -23,7 +23,7 @@ for skill_dir in "$SKILLS_DIR"/*/; do
   fi
 
   # Sync helper scripts if present
-  for script in "${skill_dir}scripts/"*.sh; do
+  for script in "${skill_dir}scripts/"*; do
     [[ -f "$script" ]] || continue
     cp "$script" "${BIN_DIR}/$(basename "$script")"
     chmod +x "${BIN_DIR}/$(basename "$script")"
