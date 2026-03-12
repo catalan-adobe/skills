@@ -5,6 +5,8 @@
 - `grep -P` (Perl regex) does NOT work on macOS BSD grep — use `sed` or `grep -oE`
 - `ffprobe -f lavfi "movie=<path>"` is unreliable — prefer `ffmpeg ... showinfo` + parse stderr
 - `shellcheck` passes clean but won't catch macOS-specific runtime failures — always test on macOS
+- `find` without `-L` won't follow symlinks — use `find -L` when traversing symlinked directories
+- `(( var++ ))` when var=0 exits with code 1 under `set -e` (pre-increment value is falsy) — use `(( ++var ))` instead
 
 ## YouTube VTT Parsing
 

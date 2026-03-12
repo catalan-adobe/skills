@@ -23,6 +23,16 @@ docs/plans/                        Design specs and implementation plans
 - Design specs follow `docs/plans/YYYY-MM-DD-<topic>-design.md`
 - Update README.md, plugin.json, and marketplace.json when adding a new skill
 
+## Local Installation
+
+Claude Code does NOT follow symlinks in `~/.claude/commands/`. Use `scripts/sync-skills.sh` to copy skill files for local use:
+
+```bash
+./scripts/sync-skills.sh
+```
+
+This copies `skills/<name>/SKILL.md` → `~/.claude/commands/<name>.md` and helper scripts → `~/.local/bin/`. Run after editing any skill to make changes available in new Claude sessions. Auto-discovers all skills — no manual steps when adding a new skill.
+
 ## Creating New Skills
 
 Recommended workflow:
