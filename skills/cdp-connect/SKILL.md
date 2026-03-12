@@ -1,6 +1,6 @@
 ---
 name: cdp-connect
-description: Connect Claude Code to an existing Chrome browser via CDP (Chrome DevTools Protocol). Zero dependencies — uses Node 22 built-in WebSocket. Attach to any Chrome running with --remote-debugging-port, then navigate, click, type, screenshot, evaluate JS, read accessibility tree, and monitor console/network. Use when you need to interact with a browser the agent already started, control an existing Chrome instance, or drive browser automation without Playwright MCP. Triggers on: "cdp connect", "connect to browser", "connect to chrome", "attach to browser", "interact with browser", "drive browser", "browser automation", "control chrome", "connect 9222".
+description: "Connect Claude Code to an existing Chrome browser via CDP (Chrome DevTools Protocol). Zero dependencies — uses Node 22 built-in WebSocket. Attach to any Chrome running with --remote-debugging-port, then navigate, click, type, screenshot, evaluate JS, read accessibility tree, and monitor console/network. Use when you need to interact with a browser the agent already started, control an existing Chrome instance, or drive browser automation without Playwright MCP. Triggers on: cdp connect, connect to browser, connect to chrome, attach to browser, interact with browser, drive browser, browser automation, control chrome, connect 9222."
 ---
 
 # CDP Connect
