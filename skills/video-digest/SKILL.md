@@ -293,12 +293,15 @@ Create `<workdir>/assets/` and populate it:
    titles, and static screens. Aim for 3-8 screenshots even for long
    videos. If no frames are notable, omit the Screenshots section.
 
+For local files (no yt-dlp download), omit the URL line and thumbnail
+if no thumbnail was downloaded.
+
 Structure the final markdown:
 
 ```markdown
 # Video Digest: <Title>
 
-**Channel:** <uploader> | **Duration:** <duration> | **Date:** <date>
+**Channel:** <uploader> | **Duration:** <duration> | **Date:** <date>\
 **URL:** <source-url>
 
 ![Video thumbnail](assets/<video_id>_thumbnail.jpg)
