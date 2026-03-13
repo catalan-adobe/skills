@@ -350,6 +350,112 @@ function cmdListScreens() {
   }
 }
 
+// ─── Window geometry resolution ──────────────────────────────────────────────
+
+/**
+ * Get the screen-space geometry of a window by its CGWindowNumber.
+ * @param {number|string} windowId
+ * @returns {{ x: number, y: number, w: number, h: number }}
+ */
+function resolveWindowGeometryDarwin(windowId) {
+  const id = parseInt(String(windowId), 10);
+  const jxaScript = [
+    'ObjC.import("CoreGraphics");',
+    'ObjC.import("Foundation");',
+    `var targetId = ${id};`,
+    'var raw = $.CGWindowListCopyWindowInfo(1, 0);',
+    'var count = $.CFArrayGetCount(raw);',
+    'var found = null;',
+    'for (var i = 0; i < count; i++) {',
+    '  var info = ObjC.deepUnwrap(ObjC.castRefToObject($.CFArrayGetValueAtIndex(raw, i)));',
+    '  if (info && info.kCGWindowNumber === targetId) { found = info; break; }',
+    '}',
+    'if (!found) throw new Error("Window " + targetId + " not found");',
+    'var b = found.kCGWindowBounds;',
+    'JSON.stringify({ x: b.X, y: b.Y, w: b.Width, h: b.Height });',
+  ].join('\n');
+
+  const result = spawnSync('osascript', ['-l', 'JavaScript', '-e', jxaScript], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.status !== 0) throw new Error(`osascript failed: ${result.stderr}`);
+  return JSON.parse(result.stdout.trim());
+}
+
+/**
+ * Get the geometry of a window by ID on Linux via xdotool.
+ * @param {string} windowId
+ * @returns {{ x: number, y: number, w: number, h: number }}
+ */
+function resolveWindowGeometryLinux(windowId) {
+  const out = execSync(`xdotool getwindowgeometry --shell ${windowId}`, { encoding: 'utf8' });
+  const getVal = (key) => {
+    const m = out.match(new RegExp(`${key}=(\\d+)`));
+    return m ? parseInt(m[1], 10) : 0;
+  };
+  return { x: getVal('X'), y: getVal('Y'), w: getVal('WIDTH'), h: getVal('HEIGHT') };
+}
+
+/**
+ * Get the geometry of a window by HWND on Windows via PowerShell.
+ * @param {string|number} windowId
+ * @returns {{ x: number, y: number, w: number, h: number }}
+ */
+function resolveWindowGeometryWindows(windowId) {
+  const ps = `
+Add-Type @"
+using System.Runtime.InteropServices;
+public class Win32 {
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+}
+"@
+$h = [System.IntPtr]${windowId}
+$r = [Win32+RECT]::new()
+[Win32]::GetWindowRect($h, [ref]$r) | Out-Null
+[PSCustomObject]@{ x=$r.Left; y=$r.Top; w=$r.Right-$r.Left; h=$r.Bottom-$r.Top } | ConvertTo-Json -Compress
+`.trim();
+  const out = execSync(`powershell -Command "${ps}"`, { encoding: 'utf8' });
+  return JSON.parse(out.trim());
+}
+
+/**
+ * Resolve the pixel geometry for a window ID on the current platform.
+ * On macOS, multiplies by the Retina scale factor.
+ * @param {number|string} windowId
+ * @returns {{ x: number, y: number, w: number, h: number }}
+ */
+function resolveWindowGeometry(windowId) {
+  const platform = os.platform();
+  if (platform === 'darwin') {
+    const geo = resolveWindowGeometryDarwin(windowId);
+    // Detect Retina scale: default 2 if system_profiler indicates Retina
+    let scale = 1;
+    try {
+      const spOut = execSync('system_profiler SPDisplaysDataType -json', {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const spJson = JSON.parse(spOut);
+      const primary = spJson.SPDisplaysDataType?.[0]?.spdisplays_ndrvs?.[0];
+      if (primary && (primary['spdisplays_retina'] ?? '') === 'spdisplays_yes') scale = 2;
+    } catch {
+      // default scale stays 1
+    }
+    return {
+      x: geo.x * scale,
+      y: geo.y * scale,
+      w: geo.w * scale,
+      h: geo.h * scale,
+    };
+  } else if (platform === 'linux') {
+    return resolveWindowGeometryLinux(windowId);
+  } else {
+    return resolveWindowGeometryWindows(windowId);
+  }
+}
+
 // ─── State management ─────────────────────────────────────────────────────────
 
 /**
@@ -441,11 +547,19 @@ function cmdStart(flags) {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const output = flags.output ?? path.join(os.homedir(), `screencast-${ts}.mp4`);
 
-  // Parse region string → object if provided
-  const regionStr = flags.window ? null : (flags.region ?? null);
+  // Resolve window geometry if --window flag provided
+  let resolvedRegion = flags.region ?? null;
+  let screenSize = '1920x1080';
 
-  // TODO Task 7: resolve window geometry — replaced below in Task 7 implementation
-  let resolvedRegion = regionStr;
+  if (flags.window) {
+    try {
+      const geo = resolveWindowGeometry(flags.window);
+      resolvedRegion = `${geo.x},${geo.y},${geo.w},${geo.h}`;
+      screenSize = `${geo.w}x${geo.h}`;
+    } catch (err) {
+      die(`Cannot resolve window geometry for "${flags.window}": ${err.message}`);
+    }
+  }
 
   // Resolve avfoundation device index dynamically
   let screenInput = String(flags.screen);
@@ -459,7 +573,7 @@ function cmdStart(flags) {
     fps: flags.fps,
     region: resolvedRegion,
     output,
-    screenSize: '1920x1080', // default; window geometry overrides this
+    screenSize,
     display: process.env.DISPLAY ?? ':0.0',
   });
 
@@ -589,5 +703,9 @@ function main() {
 if (require.main === module) {
   main();
 } else {
-  module.exports = { parseArgs, detectPlatform, buildFfmpegArgs, readState, writeState, clearState, isAlive };
+  module.exports = {
+    parseArgs, detectPlatform, buildFfmpegArgs,
+    readState, writeState, clearState, isAlive,
+    resolveWindowGeometry,
+  };
 }
