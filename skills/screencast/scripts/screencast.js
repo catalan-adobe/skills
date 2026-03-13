@@ -59,6 +59,76 @@ function detectPlatform() {
   return { platform, backend, ffmpeg, ffmpegVersion };
 }
 
+// ─── ffmpeg command builder ───────────────────────────────────────────────────
+
+/**
+ * Parse a region string "x,y,w,h" into numeric parts.
+ * @param {string} region
+ * @returns {{ x: number, y: number, w: number, h: number }}
+ */
+function parseRegion(region) {
+  const [x, y, w, h] = region.split(',').map(Number);
+  return { x, y, w, h };
+}
+
+/**
+ * Build an array of ffmpeg CLI args for screen recording.
+ * @param {{
+ *   backend: string,
+ *   screenInput: string|null,
+ *   fps: number,
+ *   region: string|null,
+ *   output: string,
+ *   screenSize: string,
+ *   display: string|null
+ * }} opts
+ * @returns {string[]}
+ */
+function buildFfmpegArgs({ backend, screenInput, fps, region, output, screenSize, display }) {
+  const args = ['-y'];
+
+  if (backend === 'avfoundation') {
+    args.push('-f', 'avfoundation');
+    args.push('-framerate', String(fps));
+    args.push('-capture_cursor', '1');
+    args.push('-i', `${screenInput}:none`);
+    if (region) {
+      const { x, y, w, h } = parseRegion(region);
+      args.push('-vf', `crop=${w}:${h}:${x}:${y}`);
+    }
+  } else if (backend === 'x11grab') {
+    args.push('-f', 'x11grab');
+    args.push('-framerate', String(fps));
+    if (region) {
+      const { x, y, w, h } = parseRegion(region);
+      args.push('-video_size', `${w}x${h}`);
+      args.push('-i', `${display}+${x},${y}`);
+    } else {
+      args.push('-video_size', screenSize);
+      args.push('-i', display);
+    }
+  } else if (backend === 'gdigrab') {
+    args.push('-f', 'gdigrab');
+    args.push('-framerate', String(fps));
+    if (region) {
+      const { x, y, w, h } = parseRegion(region);
+      args.push('-offset_x', String(x));
+      args.push('-offset_y', String(y));
+      args.push('-video_size', `${w}x${h}`);
+    }
+    args.push('-i', 'desktop');
+  }
+
+  // Common output codec settings
+  args.push('-c:v', 'libx264');
+  args.push('-pix_fmt', 'yuv420p');
+  args.push('-preset', 'ultrafast');
+  args.push('-crf', '23');
+  args.push(output);
+
+  return args;
+}
+
 // ─── Subcommands ──────────────────────────────────────────────────────────────
 
 function cmdDeps() {
@@ -126,5 +196,5 @@ function main() {
 if (require.main === module) {
   main();
 } else {
-  module.exports = { parseArgs, detectPlatform };
+  module.exports = { parseArgs, detectPlatform, buildFfmpegArgs };
 }

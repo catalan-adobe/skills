@@ -140,3 +140,137 @@ describe('detectPlatform', () => {
     assert.equal(result.backend, expected);
   });
 });
+
+// ─── Task 3: buildFfmpegArgs ──────────────────────────────────────────────────
+
+describe('buildFfmpegArgs', () => {
+  afterEach(() => {
+    delete require.cache[SCRIPT];
+    mod = null;
+  });
+
+  it('macOS full-screen uses avfoundation', () => {
+    load();
+    const args = mod.buildFfmpegArgs({
+      backend: 'avfoundation',
+      screenInput: '1',
+      fps: 30,
+      region: null,
+      output: '/tmp/out.mp4',
+      screenSize: '1920x1080',
+      display: ':0.0',
+    });
+    assert.ok(args.includes('-f'), 'should include -f flag');
+    assert.ok(args.includes('avfoundation'), 'should use avfoundation backend');
+    assert.ok(args.includes('-framerate'), 'should include -framerate flag');
+    assert.ok(args.includes('30'), 'should use fps 30');
+    assert.ok(args.includes('-capture_cursor'), 'should capture cursor');
+    assert.ok(args.includes('/tmp/out.mp4'), 'should include output path');
+  });
+
+  it('macOS with region adds crop filter', () => {
+    load();
+    const args = mod.buildFfmpegArgs({
+      backend: 'avfoundation',
+      screenInput: '1',
+      fps: 30,
+      region: '10,20,640,480',
+      output: '/tmp/out.mp4',
+      screenSize: '1920x1080',
+      display: ':0.0',
+    });
+    const argsStr = args.join(' ');
+    assert.ok(argsStr.includes('crop'), 'should include crop filter for region');
+    assert.ok(argsStr.includes('640'), 'crop filter should include width');
+    assert.ok(argsStr.includes('480'), 'crop filter should include height');
+  });
+
+  it('Linux full-screen uses x11grab with screen size', () => {
+    load();
+    const args = mod.buildFfmpegArgs({
+      backend: 'x11grab',
+      screenInput: null,
+      fps: 30,
+      region: null,
+      output: '/tmp/out.mp4',
+      screenSize: '1920x1080',
+      display: ':0.0',
+    });
+    assert.ok(args.includes('x11grab'), 'should use x11grab backend');
+    assert.ok(args.includes('-video_size'), 'should include -video_size for x11grab');
+    assert.ok(args.includes('1920x1080'), 'should use screen size');
+    assert.ok(args.includes(':0.0'), 'should use display');
+  });
+
+  it('Linux with region uses native offset in x11grab', () => {
+    load();
+    const args = mod.buildFfmpegArgs({
+      backend: 'x11grab',
+      screenInput: null,
+      fps: 30,
+      region: '10,20,640,480',
+      output: '/tmp/out.mp4',
+      screenSize: '1920x1080',
+      display: ':0.0',
+    });
+    const argsStr = args.join(' ');
+    assert.ok(args.includes('x11grab'), 'should use x11grab backend');
+    assert.ok(argsStr.includes('640x480'), 'region size should be in video_size');
+    assert.ok(argsStr.includes(':0.0+10,20'), 'display input should include offset');
+  });
+
+  it('Windows full-screen uses gdigrab', () => {
+    load();
+    const args = mod.buildFfmpegArgs({
+      backend: 'gdigrab',
+      screenInput: null,
+      fps: 30,
+      region: null,
+      output: '/tmp/out.mp4',
+      screenSize: '1920x1080',
+      display: null,
+    });
+    assert.ok(args.includes('gdigrab'), 'should use gdigrab backend');
+    assert.ok(args.includes('desktop'), 'should use desktop input for gdigrab');
+  });
+
+  it('Windows with region adds offset and video_size', () => {
+    load();
+    const args = mod.buildFfmpegArgs({
+      backend: 'gdigrab',
+      screenInput: null,
+      fps: 30,
+      region: '10,20,640,480',
+      output: '/tmp/out.mp4',
+      screenSize: '1920x1080',
+      display: null,
+    });
+    const argsStr = args.join(' ');
+    assert.ok(args.includes('gdigrab'), 'should use gdigrab backend');
+    assert.ok(argsStr.includes('-offset_x'), 'should include -offset_x for region');
+    assert.ok(argsStr.includes('-offset_y'), 'should include -offset_y for region');
+    assert.ok(argsStr.includes('640x480'), 'should include video_size for region');
+  });
+
+  it('common output settings are always present', () => {
+    load();
+    const args = mod.buildFfmpegArgs({
+      backend: 'avfoundation',
+      screenInput: '1',
+      fps: 30,
+      region: null,
+      output: '/tmp/out.mp4',
+      screenSize: '1920x1080',
+      display: ':0.0',
+    });
+    assert.ok(args.includes('-y'), 'should have -y (overwrite)');
+    assert.ok(args.includes('-c:v'), 'should have -c:v');
+    assert.ok(args.includes('libx264'), 'should use libx264');
+    assert.ok(args.includes('-pix_fmt'), 'should have -pix_fmt');
+    assert.ok(args.includes('yuv420p'), 'should use yuv420p');
+    assert.ok(args.includes('-preset'), 'should have -preset');
+    assert.ok(args.includes('ultrafast'), 'should use ultrafast preset');
+    assert.ok(args.includes('-crf'), 'should have -crf');
+    assert.ok(args.includes('23'), 'should use crf 23');
+  });
+});
