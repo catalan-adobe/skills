@@ -540,7 +540,7 @@ function cmdStart(flags) {
     die(`Already recording (pid ${existing.pid}). Run stop first.`);
   }
 
-  const { platform, backend, ffmpeg } = detectPlatform();
+  const { backend, ffmpeg } = detectPlatform();
   if (!ffmpeg) die('ffmpeg not found. Install via: brew install ffmpeg');
 
   // Generate output filename if not provided
