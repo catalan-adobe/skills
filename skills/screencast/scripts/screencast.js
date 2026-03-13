@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-const { execSync } = require('node:child_process');
+const { execSync, spawnSync } = require('node:child_process');
+const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
@@ -144,8 +145,104 @@ function cmdListWindows() {
   json({ message: 'list-windows not yet implemented' });
 }
 
+function listScreensDarwin() {
+  // Get device indices from avfoundation
+  const devOut = spawnSync('ffmpeg', ['-f', 'avfoundation', '-list_devices', 'true', '-i', ''], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const devText = (devOut.stdout || '') + (devOut.stderr || '');
+
+  const screens = [];
+  const re = /\[(\d+)\]\s+Capture screen (\d+)/g;
+  let m;
+  while ((m = re.exec(devText)) !== null) {
+    screens.push({ index: parseInt(m[1], 10), name: `Capture screen ${m[2]}` });
+  }
+
+  // Get resolution and Retina scale from system_profiler
+  let displayData = [];
+  try {
+    const spOut = execSync('system_profiler SPDisplaysDataType -json', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const spJson = JSON.parse(spOut);
+    const displays = spJson.SPDisplaysDataType?.[0]?.spdisplays_ndrvs ?? [];
+    displayData = displays.map((d) => {
+      const resStr = d['_spdisplays_resolution'] ?? d['spdisplays_resolution'] ?? '';
+      const reRes = /(\d+)\s*[xX×]\s*(\d+)/;
+      const rm = resStr.match(reRes);
+      const width = rm ? parseInt(rm[1], 10) : null;
+      const height = rm ? parseInt(rm[2], 10) : null;
+      const isRetina = (d['spdisplays_retina'] ?? '') === 'spdisplays_yes';
+      return { width, height, scale: isRetina ? 2 : 1 };
+    });
+  } catch {
+    // system_profiler failed — continue without resolution
+  }
+
+  const result = screens.map((s, i) => ({
+    index: s.index,
+    name: s.name,
+    width: displayData[i]?.width ?? null,
+    height: displayData[i]?.height ?? null,
+    scale: displayData[i]?.scale ?? 1,
+  }));
+
+  json(result);
+}
+
+function listScreensLinux() {
+  const out = execSync('xrandr --query', { encoding: 'utf8' });
+  const re = /^(\S+)\s+connected.*?(\d+)x(\d+)\+\d+\+\d+/gm;
+  const screens = [];
+  let m;
+  let index = 0;
+  while ((m = re.exec(out)) !== null) {
+    screens.push({
+      index,
+      name: m[1],
+      width: parseInt(m[2], 10),
+      height: parseInt(m[3], 10),
+      scale: 1,
+    });
+    index++;
+  }
+  json(screens);
+}
+
+function listScreensWindows() {
+  const ps = `
+Add-Type -AssemblyName System.Windows.Forms;
+$screens = [System.Windows.Forms.Screen]::AllScreens;
+$arr = @();
+for ($i = 0; $i -lt $screens.Length; $i++) {
+  $s = $screens[$i];
+  $arr += [PSCustomObject]@{
+    index = $i;
+    name = $s.DeviceName;
+    width = $s.Bounds.Width;
+    height = $s.Bounds.Height;
+    scale = 1;
+  };
+}
+$arr | ConvertTo-Json -Compress
+`.trim();
+  const out = execSync(`powershell -Command "${ps}"`, { encoding: 'utf8' });
+  const screens = JSON.parse(out.trim());
+  json(Array.isArray(screens) ? screens : [screens]);
+}
+
 function cmdListScreens() {
-  json({ message: 'list-screens not yet implemented' });
+  const { platform } = detectPlatform();
+  if (platform === 'darwin') {
+    listScreensDarwin();
+  } else if (platform === 'linux') {
+    listScreensLinux();
+  } else {
+    listScreensWindows();
+  }
 }
 
 function cmdStart(opts) {
