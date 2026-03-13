@@ -141,8 +141,113 @@ function cmdDeps() {
   json(info);
 }
 
+function listWindowsDarwin() {
+  // JXA script — no single quotes; use castRefToObject to unwrap CFDictionary entries
+  const jxaScript = [
+    'ObjC.import("CoreGraphics");',
+    'ObjC.import("Foundation");',
+    'var raw = $.CGWindowListCopyWindowInfo(1, 0);',
+    'var count = $.CFArrayGetCount(raw);',
+    'var result = [];',
+    'for (var i = 0; i < count; i++) {',
+    '  var info = ObjC.deepUnwrap(ObjC.castRefToObject($.CFArrayGetValueAtIndex(raw, i)));',
+    '  if (!info || info.kCGWindowLayer !== 0) continue;',
+    '  if (!info.kCGWindowOwnerName) continue;',
+    '  var b = info.kCGWindowBounds || {};',
+    '  result.push({',
+    '    id: info.kCGWindowNumber,',
+    '    app: info.kCGWindowOwnerName,',
+    '    title: info.kCGWindowName || "",',
+    '    x: b.X || 0,',
+    '    y: b.Y || 0,',
+    '    w: b.Width || 0,',
+    '    h: b.Height || 0',
+    '  });',
+    '}',
+    'JSON.stringify(result);',
+  ].join('\n');
+
+  const result = spawnSync('osascript', ['-l', 'JavaScript', '-e', jxaScript], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  if (result.status !== 0) {
+    die(`osascript failed: ${result.stderr}`);
+  }
+
+  const windows = JSON.parse(result.stdout.trim());
+  json(windows);
+}
+
+function listWindowsLinux() {
+  const out = execSync('wmctrl -lG', { encoding: 'utf8' });
+  const windows = [];
+  for (const line of out.split('\n')) {
+    const m = line.match(/^(0x\w+)\s+\d+\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+\S+\s+(.*)/);
+    if (!m) continue;
+    windows.push({
+      id: m[1],
+      app: '',
+      title: m[6].trim(),
+      x: parseInt(m[2], 10),
+      y: parseInt(m[3], 10),
+      w: parseInt(m[4], 10),
+      h: parseInt(m[5], 10),
+    });
+  }
+  json(windows);
+}
+
+function listWindowsWindows() {
+  const ps = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class Win32 {
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+}
+"@
+$list = [System.Collections.Generic.List[object]]::new()
+[Win32]::EnumWindows({
+  param($hWnd)
+  if ([Win32]::IsWindowVisible($hWnd)) {
+    $sb = [System.Text.StringBuilder]::new(256)
+    [Win32]::GetWindowText($hWnd, $sb, 256) | Out-Null
+    $t = $sb.ToString()
+    if ($t.Length -gt 0) {
+      $r = [Win32+RECT]::new()
+      [Win32]::GetWindowRect($hWnd, [ref]$r) | Out-Null
+      $list.Add([PSCustomObject]@{
+        id = $hWnd.ToInt64(); app = ""; title = $t;
+        x = $r.Left; y = $r.Top; w = $r.Right - $r.Left; h = $r.Bottom - $r.Top
+      })
+    }
+  }
+  return $true
+}, [IntPtr]::Zero) | Out-Null
+$list | ConvertTo-Json -Compress
+`.trim();
+  const out = execSync(`powershell -Command "${ps}"`, { encoding: 'utf8' });
+  const windows = JSON.parse(out.trim());
+  json(Array.isArray(windows) ? windows : [windows]);
+}
+
 function cmdListWindows() {
-  json({ message: 'list-windows not yet implemented' });
+  const { platform } = detectPlatform();
+  if (platform === 'darwin') {
+    listWindowsDarwin();
+  } else if (platform === 'linux') {
+    listWindowsLinux();
+  } else {
+    listWindowsWindows();
+  }
 }
 
 function listScreensDarwin() {
