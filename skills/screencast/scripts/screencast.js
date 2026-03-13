@@ -33,10 +33,41 @@ function parseArgs(argv) {
   return { command: positional[0], args: positional.slice(1), ...flags };
 }
 
-// ─── Subcommands (stubs) ──────────────────────────────────────────────────────
+// ─── Platform detection ───────────────────────────────────────────────────────
+
+const BACKEND_MAP = {
+  darwin: 'avfoundation',
+  linux:  'x11grab',
+  win32:  'gdigrab',
+};
+
+function detectPlatform() {
+  const platform = os.platform();
+  const backend = BACKEND_MAP[platform] ?? 'x11grab';
+
+  let ffmpeg = false;
+  let ffmpegVersion = null;
+  try {
+    const out = execSync('ffmpeg -version', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    ffmpeg = true;
+    const match = out.match(/ffmpeg version (\S+)/);
+    ffmpegVersion = match ? match[1] : 'unknown';
+  } catch {
+    // ffmpeg not found
+  }
+
+  return { platform, backend, ffmpeg, ffmpegVersion };
+}
+
+// ─── Subcommands ──────────────────────────────────────────────────────────────
 
 function cmdDeps() {
-  json({ message: 'deps not yet implemented' });
+  const info = detectPlatform();
+  if (!info.ffmpeg) {
+    json({ error: 'ffmpeg not found. Install via: brew install ffmpeg', ...info });
+    process.exit(1);
+  }
+  json(info);
 }
 
 function cmdListWindows() {
@@ -95,5 +126,5 @@ function main() {
 if (require.main === module) {
   main();
 } else {
-  module.exports = { parseArgs };
+  module.exports = { parseArgs, detectPlatform };
 }

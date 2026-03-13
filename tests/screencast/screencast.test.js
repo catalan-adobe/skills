@@ -99,3 +99,44 @@ describe('parseArgs', () => {
     assert.equal(result.command, 'status');
   });
 });
+
+// ─── Task 2: detectPlatform ───────────────────────────────────────────────────
+
+describe('detectPlatform', () => {
+  afterEach(() => {
+    delete require.cache[SCRIPT];
+    mod = null;
+  });
+
+  it('returns valid platform and backend', () => {
+    load();
+    const result = mod.detectPlatform();
+    const validPlatforms = ['darwin', 'linux', 'win32'];
+    const validBackends = ['avfoundation', 'x11grab', 'gdigrab'];
+    assert.ok(validPlatforms.includes(result.platform),
+      `platform "${result.platform}" should be one of ${validPlatforms.join(', ')}`);
+    assert.ok(validBackends.includes(result.backend),
+      `backend "${result.backend}" should be one of ${validBackends.join(', ')}`);
+    assert.equal(typeof result.ffmpeg, 'boolean');
+  });
+
+  it('returns ffmpegVersion string when ffmpeg is present', () => {
+    load();
+    const result = mod.detectPlatform();
+    if (result.ffmpeg) {
+      assert.equal(typeof result.ffmpegVersion, 'string');
+      assert.ok(result.ffmpegVersion.length > 0);
+    }
+  });
+
+  it('backend matches current platform', () => {
+    load();
+    const result = mod.detectPlatform();
+    const expected = {
+      darwin: 'avfoundation',
+      linux: 'x11grab',
+      win32: 'gdigrab',
+    }[result.platform];
+    assert.equal(result.backend, expected);
+  });
+});
