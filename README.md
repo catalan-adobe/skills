@@ -99,6 +99,17 @@ monitor console/network events against any Chrome running with
 
 See [SKILL.md](skills/cdp-connect/SKILL.md) for the full command reference.
 
+### screencast
+
+Guided screen recording from Claude Code. Pick a display, window, or
+custom region, then start/stop recording on demand. Uses ffmpeg for
+cross-platform support (macOS, Linux, Windows). Produces MP4 with
+sensible defaults. Pairs with demo-narrate for voice-over.
+
+**Dependencies:** ffmpeg (required), Node 22+
+
+See [SKILL.md](skills/screencast/SKILL.md) for the full workflow.
+
 ## License
 
 MIT
