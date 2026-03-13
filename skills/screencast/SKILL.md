@@ -147,6 +147,10 @@ Report: file path, duration, and file size.
   new session and run `stop` to end it.
 - Output uses H.264 with `ultrafast` preset — optimized for low
   CPU during recording, not minimal file size.
+- **macOS permission:** Screen recording requires the terminal app
+  to be added to System Settings > Privacy & Security > Screen &
+  System Audio Recording. If ffmpeg starts but produces no file,
+  this is the likely cause. Grant the permission and retry.
 
 ## Standalone Installation
 
