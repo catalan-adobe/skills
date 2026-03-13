@@ -619,14 +619,16 @@ function cmdStop() {
   }
 
   // Poll for exit, max 5s, then escalate to SIGTERM
+  // Use Atomics.wait for cross-platform synchronous sleep (no POSIX sleep dependency)
+  const sab = new SharedArrayBuffer(4);
+  const i32 = new Int32Array(sab);
   const deadline = Date.now() + 5000;
   while (isAlive(state.pid) && Date.now() < deadline) {
-    // busy-wait in small steps using a synchronous sleep shim
-    execSync('sleep 0.2', { stdio: 'ignore' });
+    Atomics.wait(i32, 0, 0, 200);
   }
   if (isAlive(state.pid)) {
     process.kill(state.pid, 'SIGTERM');
-    execSync('sleep 1', { stdio: 'ignore' });
+    Atomics.wait(i32, 0, 0, 1000);
   }
 
   clearState();
