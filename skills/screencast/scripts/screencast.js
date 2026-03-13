@@ -350,16 +350,207 @@ function cmdListScreens() {
   }
 }
 
-function cmdStart(opts) {
-  json({ message: 'start not yet implemented', opts });
+// ─── State management ─────────────────────────────────────────────────────────
+
+/**
+ * Read recording state from disk.
+ * @param {string} [stateFile]
+ * @returns {object|null}
+ */
+function readState(stateFile = STATE_FILE) {
+  try {
+    return JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write recording state to disk.
+ * @param {object} state
+ * @param {string} [stateFile]
+ */
+function writeState(state, stateFile = STATE_FILE) {
+  fs.writeFileSync(stateFile, JSON.stringify(state), 'utf8');
+}
+
+/**
+ * Remove state file.
+ * @param {string} [stateFile]
+ */
+function clearState(stateFile = STATE_FILE) {
+  try {
+    fs.unlinkSync(stateFile);
+  } catch {
+    // file already gone — that's fine
+  }
+}
+
+/**
+ * Check whether a process is alive by sending signal 0.
+ * @param {number} pid
+ * @returns {boolean}
+ */
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the avfoundation device index for a given screen number.
+ * Returns flags.screen as-is if parsing fails.
+ * @param {number} screenNum
+ * @returns {number}
+ */
+function resolveAvfoundationIndex(screenNum) {
+  try {
+    const devOut = spawnSync('ffmpeg', ['-f', 'avfoundation', '-list_devices', 'true', '-i', ''], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const devText = (devOut.stdout || '') + (devOut.stderr || '');
+    const re = /\[(\d+)\]\s+Capture screen (\d+)/g;
+    let m;
+    const indexMap = {};
+    while ((m = re.exec(devText)) !== null) {
+      indexMap[parseInt(m[2], 10)] = parseInt(m[1], 10);
+    }
+    return indexMap[screenNum] ?? screenNum;
+  } catch {
+    return screenNum;
+  }
+}
+
+function cmdStart(flags) {
+  const { spawn } = require('node:child_process');
+
+  // Refuse if already recording
+  const existing = readState();
+  if (existing && isAlive(existing.pid)) {
+    die(`Already recording (pid ${existing.pid}). Run stop first.`);
+  }
+
+  const { platform, backend, ffmpeg } = detectPlatform();
+  if (!ffmpeg) die('ffmpeg not found. Install via: brew install ffmpeg');
+
+  // Generate output filename if not provided
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const output = flags.output ?? path.join(os.homedir(), `screencast-${ts}.mp4`);
+
+  // Parse region string → object if provided
+  const regionStr = flags.window ? null : (flags.region ?? null);
+
+  // TODO Task 7: resolve window geometry — replaced below in Task 7 implementation
+  let resolvedRegion = regionStr;
+
+  // Resolve avfoundation device index dynamically
+  let screenInput = String(flags.screen);
+  if (backend === 'avfoundation') {
+    screenInput = String(resolveAvfoundationIndex(flags.screen));
+  }
+
+  const ffmpegArgs = buildFfmpegArgs({
+    backend,
+    screenInput,
+    fps: flags.fps,
+    region: resolvedRegion,
+    output,
+    screenSize: '1920x1080', // default; window geometry overrides this
+    display: process.env.DISPLAY ?? ':0.0',
+  });
+
+  // Open log file and spawn ffmpeg detached
+  const logFile = output.replace(/\.mp4$/, '.log');
+  const logFd = fs.openSync(logFile, 'w');
+  const child = spawn('ffmpeg', ffmpegArgs, {
+    detached: true,
+    stdio: ['pipe', logFd, logFd],
+  });
+  child.stdin.end();
+  child.unref();
+
+  const state = {
+    pid: child.pid,
+    output,
+    logFile,
+    started: Date.now(),
+    target: flags.window ? `window:${flags.window}` : `screen:${flags.screen}`,
+  };
+  writeState(state);
+
+  json({ recording: true, pid: child.pid, output, logFile, target: state.target });
 }
 
 function cmdStop() {
-  json({ message: 'stop not yet implemented' });
+  const state = readState();
+  if (!state) die('No recording in progress.');
+  if (!isAlive(state.pid)) {
+    clearState();
+    die('Recording process already dead (state cleared).');
+  }
+
+  const platform = os.platform();
+  if (platform === 'win32') {
+    try {
+      execSync(`taskkill /PID ${state.pid} /F`, { stdio: 'ignore' });
+    } catch {
+      // ignore
+    }
+  } else {
+    process.kill(state.pid, 'SIGINT');
+  }
+
+  // Poll for exit, max 5s, then escalate to SIGTERM
+  const deadline = Date.now() + 5000;
+  while (isAlive(state.pid) && Date.now() < deadline) {
+    // busy-wait in small steps using a synchronous sleep shim
+    execSync('sleep 0.2', { stdio: 'ignore' });
+  }
+  if (isAlive(state.pid)) {
+    process.kill(state.pid, 'SIGTERM');
+    execSync('sleep 1', { stdio: 'ignore' });
+  }
+
+  clearState();
+
+  // Gather file stats
+  let duration = null;
+  let size = null;
+  try {
+    const probe = execSync(
+      `ffprobe -v error -show_entries format=duration -of csv=p=0 "${state.output}"`,
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    duration = parseFloat(probe.trim());
+  } catch {
+    // ffprobe unavailable or file not finalized
+  }
+  try {
+    size = fs.statSync(state.output).size;
+  } catch {
+    // file not found
+  }
+
+  json({ recording: false, output: state.output, duration, size });
 }
 
 function cmdStatus() {
-  json({ message: 'status not yet implemented' });
+  const state = readState();
+  if (!state) {
+    json({ recording: false });
+    return;
+  }
+  if (!isAlive(state.pid)) {
+    clearState();
+    json({ recording: false, stale: true });
+    return;
+  }
+  const elapsed = Math.round((Date.now() - state.started) / 1000);
+  json({ recording: true, pid: state.pid, elapsed, output: state.output, target: state.target });
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -398,5 +589,5 @@ function main() {
 if (require.main === module) {
   main();
 } else {
-  module.exports = { parseArgs, detectPlatform, buildFfmpegArgs };
+  module.exports = { parseArgs, detectPlatform, buildFfmpegArgs, readState, writeState, clearState, isAlive };
 }

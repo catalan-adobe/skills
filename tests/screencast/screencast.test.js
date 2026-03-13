@@ -1,7 +1,10 @@
 'use strict';
 
-const { describe, it, afterEach } = require('node:test');
+const { describe, it, afterEach, before } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const SCRIPT = require.resolve(
   '../../skills/screencast/scripts/screencast.js'
@@ -97,6 +100,47 @@ describe('parseArgs', () => {
     load();
     const result = mod.parseArgs(['node', 'screencast.js', 'status']);
     assert.equal(result.command, 'status');
+  });
+});
+
+// ─── Task 6: State helpers ────────────────────────────────────────────────────
+
+const TEST_STATE = path.join(os.tmpdir(), `screencast-test-${process.pid}.state`);
+
+describe('state helpers', () => {
+  afterEach(() => {
+    // Clean up test state file between tests
+    try { fs.unlinkSync(TEST_STATE); } catch { /* already gone */ }
+    delete require.cache[SCRIPT];
+    mod = null;
+  });
+
+  it('writeState/readState roundtrip', () => {
+    load();
+    const data = { pid: 12345, output: '/tmp/test.mp4', started: 1000, target: 'screen:0' };
+    mod.writeState(data, TEST_STATE);
+    const got = mod.readState(TEST_STATE);
+    assert.deepEqual(got, data);
+  });
+
+  it('readState returns null when file does not exist', () => {
+    load();
+    const result = mod.readState(TEST_STATE);
+    assert.equal(result, null);
+  });
+
+  it('clearState removes the file', () => {
+    load();
+    mod.writeState({ pid: 1 }, TEST_STATE);
+    assert.ok(fs.existsSync(TEST_STATE), 'file should exist after writeState');
+    mod.clearState(TEST_STATE);
+    assert.ok(!fs.existsSync(TEST_STATE), 'file should be gone after clearState');
+  });
+
+  it('clearState is idempotent when file does not exist', () => {
+    load();
+    // Should not throw
+    assert.doesNotThrow(() => mod.clearState(TEST_STATE));
   });
 });
 
