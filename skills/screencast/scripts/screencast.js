@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const { execSync, spawnSync } = require('node:child_process');
+const { execSync, spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -9,7 +9,7 @@ const path = require('node:path');
 const STATE_FILE = path.join(os.homedir(), '.screencast.state');
 
 function die(msg) {
-  console.log(JSON.stringify({ error: msg }));
+  process.stderr.write(JSON.stringify({ error: msg }) + '\n');
   process.exit(1);
 }
 
@@ -23,12 +23,22 @@ function parseArgs(argv) {
   const raw = argv.slice(2);
   for (let i = 0; i < raw.length; i++) {
     switch (raw[i]) {
-      case '--fps':    flags.fps    = parseInt(raw[++i], 10); break;
-      case '--screen': flags.screen = parseInt(raw[++i], 10); break;
+      case '--fps':
+        if (i + 1 >= raw.length) die('--fps requires a value');
+        flags.fps = parseInt(raw[++i], 10);
+        if (Number.isNaN(flags.fps)) die('--fps requires a numeric value');
+        break;
+      case '--screen':
+        if (i + 1 >= raw.length) die('--screen requires a value');
+        flags.screen = parseInt(raw[++i], 10);
+        if (Number.isNaN(flags.screen)) die('--screen requires a numeric value');
+        break;
       case '--region': flags.region = raw[++i]; break;
       case '--window': flags.window = raw[++i]; break;
       case '--output': flags.output = raw[++i]; break;
-      default: positional.push(raw[i]);
+      default:
+        if (raw[i].startsWith('--')) die(`Unknown flag: ${raw[i]}`);
+        positional.push(raw[i]);
     }
   }
   return { command: positional[0], args: positional.slice(1), ...flags };
@@ -68,7 +78,11 @@ function detectPlatform() {
  * @returns {{ x: number, y: number, w: number, h: number }}
  */
 function parseRegion(region) {
-  const [x, y, w, h] = region.split(',').map(Number);
+  const parts = region.split(',').map(Number);
+  if (parts.length !== 4 || parts.some(isNaN)) {
+    throw new Error(`Invalid region "${region}": expected "x,y,width,height"`);
+  }
+  const [x, y, w, h] = parts;
   return { x, y, w, h };
 }
 
@@ -250,6 +264,27 @@ function cmdListWindows() {
   }
 }
 
+function getDisplayInfo() {
+  try {
+    const out = execSync('system_profiler SPDisplaysDataType -json', {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const displays = JSON.parse(out).SPDisplaysDataType?.[0]?.spdisplays_ndrvs ?? [];
+    return displays.map((d) => {
+      const resStr = d['_spdisplays_resolution'] ?? d['spdisplays_resolution'] ?? '';
+      const rm = resStr.match(/(\d+)\s*[xX×]\s*(\d+)/);
+      const isRetina = (d['spdisplays_retina'] ?? '') === 'spdisplays_yes';
+      return {
+        width: rm ? parseInt(rm[1], 10) : null,
+        height: rm ? parseInt(rm[2], 10) : null,
+        scale: isRetina ? 2 : 1,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 function listScreensDarwin() {
   // Get device indices from avfoundation
   const devOut = spawnSync('ffmpeg', ['-f', 'avfoundation', '-list_devices', 'true', '-i', ''], {
@@ -265,27 +300,7 @@ function listScreensDarwin() {
     screens.push({ index: parseInt(m[1], 10), name: `Capture screen ${m[2]}` });
   }
 
-  // Get resolution and Retina scale from system_profiler
-  let displayData = [];
-  try {
-    const spOut = execSync('system_profiler SPDisplaysDataType -json', {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const spJson = JSON.parse(spOut);
-    const displays = spJson.SPDisplaysDataType?.[0]?.spdisplays_ndrvs ?? [];
-    displayData = displays.map((d) => {
-      const resStr = d['_spdisplays_resolution'] ?? d['spdisplays_resolution'] ?? '';
-      const reRes = /(\d+)\s*[xX×]\s*(\d+)/;
-      const rm = resStr.match(reRes);
-      const width = rm ? parseInt(rm[1], 10) : null;
-      const height = rm ? parseInt(rm[2], 10) : null;
-      const isRetina = (d['spdisplays_retina'] ?? '') === 'spdisplays_yes';
-      return { width, height, scale: isRetina ? 2 : 1 };
-    });
-  } catch {
-    // system_profiler failed — continue without resolution
-  }
+  const displayData = getDisplayInfo();
 
   const result = screens.map((s, i) => ({
     index: s.index,
@@ -430,19 +445,8 @@ function resolveWindowGeometry(windowId) {
   const platform = os.platform();
   if (platform === 'darwin') {
     const geo = resolveWindowGeometryDarwin(windowId);
-    // Detect Retina scale: default 2 if system_profiler indicates Retina
-    let scale = 1;
-    try {
-      const spOut = execSync('system_profiler SPDisplaysDataType -json', {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      const spJson = JSON.parse(spOut);
-      const primary = spJson.SPDisplaysDataType?.[0]?.spdisplays_ndrvs?.[0];
-      if (primary && (primary['spdisplays_retina'] ?? '') === 'spdisplays_yes') scale = 2;
-    } catch {
-      // default scale stays 1
-    }
+    const displays = getDisplayInfo();
+    const scale = displays[0]?.scale ?? 1;
     return {
       x: geo.x * scale,
       y: geo.y * scale,
@@ -498,6 +502,16 @@ function clearState(stateFile = STATE_FILE) {
  * @returns {boolean}
  */
 function isAlive(pid) {
+  if (os.platform() === 'win32') {
+    try {
+      const out = execSync(`tasklist /FI "PID eq ${pid}" /NH`, {
+        encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      return out.includes(String(pid));
+    } catch {
+      return false;
+    }
+  }
   try {
     process.kill(pid, 0);
     return true;
@@ -532,8 +546,6 @@ function resolveAvfoundationIndex(screenNum) {
 }
 
 function cmdStart(flags) {
-  const { spawn } = require('node:child_process');
-
   // Refuse if already recording
   const existing = readState();
   if (existing && isAlive(existing.pid)) {
@@ -544,12 +556,21 @@ function cmdStart(flags) {
   if (!ffmpeg) die('ffmpeg not found. Install via: brew install ffmpeg');
 
   // Generate output filename if not provided
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const output = flags.output ?? path.join(os.homedir(), `screencast-${ts}.mp4`);
+  const ts = new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 15);
+  const output = flags.output ?? path.join(process.cwd(), `screencast_${ts}.mp4`);
 
   // Resolve window geometry if --window flag provided
   let resolvedRegion = flags.region ?? null;
   let screenSize = '1920x1080';
+
+  // Auto-detect screen size on Linux to avoid silently cropping non-1080p displays
+  if (backend === 'x11grab' && !flags.window && !flags.region) {
+    try {
+      const xr = execSync('xrandr --query', { encoding: 'utf8' });
+      const m = xr.match(/^(\S+)\s+connected.*?(\d+)x(\d+)\+\d+\+\d+/m);
+      if (m) screenSize = `${m[2]}x${m[3]}`;
+    } catch { /* fallback to 1920x1080 */ }
+  }
 
   if (flags.window) {
     try {
