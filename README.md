@@ -110,6 +110,17 @@ sensible defaults. Pairs with demo-narrate for voice-over.
 
 See [SKILL.md](skills/screencast/SKILL.md) for the full workflow.
 
+### cmux-setup
+
+Manage cmux workspace visual configuration. Automatically colors
+workspaces based on directory-pattern rules using a JSON config and a
+zsh chpwd hook. Supports persistent setup (auto-apply on every cd) and
+on-demand coloring. Most-specific pattern wins.
+
+**Dependencies:** jq, cmux CLI
+
+See [SKILL.md](skills/cmux-setup/SKILL.md) for the full workflow.
+
 ## License
 
 MIT

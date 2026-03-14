@@ -1,6 +1,6 @@
 {
   "name": "catalan-adobe-skills",
-  "description": "Claude Code skills by @catalan-adobe — memory triage, demo narration, AI fluency assessment, screencast (guided screen recording), and more.",
+  "description": "Claude Code skills by @catalan-adobe — memory triage, demo narration, AI fluency assessment, screencast (guided screen recording), cmux-setup (workspace coloring), and more.",
   "owner": {
     "name": "catalan-adobe"
   },
@@ -12,7 +12,7 @@
     {
       "name": "catalan-skills",
       "source": "./",
-      "description": "Memory triage, demo narration, AI fluency, and workflow skills for Claude Code",
+      "description": "Memory triage, demo narration, AI fluency, cmux-setup, and workflow skills for Claude Code",
       "version": "1.0.0",
       "author": {
         "name": "catalan-adobe"
