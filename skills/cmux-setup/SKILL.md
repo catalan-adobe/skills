@@ -133,5 +133,6 @@ Example:
 
 ## Relationship to cmux-demo
 
-`cmux-setup` uses the `cmux-setup` key in sidebar metadata. `cmux-demo`
-uses `demo` and other demo-specific keys. They coexist without conflict.
+`cmux-setup` uses the `status_key` from config (default: `"project"`) in
+sidebar metadata. `cmux-demo` uses demo-specific keys. They coexist
+without conflict.
