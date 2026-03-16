@@ -6,12 +6,12 @@ import CoreGraphics
 let args = CommandLine.arguments
 guard args.count >= 3, args[1] == "--mode" else {
     fputs("Usage: screencast-picker --mode window|region\n", stderr)
-    exit(1)
+    exit(4)
 }
 let mode = args[2]
 guard mode == "window" || mode == "region" else {
     fputs("Invalid mode: \(mode). Use 'window' or 'region'.\n", stderr)
-    exit(1)
+    exit(4)
 }
 
 let app = NSApplication.shared

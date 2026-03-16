@@ -335,11 +335,10 @@ describe('compilePicker', () => {
     mod = null;
   });
 
-  it('returns error when not on macOS', () => {
+  it('returns error when not on macOS', function () {
+    if (os.platform() === 'darwin') { this.skip(); return; }
     load();
-    if (os.platform() !== 'darwin') {
-      assert.throws(() => mod.compilePicker(FAKE_SOURCE, CACHE_DIR), /macOS/);
-    }
+    assert.throws(() => mod.compilePicker(FAKE_SOURCE, CACHE_DIR), /macOS/);
   });
 
   it('throws when source file does not exist', function () {

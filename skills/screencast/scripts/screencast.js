@@ -596,13 +596,16 @@ function compilePicker(sourceFile, cacheDir) {
     '-framework', 'AppKit', '-framework', 'CoreGraphics',
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
 
+  if (result.error?.code === 'ENOENT') {
+    throw new Error(
+      'Xcode Command Line Tools required. Run: xcode-select --install'
+    );
+  }
+  if (result.error) {
+    throw new Error(`Failed to compile picker: ${result.error.message}`);
+  }
   if (result.status !== 0) {
     const stderr = (result.stderr || '').trim();
-    if (stderr.includes('xcrun') || result.error) {
-      throw new Error(
-        'Xcode Command Line Tools required. Run: xcode-select --install'
-      );
-    }
     throw new Error(`Failed to compile picker: ${stderr}`);
   }
 
@@ -631,8 +634,19 @@ function runPicker(pickerMode) {
     timeout: 70000, // 10s buffer beyond the 60s picker timeout
   });
 
+  if (result.error) {
+    die(result.error.code === 'ETIMEDOUT'
+      ? 'Picker timed out'
+      : `Picker failed: ${result.error.message}`);
+  }
+
   if (result.status === 0) {
-    const output = JSON.parse(result.stdout.trim());
+    let output;
+    try {
+      output = JSON.parse(result.stdout.trim());
+    } catch {
+      die(`Picker returned invalid output: ${(result.stdout || '').slice(0, 200)}`);
+    }
     json(output);
   } else if (result.status === 1) {
     json({ cancelled: true });
