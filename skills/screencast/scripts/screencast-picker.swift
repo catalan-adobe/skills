@@ -110,6 +110,10 @@ class WindowPickerView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .crosshair)
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let existing = trackingArea { removeTrackingArea(existing) }
@@ -195,6 +199,10 @@ class RegionPickerView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .crosshair)
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -311,7 +319,7 @@ if mode == "window" {
 window.contentView = contentView
 window.makeKeyAndOrderFront(nil)
 window.makeFirstResponder(contentView)
-NSCursor.crosshair.set()
+window.invalidateCursorRects(for: contentView)
 
 DispatchQueue.main.asyncAfter(deadline: .now() + 60) { exit(2) }
 
