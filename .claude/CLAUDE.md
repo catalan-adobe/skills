@@ -54,6 +54,6 @@ Recommended workflow:
 | `gemini-icon-set` | Generate colorful icon sets using Google Imagen 4 |
 | `video-digest` | Multimodal video summarization with timestamped YouTube links |
 | `cdp-connect` | Connect to existing Chrome browser via CDP |
-| `screencast` | Guided screen recording with ffmpeg |
+| `screencast` | Guided screen recording with ffmpeg; macOS interactive window/region selection |
 | `cmux-demo` | Scripted cmux terminal demos with multi-pane layouts |
 | `cmux-setup` | Manage cmux workspace colors via directory-pattern rules |
