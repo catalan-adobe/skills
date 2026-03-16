@@ -28,11 +28,14 @@ screencast.js  ──compile if needed──>  screencast-picker (binary)
 
 ### Shared Behavior (both modes)
 
-- Creates a borderless, transparent, fullscreen `NSWindow` at a high window level
+- Creates a borderless, transparent, fullscreen `NSWindow` covering the primary display at level `.screenSaver` (1000) — high enough to sit above app windows and floating panels, but below system-critical UI like force-quit dialogs
+- Requires an `NSWindow` subclass that overrides `canBecomeKey` to return `true` — borderless windows return `false` by default, which silently drops keyboard events
+- Registers an `NSTrackingArea` with `.mouseMoved` and `.activeAlways` on the content view to receive mouse move events (not delivered by default)
 - Sets cursor to crosshair (`NSCursor.crosshair`)
 - Escape key cancels: exits with code 1, no stdout output
 - Click/release outputs JSON to stdout, exits with code 0
-- No menu bar, no dock icon (`LSUIElement`-style via `NSApplication.setActivationPolicy(.accessory)`)
+- No menu bar, no dock icon (`NSApplication.setActivationPolicy(.accessory)`)
+- 60-second inactivity timeout — if no click/drag/escape within 60s, the picker exits with code 2 and `screencast.js` outputs `{error: "Picker timed out"}`
 
 ### Window Mode (`--mode window`)
 
@@ -52,7 +55,21 @@ screencast.js  ──compile if needed──>  screencast-picker (binary)
 
 ### Coordinate Space
 
-All coordinates output in screen points (not physical pixels). `screencast.js` already handles Retina scaling by multiplying by the display's scale factor in `resolveWindowGeometry()`. The same scaling applies to picker output.
+macOS uses two coordinate systems that the picker must bridge:
+
+- **CoreGraphics (CG)**: Origin at top-left of primary display. Used by `CGWindowListCopyWindowInfo` for window bounds.
+- **AppKit**: Origin at bottom-left of primary display. Used by `NSWindow`/`NSView` for drawing.
+
+The picker must convert CG Y-coordinates to AppKit for overlay drawing:
+```
+appkitY = primaryScreenHeight - cgY - windowHeight
+```
+
+**Output coordinates** are in CG screen points (top-left origin) — this matches what ffmpeg and the existing `screencast.js` expect. All values are integers (CG returns `CGFloat`, picker truncates via `Int()`).
+
+**Multi-monitor**: v1 covers the primary display only. The overlay spans `NSScreen.main` and ignores windows on secondary displays. This is documented as a known limitation.
+
+`screencast.js` already handles Retina scaling by multiplying by the display's scale factor in `resolveWindowGeometry()`. The same scaling applies to picker output.
 
 ## screencast.js Changes
 
@@ -68,7 +85,7 @@ function compilePicker():
     return binaryPath
 
   create cacheDir if needed
-  run: swiftc -O -o binaryPath sourceFile -framework AppKit -framework CoreGraphics
+  run: xcrun swiftc -O -o binaryPath sourceFile -framework AppKit -framework CoreGraphics
   if swiftc fails: throw with error message
   return binaryPath
 ```
@@ -140,10 +157,11 @@ If not macOS:
 | Scenario | Behavior |
 |----------|----------|
 | Not macOS | `{error: "Interactive selection is only available on macOS"}`, exit 1 |
-| `swiftc` not found | `{error: "Xcode Command Line Tools required. Run: xcode-select --install"}`, exit 1 |
+| `xcrun swiftc` not found | `{error: "Xcode Command Line Tools required. Run: xcode-select --install"}`, exit 1 |
 | Compilation fails | `{error: "Failed to compile picker: <swiftc stderr>"}`, exit 1 |
 | User presses Escape | Exit 1, no stdout. `screencast.js` outputs `{cancelled: true}` |
-| Screen recording permission denied | Swift helper may fail silently on `CGWindowListCopyWindowInfo` — if zero windows returned, output `{error: "No windows found. Check System Settings > Privacy > Screen Recording."}` |
+| Picker timeout (60s) | Exit 2. `screencast.js` outputs `{error: "Picker timed out"}` |
+| Screen recording permission denied | `CGWindowListCopyWindowInfo` returns entries with redacted metadata (null titles, zeroed bounds) rather than an empty list. Detect by checking if all returned windows have zero-size bounds — if so, output `{error: "Screen recording permission required. Check System Settings > Privacy & Security > Screen & System Audio Recording."}` |
 
 ## Files Changed
 
@@ -153,8 +171,14 @@ If not macOS:
 | `skills/screencast/scripts/screencast.js` | Add `compilePicker()`, `cmdPickWindow()`, `cmdPickRegion()` |
 | `skills/screencast/SKILL.md` | Platform Features section, updated workflow |
 
+## Known Limitations (v1)
+
+- **Primary display only** — picker overlay covers `NSScreen.main`. Windows on secondary monitors are not selectable. Multi-monitor support is a future enhancement.
+- **Sync script copies `.swift` source** — `scripts/sync-skills.sh` copies all files from `skills/<name>/scripts/` to `~/.local/bin/`. The `.swift` source file will be copied there too. This is benign (not executable without `swiftc`) and not worth adding a glob filter for one file.
+
 ## Out of Scope
 
 - Background window capture (ScreenCaptureKit) — separate future enhancement
+- Multi-monitor support — secondary display selection
 - Linux/Windows interactive selection — no equivalent native UI without heavy deps
 - Audio capture during selection
