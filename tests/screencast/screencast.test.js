@@ -318,3 +318,64 @@ describe('buildFfmpegArgs', () => {
     assert.ok(args.includes('23'), 'should use crf 23');
   });
 });
+
+// ─── Task: compilePicker ─────────────────────────────────────────────────────
+
+describe('compilePicker', () => {
+  const CACHE_DIR = path.join(os.tmpdir(), `screencast-picker-test-${process.pid}`);
+  const FAKE_SOURCE = path.join(os.tmpdir(), `screencast-picker-test-${process.pid}.swift`);
+
+  before(() => {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    fs.writeFileSync(FAKE_SOURCE, '// fake swift source\n');
+  });
+
+  afterEach(() => {
+    delete require.cache[SCRIPT];
+    mod = null;
+  });
+
+  it('returns error when not on macOS', function () {
+    if (os.platform() === 'darwin') { this.skip(); return; }
+    load();
+    assert.throws(() => mod.compilePicker(FAKE_SOURCE, CACHE_DIR), /macOS/);
+  });
+
+  it('throws when source file does not exist', function () {
+    if (os.platform() !== 'darwin') { this.skip(); return; }
+    load();
+    assert.throws(
+      () => mod.compilePicker('/tmp/nonexistent-picker.swift', CACHE_DIR),
+      /ENOENT|not found|No such file/
+    );
+  });
+
+  it('returns binary path after compilation on macOS', function () {
+    if (os.platform() !== 'darwin') { this.skip(); return; }
+    load();
+    const result = mod.compilePicker(
+      path.resolve(__dirname, '../../skills/screencast/scripts/screencast-picker.swift'),
+      CACHE_DIR
+    );
+    assert.ok(result.endsWith('screencast-picker'), `expected binary path, got: ${result}`);
+    assert.ok(fs.existsSync(result), 'binary should exist after compilation');
+  });
+
+  it('skips recompilation when binary is newer than source', function () {
+    if (os.platform() !== 'darwin') { this.skip(); return; }
+    load();
+    // First compile
+    const binaryPath = mod.compilePicker(
+      path.resolve(__dirname, '../../skills/screencast/scripts/screencast-picker.swift'),
+      CACHE_DIR
+    );
+    const stat1 = fs.statSync(binaryPath);
+    // Second compile (should skip)
+    const binaryPath2 = mod.compilePicker(
+      path.resolve(__dirname, '../../skills/screencast/scripts/screencast-picker.swift'),
+      CACHE_DIR
+    );
+    const stat2 = fs.statSync(binaryPath2);
+    assert.equal(stat1.mtimeMs, stat2.mtimeMs, 'binary mtime should not change');
+  });
+});

@@ -50,6 +50,8 @@ node "$SCREENCAST_JS" list-windows                          # List open windows 
 node "$SCREENCAST_JS" start [flags]                         # Start recording
 node "$SCREENCAST_JS" stop                                  # Stop recording
 node "$SCREENCAST_JS" status                                # Check if recording
+node "$SCREENCAST_JS" pick-window                          # macOS: click to select a window
+node "$SCREENCAST_JS" pick-region                          # macOS: drag to select a region
 ```
 
 Start flags:
@@ -60,6 +62,21 @@ Start flags:
 - `--output <path>` — output file (default: `screencast_<timestamp>.mp4`)
 
 All commands return JSON output.
+
+## Platform Features (macOS only)
+
+On macOS, two additional commands provide interactive selection:
+
+- `pick-window` — Click on any window to select it. Shows a blue
+  highlight on hover. Returns JSON with `{id, app, title, x, y, w, h}`.
+- `pick-region` — Drag a rectangle on screen to select a capture
+  area. Shows dimensions while dragging. Returns JSON with `{x, y, w, h}`.
+
+Both require Xcode Command Line Tools (`xcode-select --install`).
+The Swift helper compiles on first use (~1s) and is cached at
+`~/.cache/screencast/screencast-picker` for subsequent runs.
+
+Press Escape to cancel either picker. Returns `{cancelled: true}`.
 
 ## Workflow
 
@@ -76,6 +93,26 @@ If ffmpeg is missing, tell the user:
 - Windows: `winget install ffmpeg` or download from ffmpeg.org
 
 ### Step 2: Choose What to Record
+
+Check platform from the `deps` output.
+
+**On macOS**, offer interactive selection first:
+
+> "You're on macOS — I can let you **click on a window** or
+> **drag a region** to select what to record. Or you can pick
+> from a list / type coordinates. Which do you prefer?"
+
+If the user chooses interactive:
+```bash
+node "$SCREENCAST_JS" pick-window
+# or
+node "$SCREENCAST_JS" pick-region
+```
+
+Use the returned `id` with `--window`, or `x,y,w,h` with `--region`.
+If the picker returns `{cancelled: true}`, ask what they'd like to do instead.
+
+**On all platforms** (or if the user prefers manual selection):
 
 Ask the user what they want to record. Three options:
 
