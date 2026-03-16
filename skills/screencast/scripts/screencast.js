@@ -609,6 +609,52 @@ function compilePicker(sourceFile, cacheDir) {
   return binary;
 }
 
+/**
+ * Run the picker in the given mode and map exit codes to JSON.
+ * @param {'window'|'region'} pickerMode
+ */
+function runPicker(pickerMode) {
+  if (os.platform() !== 'darwin') {
+    die('Interactive selection is only available on macOS');
+  }
+
+  let binary;
+  try {
+    binary = compilePicker();
+  } catch (err) {
+    die(err.message);
+  }
+
+  const result = spawnSync(binary, ['--mode', pickerMode], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 70000, // 10s buffer beyond the 60s picker timeout
+  });
+
+  if (result.status === 0) {
+    const output = JSON.parse(result.stdout.trim());
+    json(output);
+  } else if (result.status === 1) {
+    json({ cancelled: true });
+  } else if (result.status === 2) {
+    die('Picker timed out');
+  } else if (result.status === 3) {
+    die('Screen recording permission required. '
+      + 'Check System Settings > Privacy & Security > Screen & System Audio Recording.');
+  } else {
+    const stderr = (result.stderr || '').trim();
+    die(`Picker failed (exit ${result.status}): ${stderr}`);
+  }
+}
+
+function cmdPickWindow() {
+  runPicker('window');
+}
+
+function cmdPickRegion() {
+  runPicker('region');
+}
+
 function cmdStart(flags) {
   // Refuse if already recording
   const existing = readState();
@@ -763,6 +809,8 @@ function main() {
     case 'deps':         cmdDeps(); break;
     case 'list-windows': cmdListWindows(); break;
     case 'list-screens': cmdListScreens(); break;
+    case 'pick-window':  cmdPickWindow(); break;
+    case 'pick-region':  cmdPickRegion(); break;
     case 'start':        cmdStart(opts); break;
     case 'stop':         cmdStop(); break;
     case 'status':       cmdStatus(); break;
@@ -782,6 +830,8 @@ function main() {
         '    --output PATH    Output file (default: auto-named .mp4)',
         '  stop                           Stop recording',
         '  status                         Show recording status',
+        '  pick-window                     Click to select a window (macOS only)',
+        '  pick-region                     Drag to select a region (macOS only)',
       ].join('\n') + '\n');
       process.exit(opts.command ? 1 : 0);
   }
