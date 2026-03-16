@@ -545,6 +545,70 @@ function resolveAvfoundationIndex(screenNum) {
   }
 }
 
+// ─── Interactive picker (macOS only) ─────────────────────────────────────────
+
+/**
+ * Locate the Swift picker source file.
+ * @returns {string}
+ */
+function findPickerSource() {
+  const candidates = [
+    process.env.CLAUDE_SKILL_DIR
+      ? path.join(process.env.CLAUDE_SKILL_DIR, 'scripts', 'screencast-picker.swift')
+      : null,
+    path.join(__dirname, 'screencast-picker.swift'),
+  ].filter(Boolean);
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  throw new Error(
+    'screencast-picker.swift not found. Expected in same directory as screencast.js.'
+  );
+}
+
+/**
+ * Compile the Swift picker if needed. Returns path to binary.
+ * @param {string} [sourceFile] - Override source path (for testing)
+ * @param {string} [cacheDir] - Override cache directory (for testing)
+ * @returns {string}
+ */
+function compilePicker(sourceFile, cacheDir) {
+  if (os.platform() !== 'darwin') {
+    throw new Error('Interactive selection is only available on macOS');
+  }
+
+  const source = sourceFile ?? findPickerSource();
+  const cache = cacheDir ?? path.join(os.homedir(), '.cache', 'screencast');
+  const binary = path.join(cache, 'screencast-picker');
+
+  // Skip if binary exists and is newer than source
+  if (fs.existsSync(binary)) {
+    const srcStat = fs.statSync(source);
+    const binStat = fs.statSync(binary);
+    if (binStat.mtimeMs >= srcStat.mtimeMs) return binary;
+  }
+
+  fs.mkdirSync(cache, { recursive: true });
+
+  const result = spawnSync('xcrun', [
+    'swiftc', '-O', '-o', binary, source,
+    '-framework', 'AppKit', '-framework', 'CoreGraphics',
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
+
+  if (result.status !== 0) {
+    const stderr = (result.stderr || '').trim();
+    if (stderr.includes('xcrun') || result.error) {
+      throw new Error(
+        'Xcode Command Line Tools required. Run: xcode-select --install'
+      );
+    }
+    throw new Error(`Failed to compile picker: ${stderr}`);
+  }
+
+  return binary;
+}
+
 function cmdStart(flags) {
   // Refuse if already recording
   const existing = readState();
@@ -729,6 +793,6 @@ if (require.main === module) {
   module.exports = {
     parseArgs, detectPlatform, buildFfmpegArgs,
     readState, writeState, clearState, isAlive,
-    resolveWindowGeometry,
+    resolveWindowGeometry, compilePicker,
   };
 }
