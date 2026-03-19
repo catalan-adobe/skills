@@ -121,6 +121,20 @@ on-demand coloring. Most-specific pattern wins.
 
 See [SKILL.md](skills/cmux-setup/SKILL.md) for the full workflow.
 
+### page-prep
+
+Prepare webpages for clean interaction by detecting and removing disruptive
+overlays (cookie banners, GDPR consent, modals, popups, paywalls). Uses a
+cached database of 300+ known CMPs (Consent-O-Matic + EasyList) combined
+with heuristic DOM scanning to produce portable JS recipes for any browser
+tool (Playwright, CDP, cmux-browser). Supports both CSS hide (for screenshots)
+and interactive dismiss (for automation) modes, plus MutationObserver watch
+mode for long sessions.
+
+**Dependencies:** Node 22+
+
+See [SKILL.md](skills/page-prep/SKILL.md) for the full workflow.
+
 ## License
 
 MIT
