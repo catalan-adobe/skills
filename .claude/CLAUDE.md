@@ -57,3 +57,4 @@ Recommended workflow:
 | `screencast` | Guided screen recording with ffmpeg; macOS interactive window/region selection |
 | `cmux-demo` | Scripted cmux terminal demos with multi-pane layouts |
 | `cmux-setup` | Manage cmux workspace colors via directory-pattern rules |
+| `page-prep` | Detect and remove webpage overlays for clean interaction |

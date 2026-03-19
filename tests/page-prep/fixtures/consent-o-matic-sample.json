@@ -1,0 +1,14 @@
+{
+  "onetrust": {
+    "detectors": [{ "presentMatcher": [{ "type": "css", "target": { "selector": "#onetrust-consent-sdk" }, "displayFilter": true }], "showingMatcher": [{ "type": "css", "target": { "selector": "#onetrust-banner-sdk" }, "displayFilter": true }] }],
+    "methods": [{ "HIDE_CMP": [{ "type": "hide", "target": { "selector": "#onetrust-consent-sdk" } }, { "type": "hide", "target": { "selector": "#onetrust-banner-sdk" } }], "DO_CONSENT": [{ "type": "click", "target": { "selector": "#onetrust-accept-btn-handler" } }], "SAVE_CONSENT": [] }]
+  },
+  "cookiebot": {
+    "detectors": [{ "presentMatcher": [{ "type": "css", "target": { "selector": "#CybotCookiebotDialog" } }], "showingMatcher": [{ "type": "css", "target": { "selector": "#CybotCookiebotDialog" }, "displayFilter": true }] }],
+    "methods": [{ "HIDE_CMP": [{ "type": "hide", "target": { "selector": "#CybotCookiebotDialog" } }, { "type": "hide", "target": { "selector": "#CybotCookiebotDialogBodyUnderlay" } }], "DO_CONSENT": [{ "type": "click", "target": { "selector": "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll" } }], "SAVE_CONSENT": [{ "type": "wait", "waitTime": 500 }] }]
+  },
+  "text-filter-cmp": {
+    "detectors": [{ "presentMatcher": [{ "type": "css", "target": { "selector": ".consent-dialog" }, "textFilter": ["Accept cookies", "cookie policy"] }], "showingMatcher": [] }],
+    "methods": [{ "HIDE_CMP": [{ "type": "hide", "target": { "selector": ".consent-dialog" } }], "DO_CONSENT": [], "SAVE_CONSENT": [] }]
+  }
+}
