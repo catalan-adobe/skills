@@ -61,12 +61,13 @@ const SIGNAL_WEIGHTS = {
   'has-backdrop': 0.15,
   'keyword-match': 0.15,
   'generic-selector-match': 0.10,
+  'scroll-lock-boost': 0.15,
 };
 
 const OVERLAY_KEYWORDS = /cookie|consent|gdpr|modal|popup|newsletter|subscribe|paywall/i;
 const CONFIDENCE_THRESHOLD = 0.30;
 
-function scoreElement(el, computedStyle, viewport, genericSelectors) {
+function scoreElement(el, computedStyle, viewport, genericSelectors, scrollLocked) {
   const signals = [];
   let confidence = 0;
 
@@ -91,9 +92,15 @@ function scoreElement(el, computedStyle, viewport, genericSelectors) {
   }
 
   const text = `${el.id} ${el.className}`;
-  if (OVERLAY_KEYWORDS.test(text)) {
+  const hasKeyword = OVERLAY_KEYWORDS.test(text);
+  if (hasKeyword) {
     signals.push('keyword-match');
     confidence += SIGNAL_WEIGHTS['keyword-match'];
+  }
+
+  if (scrollLocked && hasKeyword) {
+    signals.push('scroll-lock-boost');
+    confidence += SIGNAL_WEIGHTS['scroll-lock-boost'];
   }
 
   const BATCH = 50;
@@ -118,7 +125,7 @@ function buildSelector(el) {
   return cls ? `${tag}.${cls}` : tag;
 }
 
-function heuristicScan(doc, genericSelectors, knownSelectors) {
+function heuristicScan(doc, genericSelectors, knownSelectors, scrollLocked) {
   const results = [];
   if (typeof doc.querySelectorAll !== 'function') return results;
 
@@ -140,7 +147,7 @@ function heuristicScan(doc, genericSelectors, knownSelectors) {
     const sel = buildSelector(el);
     if (knownSelectors.has(sel)) continue;
 
-    const { confidence, signals } = scoreElement(el, style, viewport, genericSelectors);
+    const { confidence, signals } = scoreElement(el, style, viewport, genericSelectors, scrollLocked);
     if (confidence < CONFIDENCE_THRESHOLD) continue;
 
     results.push({
@@ -163,8 +170,8 @@ function heuristicScan(doc, genericSelectors, knownSelectors) {
 function detect(patterns, doc) {
   const known = matchKnownPatterns(patterns.cmps || {}, doc);
   const knownSelectors = new Set(known.map((o) => o.selector));
-  const heuristic = heuristicScan(doc, patterns.generic_selectors || [], knownSelectors);
   const scrollLock = detectScrollLock(doc);
+  const heuristic = heuristicScan(doc, patterns.generic_selectors || [], knownSelectors, scrollLock.scroll_locked);
 
   const all = [...known, ...heuristic];
   all.forEach((o, i) => { o.id = `overlay-${i}`; });

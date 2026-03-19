@@ -91,6 +91,30 @@ describe('normalizeCmpRules', () => {
     assert.ok(result.partial_coverage_cmps.includes('text-filter-cmp'));
   });
 
+  it('filters out bare HTML tag selectors from detect', () => {
+    const mod = load();
+    const rules = {
+      'trustarcframe': {
+        detectors: [{ presentMatcher: { type: 'css', target: { selector: 'title' } }, showingMatcher: { type: 'css', target: { selector: 'iframe' } } }],
+        methods: [{ HIDE_CMP: [], DO_CONSENT: [], SAVE_CONSENT: [] }],
+      },
+    };
+    const result = mod.normalizeCmpRules(rules);
+    assert.equal(result.cmps.trustarcframe, undefined);
+  });
+
+  it('keeps selectors with IDs or classes alongside bare tags', () => {
+    const mod = load();
+    const rules = {
+      'mixed': {
+        detectors: [{ presentMatcher: [{ type: 'css', target: { selector: 'div' } }, { type: 'css', target: { selector: '#real-consent' } }], showingMatcher: [] }],
+        methods: [{ HIDE_CMP: [{ type: 'hide', target: { selector: '#real-consent' } }], DO_CONSENT: [], SAVE_CONSENT: [] }],
+      },
+    };
+    const result = mod.normalizeCmpRules(rules);
+    assert.deepEqual(result.cmps.mixed.detect, ['#real-consent']);
+  });
+
   it('handles CMP with empty DO_CONSENT', () => {
     const mod = load();
     const fixture = require('./fixtures/consent-o-matic-sample.json');

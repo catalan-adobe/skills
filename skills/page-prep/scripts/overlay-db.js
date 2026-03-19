@@ -39,12 +39,16 @@ function toArray(val) {
   return Array.isArray(val) ? val : [val];
 }
 
+const BARE_TAG_RE = /^[a-z][a-z0-9]*$/i;
+
 function extractSelectors(matchers) {
   const selectors = [];
   let requiresVisible = false;
   for (const matcher of toArray(matchers)) {
     if (matcher.type === 'css' && matcher.target?.selector) {
-      selectors.push(matcher.target.selector);
+      const sel = matcher.target.selector;
+      if (BARE_TAG_RE.test(sel)) continue;
+      selectors.push(sel);
       if (matcher.displayFilter) requiresVisible = true;
     }
   }

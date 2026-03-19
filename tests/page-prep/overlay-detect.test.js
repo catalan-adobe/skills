@@ -90,6 +90,43 @@ describe('scoreElement', () => {
     assert.ok(result.signals.includes('keyword-match'));
   });
 
+  it('boosts confidence when scroll is locked and element has consent keywords', () => {
+    const mod = load();
+    const mockEl = {
+      id: '',
+      className: 'gdpr-lmd-wall',
+      tagName: 'DIV',
+      getAttribute: () => null,
+      matches: () => false,
+      getBoundingClientRect: () => ({ width: 1024, height: 300, top: 468, left: 0 }),
+    };
+    const mockStyle = { position: 'fixed', zIndex: '9999' };
+    const viewport = { width: 1024, height: 768 };
+    // Without scroll lock: high-z-index (0.15) + keyword-match (0.15) = 0.30
+    const noBoost = mod.scoreElement(mockEl, mockStyle, viewport, [], false);
+    assert.equal(noBoost.confidence, 0.3);
+    // With scroll lock: same signals + scroll-lock-boost (0.15) = 0.45
+    const boosted = mod.scoreElement(mockEl, mockStyle, viewport, [], true);
+    assert.ok(boosted.confidence >= 0.40);
+    assert.ok(boosted.signals.includes('scroll-lock-boost'));
+  });
+
+  it('does not boost scroll-lock for elements without consent keywords', () => {
+    const mod = load();
+    const mockEl = {
+      id: 'toolbar',
+      className: 'floating-toolbar',
+      tagName: 'DIV',
+      getAttribute: () => null,
+      matches: () => false,
+      getBoundingClientRect: () => ({ width: 300, height: 50, top: 0, left: 0 }),
+    };
+    const mockStyle = { position: 'fixed', zIndex: '9999' };
+    const viewport = { width: 1024, height: 768 };
+    const result = mod.scoreElement(mockEl, mockStyle, viewport, [], true);
+    assert.ok(!result.signals.includes('scroll-lock-boost'));
+  });
+
   it('returns confidence below threshold for normal fixed element (e.g. navbar)', () => {
     const mod = load();
     const mockEl = {
