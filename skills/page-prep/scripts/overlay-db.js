@@ -34,10 +34,15 @@ function parseAbpHideRules(text) {
 
 // --- Consent-O-Matic Normalization ---
 
+function toArray(val) {
+  if (val == null) return [];
+  return Array.isArray(val) ? val : [val];
+}
+
 function extractSelectors(matchers) {
   const selectors = [];
   let requiresVisible = false;
-  for (const matcher of matchers ?? []) {
+  for (const matcher of toArray(matchers)) {
     if (matcher.type === 'css' && matcher.target?.selector) {
       selectors.push(matcher.target.selector);
       if (matcher.displayFilter) requiresVisible = true;
@@ -48,7 +53,7 @@ function extractSelectors(matchers) {
 
 function extractHideSelectors(hideActions) {
   const rules = [];
-  for (const action of hideActions ?? []) {
+  for (const action of toArray(hideActions)) {
     if (action.type === 'hide' && action.target?.selector) {
       rules.push(`${action.target.selector} { display:none!important }`);
     }
@@ -58,12 +63,12 @@ function extractHideSelectors(hideActions) {
 
 function extractDismissActions(doConsent, saveConsent) {
   const actions = [];
-  for (const action of doConsent ?? []) {
+  for (const action of toArray(doConsent)) {
     if (action.type === 'click' && action.target?.selector) {
       actions.push({ action: 'click', selector: action.target.selector });
     }
   }
-  for (const action of saveConsent ?? []) {
+  for (const action of toArray(saveConsent)) {
     if (action.type === 'wait' && action.waitTime) {
       actions.push({ action: 'wait', ms: action.waitTime });
     }
@@ -75,7 +80,7 @@ function extractDismissActions(doConsent, saveConsent) {
 }
 
 function hasDroppedFilters(matchers) {
-  return (matchers ?? []).some(
+  return toArray(matchers).some(
     (m) => (m.textFilter && m.textFilter.length > 0) || m.childFilter
   );
 }
@@ -145,8 +150,8 @@ function buildBundle(patterns, detectScriptSource) {
 
 // --- Fetch URLs ---
 
-const CONSENT_O_MATIC_RULES = 'https://raw.githubusercontent.com/AuxGrep/AuxGrep-Consent-O-Matic/refs/heads/master/Rules.json';
-const EASYLIST_COOKIE_HIDE = 'https://raw.githubusercontent.com/AuxGrep/AuxGrep-easylist/refs/heads/master/easylist_cookie/easylist_cookie_general_hide.txt';
+const CONSENT_O_MATIC_RULES = 'https://raw.githubusercontent.com/cavi-au/Consent-O-Matic/master/Rules.json';
+const EASYLIST_COOKIE_HIDE = 'https://raw.githubusercontent.com/easylist/easylist/master/easylist_cookie/easylist_cookie_general_hide.txt';
 
 async function fetchConsentOMatic() {
   const res = await fetch(CONSENT_O_MATIC_RULES);
