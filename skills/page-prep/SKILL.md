@@ -111,23 +111,38 @@ manifest (see Recipe Manifest Format). Include the global `scroll_fix` if
 
 ### Step 9 — Verify the page is clean
 
-Take a snapshot (accessibility tree or screenshot) and inspect the result.
 The detection script catches known CMPs and common heuristic patterns, but
 it will miss overlays that don't fit those signals — third-party login
-prompts (Google One Tap, Apple Sign In), custom-built modals, iframes with
-their own UI, or elements injected after the initial scan.
+prompts (Google One Tap, Apple Sign In), custom-built modals, iframes, or
+elements injected after the initial scan. Accessibility tree snapshots also
+miss iframes and elements outside the main document tree.
 
-If the page still has something blocking content or interaction:
+Run this check to find remaining blockers:
 
-1. Identify the element from the snapshot (look for `position: fixed`,
-   high `z-index`, iframes, or modal-like structure).
-2. Compose a removal recipe: `document.querySelector('<selector>')?.remove()`
-   or click a dismiss button if one exists.
-3. Apply and re-verify.
+```js
+JSON.stringify([...document.querySelectorAll('*')].filter(el => {
+  var s = getComputedStyle(el);
+  return s.position === 'fixed' && parseInt(s.zIndex, 10) > 1000
+    && (el.offsetWidth > 100 || el.offsetHeight > 100);
+}).map(el => {
+  var s = getComputedStyle(el);
+  return { tag: el.tagName, id: el.id, cls: (el.className || '').slice(0, 50),
+    z: s.zIndex, w: el.offsetWidth, h: el.offsetHeight };
+}))
+```
 
-Repeat until the page is clean. This verification loop is the agent's value
-over the heuristic script alone — the script handles the 80% of known
-patterns fast, the agent handles the 20% that requires judgment.
+Evaluate this via the browser tool. It returns all visible `position:fixed`
+elements with `z-index > 1000` and non-trivial dimensions. Ignore
+legitimate elements (navigation bars, toolbars) and remove the rest:
+
+1. For each suspicious element, evaluate
+   `document.querySelector('<selector>')?.remove()`.
+2. Re-run the check.
+3. Repeat until only legitimate page elements remain.
+
+This verification loop is the agent's value over the heuristic script
+alone — the script handles the 80% of known patterns fast, the agent
+handles the 20% that requires judgment.
 
 ### Step 10 — Optionally inject watch mode
 
