@@ -58,10 +58,10 @@ const SIGNAL_WEIGHTS = {
   'high-z-index': 0.15,
   'viewport-cover': 0.25,
   'aria-modal': 0.20,
-  'has-backdrop': 0.15,
   'keyword-match': 0.15,
   'generic-selector-match': 0.10,
   'scroll-lock-boost': 0.15,
+  // v2: 'has-backdrop' — detect semi-transparent siblings covering viewport
 };
 
 const OVERLAY_KEYWORDS = /cookie|consent|gdpr|modal|popup|newsletter|subscribe|paywall/i;
@@ -119,10 +119,11 @@ function scoreElement(el, computedStyle, viewport, genericSelectors, scrollLocke
 }
 
 function buildSelector(el) {
-  if (el.id) return `#${el.id}`;
+  const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape : (s) => s;
+  if (el.id) return `#${esc(el.id)}`;
   const tag = el.tagName.toLowerCase();
   const cls = el.className?.split?.(' ')?.filter(Boolean)?.[0];
-  return cls ? `${tag}.${cls}` : tag;
+  return cls ? `${tag}.${esc(cls)}` : tag;
 }
 
 function heuristicScan(doc, genericSelectors, knownSelectors, scrollLocked) {
@@ -189,5 +190,13 @@ function detect(patterns, doc) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { matchKnownPatterns, scoreElement, heuristicScan, detectScrollLock, detect };
 } else {
+  window.__pagePrepScan = function() {
+    return heuristicScan(
+      document,
+      PATTERNS.generic_selectors || [],
+      new Set(),
+      detectScrollLock(document).scroll_locked
+    );
+  };
   return detect(PATTERNS, document);
 }

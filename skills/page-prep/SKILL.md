@@ -62,7 +62,7 @@ node "$PAGE_PREP_DIR/overlay-db.js" refresh
 
 Downloads and merges Consent-O-Matic rules + EasyList cookie filters into a
 local cache (`~/.cache/page-prep/`). Skips network fetch if cache is less than
-24 hours old. Run with `--force` to bypass the age check.
+7 days old. Run with `--force` to bypass the age check.
 
 ### Step 3 — Bundle the injectable script
 
@@ -82,12 +82,12 @@ detection report.
 ### Step 5 — Read the detection report
 
 The injection return value is a JSON detection report. Parse it to enumerate
-detected overlays. Each overlay has a `source` field: `"cmp"` (database match)
-or `"heuristic"` (DOM scan).
+detected overlays. Each overlay has a `source` field: `"cmp-match"` (database
+match) or `"heuristic"` (DOM scan).
 
 ### Step 6 — Resolve dismiss strategy per overlay
 
-- **cmp-match** (`source: "cmp"`): the report includes a complete `dismiss`
+- **cmp-match** (`source: "cmp-match"`): the report includes a complete `dismiss`
   recipe with ordered steps. Use it directly.
 - **heuristic** (`source: "heuristic"`, `dismiss: null`): compose a dismiss
   sequence yourself — try Escape key, then close buttons, then element removal
@@ -141,17 +141,28 @@ cmux browser --surface <ref> eval "$(node "$PAGE_PREP_DIR/overlay-db.js" bundle)
 {
   "overlays": [
     {
-      "id": "cookiebot",           // stable identifier
-      "type": "cookie-banner",     // cookie-banner | modal | paywall | login-wall | …
-      "source": "cmp",             // "cmp" | "heuristic"
+      "id": "overlay-0",
+      "type": "cookie-consent",
+      "source": "cmp-match",       // "cmp-match" | "heuristic"
+      "cmp": "cookiebot",          // CMP name (only for cmp-match)
       "selector": "#CybotCookiebotDialog",
-      "confidence": 0.97,          // 0–1
-      "hide": "...",               // CSS display:none snippet
-      "dismiss": { "steps": [] }   // null when source is "heuristic"
+      "confidence": 1.0,
+      "hide": ["#CybotCookiebotDialog { display:none!important }"],
+      "dismiss": [{ "action": "click", "selector": "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll" }]
+    },
+    {
+      "id": "overlay-1",
+      "type": "unknown-modal",
+      "source": "heuristic",
+      "selector": "div.gdpr-wall",
+      "confidence": 0.45,
+      "signals": ["high-z-index", "keyword-match", "scroll-lock-boost"],
+      "hide": ["div.gdpr-wall { display:none!important }"],
+      "dismiss": null               // agent composes dismiss (see Agent Fallback)
     }
   ],
   "scroll_locked": true,
-  "scroll_fix": "document.body.style.overflow=''"
+  "scroll_fix": "html,body { overflow:auto!important; height:auto!important }"
 }
 ```
 
