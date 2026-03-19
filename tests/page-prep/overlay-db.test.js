@@ -46,3 +46,53 @@ describe('parseAbpHideRules', () => {
     assert.deepEqual(result, ['.cookie-banner']);
   });
 });
+
+describe('normalizeCmpRules', () => {
+  it('extracts detect selectors from presentMatcher and showingMatcher', () => {
+    const mod = load();
+    const fixture = require('./fixtures/consent-o-matic-sample.json');
+    const result = mod.normalizeCmpRules(fixture);
+    assert.deepEqual(result.cmps.onetrust.detect, ['#onetrust-consent-sdk', '#onetrust-banner-sdk']);
+  });
+
+  it('sets detect_requires_visible when displayFilter is present', () => {
+    const mod = load();
+    const fixture = require('./fixtures/consent-o-matic-sample.json');
+    const result = mod.normalizeCmpRules(fixture);
+    assert.equal(result.cmps.onetrust.detect_requires_visible, true);
+  });
+
+  it('extracts hide selectors from HIDE_CMP method', () => {
+    const mod = load();
+    const fixture = require('./fixtures/consent-o-matic-sample.json');
+    const result = mod.normalizeCmpRules(fixture);
+    assert.deepEqual(result.cmps.cookiebot.hide, [
+      '#CybotCookiebotDialog { display:none!important }',
+      '#CybotCookiebotDialogBodyUnderlay { display:none!important }',
+    ]);
+  });
+
+  it('extracts dismiss actions from DO_CONSENT + SAVE_CONSENT', () => {
+    const mod = load();
+    const fixture = require('./fixtures/consent-o-matic-sample.json');
+    const result = mod.normalizeCmpRules(fixture);
+    assert.deepEqual(result.cmps.cookiebot.dismiss, [
+      { action: 'click', selector: '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll' },
+      { action: 'wait', ms: 500 },
+    ]);
+  });
+
+  it('tracks partial coverage when textFilter is dropped', () => {
+    const mod = load();
+    const fixture = require('./fixtures/consent-o-matic-sample.json');
+    const result = mod.normalizeCmpRules(fixture);
+    assert.ok(result.partial_coverage_cmps.includes('text-filter-cmp'));
+  });
+
+  it('handles CMP with empty DO_CONSENT', () => {
+    const mod = load();
+    const fixture = require('./fixtures/consent-o-matic-sample.json');
+    const result = mod.normalizeCmpRules(fixture);
+    assert.deepEqual(result.cmps['text-filter-cmp'].dismiss, []);
+  });
+});
