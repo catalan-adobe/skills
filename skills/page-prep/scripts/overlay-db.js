@@ -3,9 +3,10 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
 const CACHE_DIR = path.join(
-  process.env.HOME || process.env.USERPROFILE,
+  process.env.HOME || process.env.USERPROFILE || os.homedir(),
   '.cache',
   'page-prep'
 );
@@ -125,8 +126,9 @@ function normalizeCmpRules(rawRules) {
 function isCacheStale(lastFetchPath, maxDays = STALENESS_DAYS) {
   try {
     const timestamp = fs.readFileSync(lastFetchPath, 'utf8').trim();
-    const age = Date.now() - new Date(timestamp).getTime();
-    return age > maxDays * 24 * 60 * 60 * 1000;
+    const ms = new Date(timestamp).getTime();
+    if (!Number.isFinite(ms)) return true;
+    return Date.now() - ms > maxDays * 24 * 60 * 60 * 1000;
   } catch { return true; }
 }
 
@@ -149,7 +151,7 @@ function buildPatternsJson(cmpResult, genericSelectors) {
 
 function buildBundle(patterns, detectScriptSource) {
   const patternsJson = JSON.stringify(patterns);
-  return `(function(){var PATTERNS=${patternsJson};${detectScriptSource}})()`;
+  return `(function(){'use strict';var PATTERNS=${patternsJson};${detectScriptSource}})()`;
 }
 
 // --- Fetch URLs ---
@@ -234,12 +236,12 @@ function cmdStatus() {
   }
 }
 
-function cmdLookup(domain) {
-  if (!domain) die('Usage: node overlay-db.js lookup <domain>');
+function cmdLookup(query) {
+  if (!query) die('Usage: node overlay-db.js lookup <cmp-name>');
   if (!fs.existsSync(PATTERNS_FILE)) die('No cache. Run: node overlay-db.js refresh');
   const patterns = JSON.parse(fs.readFileSync(PATTERNS_FILE, 'utf8'));
-  const matches = Object.entries(patterns.cmps).filter(([name]) => name.toLowerCase().includes(domain.toLowerCase()));
-  if (matches.length === 0) { console.log(`No known CMP rules for "${domain}".`); }
+  const matches = Object.entries(patterns.cmps).filter(([name]) => name.toLowerCase().includes(query.toLowerCase()));
+  if (matches.length === 0) { console.log(`No known CMP rules matching "${query}".`); }
   else { for (const [name, rule] of matches) { console.log(`${name}: detect=${rule.detect.join(', ')}`); } }
 }
 
@@ -262,7 +264,7 @@ async function main() {
     case 'lookup': cmdLookup(args[1]); break;
     case 'bundle': cmdBundle(); break;
     default:
-      console.error(['Usage: overlay-db.js <command> [options]', '', 'Commands:', '  refresh [--force]   Fetch/update pattern databases', '  status              Show cache age and stats', '  lookup <domain>     Check if domain has known CMP rules', '  bundle              Output injectable script with embedded patterns'].join('\n'));
+      console.error(['Usage: overlay-db.js <command> [options]', '', 'Commands:', '  refresh [--force]   Fetch/update pattern databases', '  status              Show cache age and stats', '  lookup <cmp-name>   Check if a CMP is in the database', '  bundle              Output injectable script with embedded patterns'].join('\n'));
       process.exit(command ? 1 : 0);
   }
 }

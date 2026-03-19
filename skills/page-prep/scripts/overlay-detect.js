@@ -78,7 +78,8 @@ function scoreElement(el, computedStyle, viewport, genericSelectors, scrollLocke
   }
 
   const rect = el.getBoundingClientRect();
-  const coverage = (rect.width * rect.height) / (viewport.width * viewport.height);
+  const vpArea = viewport.width * viewport.height;
+  const coverage = vpArea > 0 ? (rect.width * rect.height) / vpArea : 0;
   if (coverage > 0.5) {
     signals.push('viewport-cover');
     confidence += SIGNAL_WEIGHTS['viewport-cover'];
@@ -126,6 +127,13 @@ function buildSelector(el) {
   return cls ? `${tag}.${esc(cls)}` : tag;
 }
 
+function matchesAnySelector(el, selectors) {
+  for (const sel of selectors) {
+    try { if (el.matches(sel)) return true; } catch { /* invalid selector */ }
+  }
+  return false;
+}
+
 function heuristicScan(doc, genericSelectors, knownSelectors, scrollLocked) {
   const results = [];
   if (typeof doc.querySelectorAll !== 'function') return results;
@@ -135,6 +143,7 @@ function heuristicScan(doc, genericSelectors, knownSelectors, scrollLocked) {
     width: doc.documentElement?.clientWidth || 1024,
     height: doc.documentElement?.clientHeight || 768,
   };
+  const seen = new Set();
 
   for (const el of all) {
     let style;
@@ -146,7 +155,9 @@ function heuristicScan(doc, genericSelectors, knownSelectors, scrollLocked) {
     if (style.position !== 'fixed' && style.position !== 'sticky') continue;
 
     const sel = buildSelector(el);
-    if (knownSelectors.has(sel)) continue;
+    if (seen.has(sel)) continue;
+    if (matchesAnySelector(el, knownSelectors)) continue;
+    seen.add(sel);
 
     const { confidence, signals } = scoreElement(el, style, viewport, genericSelectors, scrollLocked);
     if (confidence < CONFIDENCE_THRESHOLD) continue;
@@ -170,9 +181,12 @@ function heuristicScan(doc, genericSelectors, knownSelectors, scrollLocked) {
 
 function detect(patterns, doc) {
   const known = matchKnownPatterns(patterns.cmps || {}, doc);
-  const knownSelectors = new Set(known.map((o) => o.selector));
+  const knownDetectSelectors = known.flatMap((o) => {
+    const cmp = (patterns.cmps || {})[o.cmp];
+    return cmp?.detect || [o.selector];
+  });
   const scrollLock = detectScrollLock(doc);
-  const heuristic = heuristicScan(doc, patterns.generic_selectors || [], knownSelectors, scrollLock.scroll_locked);
+  const heuristic = heuristicScan(doc, patterns.generic_selectors || [], knownDetectSelectors, scrollLock.scroll_locked);
 
   const all = [...known, ...heuristic];
   all.forEach((o, i) => { o.id = `overlay-${i}`; });
@@ -188,13 +202,13 @@ function detect(patterns, doc) {
 // In browser (bundled): PATTERNS is defined by the IIFE wrapper from buildBundle.
 // The `return` statement returns from the IIFE, which evaluate() picks up.
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { matchKnownPatterns, scoreElement, heuristicScan, detectScrollLock, detect };
+  module.exports = { matchKnownPatterns, scoreElement, heuristicScan, matchesAnySelector, detectScrollLock, detect };
 } else {
   window.__pagePrepScan = function() {
     return heuristicScan(
       document,
       PATTERNS.generic_selectors || [],
-      new Set(),
+      [],
       detectScrollLock(document).scroll_locked
     );
   };

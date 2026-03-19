@@ -47,13 +47,13 @@ Host-side Node.js script. Zero dependencies beyond Node 22 built-in `fetch`.
 ```bash
 node overlay-db.js refresh [--force]   # Fetch/update, skip if fresh (unless --force)
 node overlay-db.js status              # Cache age, pattern count, sources
-node overlay-db.js lookup <domain>     # Check if domain has known CMP rules
+node overlay-db.js lookup <cmp-name>   # Check if a CMP is in the database
 node overlay-db.js bundle              # Compose injectable script with embedded patterns
 ```
 
 ### Sources
 
-1. **Consent-O-Matic** (github.com/cavi-au/Consent-O-Matic) -- uses `rules-list.json` as index to fetch individual rule files from the `rules/` directory (300+ CMPs, growing). Each rule has `detectors` (with `presentMatcher`/`showingMatcher` arrays) and `methods` (HIDE_CMP, DO_CONSENT, SAVE_CONSENT).
+1. **Consent-O-Matic** (github.com/cavi-au/Consent-O-Matic) -- fetches the monolithic `Rules.json` from the repository root (44+ CMPs). Each rule has `detectors` (with `presentMatcher`/`showingMatcher` as single objects or arrays) and `methods` (HIDE_CMP, DO_CONSENT, SAVE_CONSENT).
 2. **EasyList Cookie** (github.com/easylist/easylist) -- `easylist_cookie/easylist_cookie_general_hide.txt` only (cosmetic/element-hiding rules). The `_block.txt` file contains network-level rules and is not used.
 
 ### Consent-O-Matic Normalization
