@@ -1,0 +1,10 @@
+! EasyList Cookie - General element hiding rules
+! Last modified: 2026-03-01
+##.cookie-banner
+##.cookie-consent
+##[id*="cookie-notice"]
+##[class*="gdpr"]
+example.com##.site-specific-banner
+##.newsletter-popup
+! Comment line
+||tracking.example.com/cookie^$third-party
