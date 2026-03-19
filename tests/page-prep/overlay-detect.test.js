@@ -54,3 +54,55 @@ describe('matchKnownPatterns', () => {
     assert.equal(result.length, 0);
   });
 });
+
+describe('scoreElement', () => {
+  it('scores high for fixed position + viewport cover + high z-index', () => {
+    const mod = load();
+    const mockEl = {
+      id: 'overlay',
+      className: '',
+      tagName: 'DIV',
+      getAttribute: () => null,
+      matches: () => false,
+      getBoundingClientRect: () => ({ width: 1024, height: 768, top: 0, left: 0 }),
+    };
+    const mockStyle = { position: 'fixed', zIndex: '9999' };
+    const viewport = { width: 1024, height: 768 };
+    const result = mod.scoreElement(mockEl, mockStyle, viewport, []);
+    assert.ok(result.confidence >= 0.40);
+    assert.ok(result.signals.includes('high-z-index'));
+    assert.ok(result.signals.includes('viewport-cover'));
+  });
+
+  it('scores keyword-match for cookie-related class names', () => {
+    const mod = load();
+    const mockEl = {
+      id: '',
+      className: 'gdpr-consent-banner',
+      tagName: 'DIV',
+      getAttribute: () => null,
+      matches: () => false,
+      getBoundingClientRect: () => ({ width: 200, height: 50, top: 0, left: 0 }),
+    };
+    const mockStyle = { position: 'fixed', zIndex: '100' };
+    const viewport = { width: 1024, height: 768 };
+    const result = mod.scoreElement(mockEl, mockStyle, viewport, []);
+    assert.ok(result.signals.includes('keyword-match'));
+  });
+
+  it('returns confidence below threshold for normal fixed element (e.g. navbar)', () => {
+    const mod = load();
+    const mockEl = {
+      id: 'navbar',
+      className: 'nav-main',
+      tagName: 'NAV',
+      getAttribute: () => null,
+      matches: () => false,
+      getBoundingClientRect: () => ({ width: 1024, height: 60, top: 0, left: 0 }),
+    };
+    const mockStyle = { position: 'fixed', zIndex: '100' };
+    const viewport = { width: 1024, height: 768 };
+    const result = mod.scoreElement(mockEl, mockStyle, viewport, []);
+    assert.ok(result.confidence < 0.30, `Expected < 0.30, got ${result.confidence}`);
+  });
+});
