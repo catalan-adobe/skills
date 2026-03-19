@@ -43,8 +43,10 @@ node "$PAGE_PREP_DIR/overlay-db.js" refresh
 BUNDLE="$(node "$PAGE_PREP_DIR/overlay-db.js" bundle)"
 # Inject via your browser tool (see Browser Tool Examples below)
 
-# 3. Read the detection report returned by injection
-# Produce and execute a recipe manifest from the report
+# 3. Read the detection report, produce and execute recipes
+
+# 4. Take a snapshot — if anything still blocks the page, remove it manually
+#    (the script handles known patterns; the agent handles the rest)
 ```
 
 ## Detailed Workflow
@@ -107,7 +109,27 @@ manifest (see Recipe Manifest Format). Include the global `scroll_fix` if
   sequentially using the browser tool's click/key primitives. Use this when
   the site requires a real consent signal (analytics, A/B tests).
 
-### Step 9 — Optionally inject watch mode
+### Step 9 — Verify the page is clean
+
+Take a snapshot (accessibility tree or screenshot) and inspect the result.
+The detection script catches known CMPs and common heuristic patterns, but
+it will miss overlays that don't fit those signals — third-party login
+prompts (Google One Tap, Apple Sign In), custom-built modals, iframes with
+their own UI, or elements injected after the initial scan.
+
+If the page still has something blocking content or interaction:
+
+1. Identify the element from the snapshot (look for `position: fixed`,
+   high `z-index`, iframes, or modal-like structure).
+2. Compose a removal recipe: `document.querySelector('<selector>')?.remove()`
+   or click a dismiss button if one exists.
+3. Apply and re-verify.
+
+Repeat until the page is clean. This verification loop is the agent's value
+over the heuristic script alone — the script handles the 80% of known
+patterns fast, the agent handles the 20% that requires judgment.
+
+### Step 10 — Optionally inject watch mode
 
 For multi-step sessions where new overlays may appear (SPAs, lazy-loaded
 banners), inject the watch mode snippet after cleanup (see Watch Mode).
