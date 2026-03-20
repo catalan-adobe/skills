@@ -5,7 +5,7 @@
 const API_BASE = 'https://app.slack.com/api';
 const DEFAULT_PORT = 9222;
 const DEFAULT_TIMEOUT = 8000;
-const NAV_SETTLE_MS = 2000;
+const NAV_SETTLE_MS = 2000; // Time for channel content to load after navigation
 
 // --- Arg parsing (follows cdp.js convention) ---
 function parseArgs(argv) {
@@ -82,13 +82,17 @@ function send(ws, method, params = {}, timeout = DEFAULT_TIMEOUT) {
 }
 
 // --- Slack API via renderer eval ---
+// Params are double-encoded to prevent code injection: JSON.stringify twice
+// produces a JS string literal that the renderer JSON.parse's back safely.
 async function slackEval(ws, apiMethod, params = {}) {
-  const paramStr = JSON.stringify(params);
+  const safeParams = JSON.stringify(JSON.stringify(params));
   const result = await send(ws, 'Runtime.evaluate', {
     expression: `(async () => {
       const cfg = JSON.parse(localStorage.localConfig_v2);
-      const tk = cfg.teams[cfg.lastActiveTeamId].token;
-      const p = ${paramStr};
+      const pathTeam = window.location.pathname.split('/')[2];
+      const teamId = (pathTeam && cfg.teams[pathTeam]) ? pathTeam : cfg.lastActiveTeamId;
+      const tk = cfg.teams[teamId].token;
+      const p = JSON.parse(${safeParams});
       const body = new URLSearchParams(Object.assign({ token: tk }, p));
       const resp = await fetch('${API_BASE}/${apiMethod}', {
         method: 'POST',
@@ -139,8 +143,9 @@ async function insertText(ws, text) {
 async function getCurrentChannel(ws) {
   const path = await domEval(ws, `return window.location.pathname;`);
   const parts = path.split('/');
-  if (parts.length >= 4 && parts[3]) return parts[3];
-  die('Cannot determine current channel from URL. Use --channel <id>.');
+  const candidate = parts[3] || '';
+  if (/^[CDG][A-Z0-9]+$/.test(candidate)) return candidate;
+  die('Not in a channel view. Navigate to a channel first, or use --channel <id>.');
 }
 
 // --- Commands ---
@@ -196,15 +201,18 @@ async function cmdWhere(port) {
 async function cmdNavigate(query, port) {
   if (!query) die('Usage: slack-cdp.js navigate <query>');
   const ws = await connectSlack(port);
-  await sendKey(ws, 'k', 'KeyK', 75, 4);
-  await wait(600);
-  await insertText(ws, query);
-  await wait(1500);
-  await sendKey(ws, 'Enter', 'Enter', 13);
-  await wait(NAV_SETTLE_MS);
-  const title = await domEval(ws, `return document.title.replace(/ - Slack$/, '');`);
-  ws.close();
-  console.log(`Navigated to: ${title}`);
+  try {
+    await sendKey(ws, 'k', 'KeyK', 75, 4);
+    await wait(600);    // Wait for quick-switcher to open
+    await insertText(ws, query);
+    await wait(1500);   // Wait for search results to populate
+    await sendKey(ws, 'Enter', 'Enter', 13);
+    await wait(NAV_SETTLE_MS);
+    const title = await domEval(ws, `return document.title.replace(/ - Slack$/, '');`);
+    console.log(`Navigated to: ${title}`);
+  } finally {
+    ws.close();
+  }
 }
 
 async function cmdSearch(query, limit, port) {
@@ -236,14 +244,13 @@ async function cmdRead(channelFlag, limit, port) {
   const data = await slackEval(ws, 'conversations.history', {
     channel, limit: String(limit || 10),
   });
+  ws.close();
   if (!data.ok) {
-    ws.close();
     if (data.error === 'enterprise_is_restricted') {
       die('conversations.history is restricted. Use search or navigate to the channel.');
     }
     die(`Read failed: ${data.error}`);
   }
-  ws.close();
   const msgs = (data.messages || []).reverse();
   console.log(`${channel} — ${msgs.length} messages`);
   console.log('');
@@ -287,7 +294,10 @@ async function cmdUnread(port) {
     }
     return;
   }
-  // Fallback: read sidebar DOM
+  // Fallback: read sidebar DOM (returns display names, not channel IDs)
+  if (!data.ok) {
+    console.error(`Warning: client.counts failed (${data.error}), falling back to sidebar DOM`);
+  }
   const sidebarText = await domEval(ws, `
     const items = [...document.querySelectorAll('.p-channel_sidebar__channel--unread')];
     return JSON.stringify(items.map(el => el.textContent.trim().substring(0, 60)));

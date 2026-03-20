@@ -40,6 +40,7 @@ else
 fi
 if [[ -z "$SLACK_JS" || ! -f "$SLACK_JS" ]]; then
   echo "Error: slack-cdp.js not found." >&2
+  exit 1
 fi
 ```
 
@@ -147,3 +148,4 @@ Prefer `data-qa` attributes (Slack's own QA hooks) over CSS classes.
 - `search` returns results across all channels — good for finding channel IDs
 - `status` with no args reads current status; with args sets it
 - `read` without `--channel` reads from the currently visible channel
+- Multi-workspace: the skill targets the workspace visible in the URL. Switch workspaces in Slack before running commands if needed
