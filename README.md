@@ -135,6 +135,19 @@ mode for long sessions.
 
 See [SKILL.md](skills/page-prep/SKILL.md) for the full workflow.
 
+### browser-universal
+
+Detect available browser interaction layer (Playwright MCP, Slicc
+playwright-cli, cmux-browser, CDP) and load the right commands. Other
+skills depend on this instead of hardcoding a specific browser layer.
+Supports layer preference, dynamic reference loading from source of truth,
+and a universal verb mapping for navigate, snapshot, click, fill, eval,
+screenshot, wait, and tab management.
+
+**Dependencies:** none
+
+See [SKILL.md](skills/browser-universal/SKILL.md) for details.
+
 ## License
 
 MIT

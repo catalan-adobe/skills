@@ -58,3 +58,4 @@ Recommended workflow:
 | `cmux-demo` | Scripted cmux terminal demos with multi-pane layouts |
 | `cmux-setup` | Manage cmux workspace colors via directory-pattern rules |
 | `page-prep` | Detect and remove webpage overlays for clean interaction |
+| `browser-universal` | Detect browser layer and load commands for layer-agnostic interaction |
