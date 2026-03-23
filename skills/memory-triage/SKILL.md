@@ -36,7 +36,13 @@ See `references/CLASSIFICATION.md` for detailed examples of each category.
 When uncertain, classify as promote candidate. A false positive costs the
 user one "discard" decision. A false negative buries useful knowledge.
 
-## Step 3: Present Candidates
+## Step 3: Redact and Present Candidates
+
+Before presenting, scan each candidate for secrets: API keys, tokens,
+passwords, connection strings, credentials, or any string matching
+common secret patterns (e.g., `sk-...`, `ghp_...`, `Bearer ...`,
+`-----BEGIN`). Replace values with `[REDACTED]`. Never surface raw
+secrets in conversation history.
 
 Present candidates grouped by theme with rationale. See
 `references/OUTPUT-FORMATS.md` for format.
