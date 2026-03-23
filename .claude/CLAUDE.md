@@ -44,6 +44,19 @@ Recommended workflow:
 5. **Live test** — test on real content before shipping; eval frameworks miss platform-specific bugs and edge cases
 6. **Ship** — feature branch → PR → squash merge
 
+## Skill Quality (tessl)
+
+Run `tessl skill review <SKILL.md>` before shipping — free, no auth needed. Scores three dimensions: Validation (deterministic), Description/Activation (LLM judge), Content/Implementation (LLM judge). Thresholds: 90%+ great, 70-89% good, <70% needs work. Use `--optimize` to auto-improve.
+
+Key constraints from the Agent Skills spec (agentskills.io):
+- `description` field: max 1024 characters — this is the trigger mechanism
+- SKILL.md body: under 500 lines recommended
+- Extract detailed reference material to `references/` for progressive disclosure
+
+Install: `curl -fsSL https://get.tessl.io | sh`. GitHub Action `tesslio/skill-review@v1` can enforce quality gates on PRs (no auth required).
+
+Portfolio baseline: 97.5% average as of 2026-03-23 (7/13 at 100%). Most common improvement: extracting monolithic content to `references/` directories.
+
 ## Available Skills
 
 | Skill | Purpose |
