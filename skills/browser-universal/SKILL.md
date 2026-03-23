@@ -2,7 +2,8 @@
 name: browser-universal
 description: >-
   Detect available browser interaction layer (Playwright MCP, Slicc
-  playwright-cli, cmux-browser, CDP) and load the right commands. Use before
+  playwright-cli, cmux-browser, CDP) and load the right commands — then
+  navigate, click, fill, and screenshot through a unified verb set. Use before
   any browser interaction in skills that shouldn't hardcode a specific layer.
   Triggers on: browser universal, detect browser, browser layer, browser
   setup, which browser, browser interaction, open browser, use browser.
@@ -191,36 +192,3 @@ Quick reference mapping universal actions to layer-specific commands:
 After **any** state-changing action (click, fill, navigate, tab switch),
 re-read page state (snapshot) before the next interaction. This applies to
 every layer.
-
-## Layer-Specific Notes
-
-### Playwright MCP
-- `browser_snapshot` returns an accessibility tree — prefer it over
-  screenshots for understanding page structure.
-- `browser_run_code` can execute arbitrary Playwright code for complex
-  interactions not covered by individual tools.
-
-### Slicc
-- `open` opens tabs in the **background** by default. Use `--foreground`
-  to make it current. If no current tab exists, the first `open` becomes
-  current automatically.
-- Session log at `/.playwright/session.md` — read it to recover context
-  after compaction.
-- Teleport for auth handoffs in tray sessions (unique to Slicc).
-
-### cmux-browser
-- Every command needs `--surface <ref>`. Discover refs with
-  `cmux identify --no-caller`, never hardcode them.
-- No `file://` URLs. Serve content over HTTP first.
-- `highlight`, `addstyle`, `addscript` are additive — reload with
-  `navigate` to clear injected CSS/JS.
-- `state save` / `state load` for checkpointing page state between steps.
-
-### CDP
-- Tab management uses JS workarounds (`window.open()`, `window.close()`)
-  which are less reliable than native APIs. `window.close()` only works
-  on tabs opened by script.
-- `console` and `network` streaming commands are unique to CDP — useful
-  for debugging but not available in other layers.
-- Default timeout is 5s. Set `CDP_TIMEOUT=10000` or use `--timeout 15`
-  for slow pages.

@@ -33,23 +33,7 @@ fi
 Store in `PAGE_PREP_DIR` and prefix all commands below with
 `node "$PAGE_PREP_DIR/overlay-db.js"`.
 
-## Quick Start
-
-```bash
-# 1. Refresh the CMP database (skips if cache is fresh)
-node "$PAGE_PREP_DIR/overlay-db.js" refresh
-
-# 2. Bundle + inject the detection script into the active page
-BUNDLE="$(node "$PAGE_PREP_DIR/overlay-db.js" bundle)"
-# Inject via your browser tool (see Browser Tool Examples below)
-
-# 3. Read the detection report, produce and execute recipes
-
-# 4. Take a snapshot — if anything still blocks the page, remove it manually
-#    (the script handles known patterns; the agent handles the rest)
-```
-
-## Detailed Workflow
+## Workflow
 
 ### Step 1 — Locate scripts
 

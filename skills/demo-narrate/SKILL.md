@@ -54,16 +54,7 @@ fi
 
 Store the result in `NARRATE_SH` and use it for all subsequent commands.
 
-Commands:
-- `extract <video> [fps]` — extract frames and contact sheets
-- `tts-acts <dir> <timing.txt> [voice]` — generate per-act audio
-- `tts-acts --dry-run <dir> <timing.txt>` — show budgets without TTS
-- `merge-acts <video> <dir> <timing.txt> [out]` — merge audio onto video
-- `fade-intro <video> [secs] [out]` — add fade-in from black
-- `deps` — check dependencies
-- `voices` — list available TTS voices
-- `tts <file> [voice]` — single-file TTS (manual single-file workflow, not used by pipeline)
-- `merge <video> <audio> [out]` — single-file merge (manual single-file workflow, not used by pipeline)
+See `references/REFERENCE.md` for the full command reference.
 
 ## Execution
 
@@ -184,14 +175,13 @@ Before writing, ask the user a single combined question:
 
 > "Before I write the script, three quick choices:
 > 1. **Audience** — technical, product/general, or mixed?
-> 2. **Voice** — en-US-AriaNeural (warm female, default), GuyNeural
->    (male), JennyNeural (friendly female), or en-GB-SoniaNeural (British)?
+> 2. **Voice** — pick from the defaults in `references/REFERENCE.md`,
+>    or run `"$NARRATE_SH" voices` for the full list.
 > 3. **Fade-in** — add a 0.5s fade-in from black? (recommended)"
 
 Defaults if the user says "go with defaults": mixed, AriaNeural, yes.
 These choices affect the script (audience), TTS (voice), and timing
-file (fade shifts all offsets). For more voices beyond these defaults,
-run `"$NARRATE_SH" voices`.
+file (fade shifts all offsets).
 
 #### 4b. Define acts and write timing file
 
@@ -350,51 +340,5 @@ ffprobe -v error -show_entries stream=codec_type,duration -of json "<output>"
 Report: output file path, duration, file size. Open the file for the
 user to review.
 
-## Output Directory Structure
-
-```
-<output_dir>/
-  act1_opening.txt          <- plain text, spoken words only
-  act1_opening.mp3          <- TTS audio for act 1
-  act2_extraction.txt
-  act2_extraction.mp3
-  ...
-  timing.txt                <- "filename offset_seconds" per line
-  script_final.txt          <- master reference with all acts + metadata
-```
-
-## Important Notes
-
-- **Existing audio tracks** in the input video will be replaced by the
-  narration. To preserve original audio mixed with narration, the user
-  should pre-process with ffmpeg or use a video editor for final assembly.
-- **2 words/second** is the key rate for edge-tts AriaNeural. Use this
-  to calculate word budgets. Other voices may differ (~10% for GuyNeural).
-- **1-second silence gap** between acts prevents overlap and gives the
-  viewer breathing room. Enforced by `tts-acts`.
-- **Plain text only** in act files. Any markdown, time codes, or headers
-  will be read aloud by the TTS engine.
-- **Context briefing** is what separates a useful narration from a
-  generic screen description. Always gather project context before
-  frame analysis.
-- **Per-act audio** gives the user full control over timeline placement.
-  The merge-acts command places clips at fixed offsets, but the user
-  can also import individual clips into a video editor for fine-tuning.
-- **normalize=0** on amix prevents volume from getting louder as acts
-  finish. All clips play at consistent volume throughout the video.
-- Contact sheets compress up to 20 frames into one image (fewer for
-  short videos), keeping the number of subagents small (typically 2-5).
-- edge-tts is currently free with no API key, account, or usage limits
-  (as of 2026; this is an unofficial Microsoft Edge TTS interface).
-- If the user wants to skip TTS and record their own voice, stop after
-  Step 4 — the per-act scripts are the deliverable.
-
-## Standalone Installation
-
-This skill can also be used without the full plugin:
-
-1. Copy `SKILL.md` to `~/.claude/commands/demo-narrate.md`
-2. Copy `scripts/demo-narrate.sh` to `~/.local/bin/demo-narrate.sh`
-   and `chmod +x` it (must be on your PATH)
-3. The fallback in the "Shell Script" section will find it via
-   `command -v demo-narrate.sh` — no path edits needed
+See `references/REFERENCE.md` for output directory structure, voice
+options, and standalone installation instructions.

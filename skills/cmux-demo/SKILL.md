@@ -1,25 +1,18 @@
 ---
 name: cmux-demo
 description: >
-  ESSENTIAL for any cmux terminal demo or scripted workflow — this skill
-  contains critical cmux CLI patterns, gotchas, and conventions that
-  cannot be learned from `cmux help` alone. Without this skill, agents
-  produce demos with subtle bugs (hardcoded surface refs, broken cleanup,
-  wrong send vs send-key usage, polling instead of signal coordination).
-  Produces both a runnable bash script and a human-readable markdown
-  playbook. Covers: multi-pane IDE layouts, browser previews with CSS
-  annotations, yazi file browser integration, multi-agent workspace
-  orchestration with signal-based coordination, sidebar metadata
-  (status/progress/notifications), visual effects (trigger-flash,
-  animated resize), multi-window setups, and pane lifecycle management.
-  ALWAYS use this skill when the user mentions cmux and wants to build
-  a demo, create a terminal showcase, script a product walkthrough,
-  orchestrate a multi-pane layout, automate cmux commands into a
-  repeatable sequence, or generate any scripted cmux workflow. Trigger
-  phrases: "cmux demo", "terminal demo", "demo script", "cmux layout",
-  "cmux orchestration", "showcase", "scripted demo", "demo playbook",
-  "cmux walkthrough", "cmux presentation", "multi-agent cmux",
-  "cmux script".
+  ESSENTIAL for cmux terminal demos and scripted workflows — contains
+  critical CLI patterns, gotchas, and conventions beyond `cmux help`.
+  Produces a runnable bash script and markdown playbook. Covers
+  multi-pane IDE layouts, browser previews, yazi integration,
+  multi-agent orchestration with signal coordination, sidebar metadata,
+  visual effects, multi-window setups, and pane lifecycle. ALWAYS use
+  when the user mentions cmux and wants to build a demo, script a
+  walkthrough, orchestrate layouts, or automate cmux workflows.
+  Triggers on: "cmux demo", "terminal demo", "demo script",
+  "cmux layout", "cmux orchestration", "showcase", "scripted demo",
+  "demo playbook", "cmux walkthrough", "cmux presentation",
+  "multi-agent cmux", "cmux script".
 ---
 
 # cmux Demo

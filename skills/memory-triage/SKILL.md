@@ -5,15 +5,6 @@ description: Review Claude Code auto memory accumulated during a task and promot
 
 # Memory Triage
 
-Review auto memory from the current project and promote valuable entries
-to shared configuration files.
-
-Claude Code auto memory is personal and machine-local. Debugging gotchas,
-architecture decisions, and project conventions discovered during a task
-stay invisible to teammates unless explicitly promoted to shared config.
-This skill bridges that gap by reviewing what accumulated and helping you
-decide what's worth sharing.
-
 ## Step 1: Discover Memory
 
 Find the auto memory directory for the current project. Use the `/memory`
@@ -40,22 +31,7 @@ Parse each file into distinct entries using markdown headers (`#`, `##`,
 Classify each entry as either a **promote candidate** or **ephemeral**.
 The core question: would a different developer benefit from knowing this?
 
-**Promote candidate** — project knowledge worth sharing:
-- Debugging findings and root causes
-- Architecture decisions and rationale
-- Build/CI/deploy gotchas and workarounds
-- API quirks, schema details, data format notes
-- Testing conventions and patterns
-- Performance findings
-- Integration details with external systems
-
-**Ephemeral** — task-specific state that won't help others:
-- In-progress status ("currently working on X")
-- Intermediate debugging steps that led nowhere
-- File paths specific to one developer's machine
-- Session-specific context ("last time we discussed...")
-- Temporary workarounds already resolved
-- Personal workflow preferences (editor settings, port numbers)
+See `references/CLASSIFICATION.md` for detailed examples of each category.
 
 When uncertain, classify as promote candidate. A false positive costs the
 user one "discard" decision. A false negative buries useful knowledge.

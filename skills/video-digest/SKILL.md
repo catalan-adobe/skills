@@ -194,69 +194,10 @@ frames each at 30-second intervals. Use the burned-in timestamps
 on the frames to determine which sheet(s) cover each chunk's time
 window. A chunk may span parts of two sheets — include both.
 
-For each chunk:
-
-```
-Agent(
-  subagent_type="general-purpose",
-  description="Analyze: <chapter_title>",
-  prompt="You are analyzing a segment of a video for summarization.
-This is a RESEARCH-ONLY task — do not write any code or edit files.
-
-## Video Info
-Title: <title>
-Channel: <channel>
-Segment: <start> - <end> (<chapter_title>)
-Summary depth: <brief|detailed|full>
-
-## Transcript
-<timestamped transcript lines for this segment>
-
-## Visual Frames
-IMPORTANT: You MUST read the contact sheet image(s) listed below
-using the Read tool before writing your summary. These are scene-
-detected keyframes with burned-in timestamps from this segment.
-
-Contact sheet(s) for this segment:
-- <absolute_path_to_sheet_NNN.jpg>
-
-After reading, note what is visible: slides, code, diagrams, UI
-state, text overlays, presenter gestures, or scene changes. If
-the visuals are mostly static (e.g., talking head), say so briefly
-and focus on the transcript — but still read the image to confirm.
-
-## Task
-Produce a section summary combining what is said (transcript) with
-what is shown (frames). Adapt to the requested depth:
-
-- brief: 1-2 sentences capturing the main point
-- detailed: key topics, sub-points, and notable visual elements
-- full: comprehensive notes including specific details, quotes,
-  code snippets, diagram descriptions, and all visual context
-
-For ALL depth levels, include:
-- The most important timestamp(s) worth jumping to
-- Any visual elements that add context beyond the audio
-  (slides, diagrams, code, demos, UI, whiteboard)
-
-Format your output as:
-### <chapter_title> [MM:SS]
-<summary content>
-
-**Key moments:**
-- [MM:SS] <description>
-
-**Notable frames** (ONLY if genuinely important visual content —
-diagrams, key slides, code, demos, charts, significant UI state):
-- [MM:SS] what makes this frame important
-
-Be aggressive: most frames are NOT notable. A talking head, generic
-title slide, or static screen is NOT notable. Only flag frames where
-the visual IS the content a reader would want to see.
-
-Save output to <workdir>/chunk_<N>_summary.txt"
-)
-```
+Spawn one Agent per chunk using the template in
+`references/SUBAGENT-PROMPT.md`. Fill in the placeholders with each
+chunk's title, time range, transcript segment, and contact sheet
+path(s).
 
 After all agents complete, read their outputs. If any failed,
 re-run individually — the pipeline tolerates partial results but
@@ -360,26 +301,6 @@ Sections
 Full summary: <workdir>/digest.md
 Assets: <workdir>/assets/
 ```
-
-## Important Notes
-
-- **Transcript is primary, frames are supplementary.** The audio
-  carries most of the information in talks and tutorials. Frames
-  add context that audio alone misses: slides, code, diagrams,
-  demos, facial expressions, visual transitions.
-- **Contact sheets compress tokens.** A 5x4 grid of 20 frames in
-  one image is far more token-efficient than 20 separate images.
-  This is the same pattern used by demo-narrate.
-- **Scene detection threshold 0.3** is the sweet spot for most
-  content. Lower values (0.1-0.2) for screencast/slides with
-  subtle changes. Higher (0.5+) for fast-cut video.
-- **YouTube deep links** use `&t=<seconds>` format. Convert
-  MM:SS timestamps to total seconds for the URL parameter.
-- **Non-YouTube URLs** work if yt-dlp supports them, but
-  timestamp links will only be generated for YouTube URLs.
-- **Local files** are supported — skip the download step and
-  go straight to transcript + frames extraction. No timestamp
-  links for local files.
 
 ## Standalone Installation
 
