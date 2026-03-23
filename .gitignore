@@ -13,3 +13,4 @@ node_modules/
 icons/
 icons-*/
 .claude/worktrees/
+skills/*/tile.json
