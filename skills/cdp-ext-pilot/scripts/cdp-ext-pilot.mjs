@@ -151,3 +151,212 @@ async function installChromeForTesting() {
   }
   return bin;
 }
+
+// --- Launch ---
+
+function readManifest(extPath) {
+  const p = join(resolve(extPath), 'manifest.json');
+  if (!existsSync(p)) die(`manifest.json not found at: ${extPath}`);
+  return JSON.parse(readFileSync(p, 'utf8'));
+}
+
+async function launchSimple(chromePath, extPath, port, profileDir) {
+  const child = spawn(chromePath, [
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${profileDir}`,
+    `--load-extension=${resolve(extPath)}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--enable-extensions',
+  ], { stdio: 'ignore', detached: true });
+  child.unref();
+  return child.pid;
+}
+
+async function launchBranded(chromePath, extPath, port, profileDir) {
+  // Step 1: pipe launch to load extension
+  console.error('Branded Chrome detected — using pipe path for extension loading...');
+  const child = spawn(chromePath, [
+    '--remote-debugging-pipe',
+    '--enable-unsafe-extension-debugging',
+    `--user-data-dir=${profileDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+  ], { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'], detached: false });
+
+  const pipeIn = child.stdio[3];
+  const pipeOut = child.stdio[4];
+
+  const extId = await new Promise((res, rej) => {
+    let buf = Buffer.alloc(0);
+    pipeOut.on('data', (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      let idx;
+      while ((idx = buf.indexOf(0)) !== -1) {
+        const msg = buf.subarray(0, idx).toString();
+        buf = buf.subarray(idx + 1);
+        const parsed = JSON.parse(msg);
+        if (parsed.id === 1) {
+          if (parsed.result?.id) res(parsed.result.id);
+          else rej(new Error(parsed.error?.message || 'Failed to load extension'));
+        }
+      }
+    });
+    setTimeout(() => {
+      const cmd = JSON.stringify({
+        id: 1,
+        method: 'Extensions.loadUnpacked',
+        params: { path: resolve(extPath) },
+      }) + '\0';
+      pipeIn.write(cmd);
+    }, 3000);
+    setTimeout(() => rej(new Error('Timed out loading extension via pipe')), 20000);
+  });
+
+  // Close pipe session
+  pipeIn.end();
+  pipeOut.destroy();
+  child.kill();
+  await new Promise(r => setTimeout(r, 2000));
+
+  // Step 2: restart with port
+  console.error('Extension loaded. Restarting with CDP port...');
+  const child2 = spawn(chromePath, [
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${profileDir}`,
+    '--enable-unsafe-extension-debugging',
+    '--no-first-run',
+    '--no-default-browser-check',
+  ], { stdio: 'ignore', detached: true });
+  child2.unref();
+
+  return { pid: child2.pid, extensionId: extId };
+}
+
+async function waitForCdp(port, maxWait = 10000) {
+  const start = Date.now();
+  while (Date.now() - start < maxWait) {
+    try {
+      const res = await fetch(`http://localhost:${port}/json/version`);
+      if (res.ok) return true;
+    } catch {}
+    await new Promise(r => setTimeout(r, 500));
+  }
+  return false;
+}
+
+async function getExtensionId(port, extPath) {
+  const manifest = readManifest(extPath);
+  const res = await fetch(`http://localhost:${port}/json`);
+  const targets = await res.json();
+  // Look for extension pages
+  const extTarget = targets.find(t => t.url?.startsWith('chrome-extension://'));
+  if (extTarget) {
+    const match = extTarget.url.match(/chrome-extension:\/\/([^/]+)/);
+    if (match) return match[1];
+  }
+  // Fallback: check chrome://extensions page
+  return null;
+}
+
+async function cmdLaunch(extPath, port) {
+  if (!extPath) die('Usage: cdp-ext-pilot.mjs launch <extension-path> [--port N]');
+  if (!existsSync(resolve(extPath)))
+    die(`Extension path not found: ${extPath}`);
+
+  readManifest(extPath); // validates manifest exists
+
+  let chrome = detectChrome();
+  if (!chrome) {
+    const bin = await installChromeForTesting();
+    chrome = { path: bin, variant: 'chrome-for-testing' };
+  }
+
+  console.error(`Using: ${chrome.variant} (${chrome.path})`);
+
+  const profileDir = `/tmp/cdp-ext-pilot-${process.pid}`;
+  mkdirSync(profileDir, { recursive: true });
+
+  let pid, extensionId;
+  if (chrome.variant === 'branded') {
+    const result = await launchBranded(chrome.path, extPath, port, profileDir);
+    pid = result.pid;
+    extensionId = result.extensionId;
+  } else {
+    pid = await launchSimple(chrome.path, extPath, port, profileDir);
+    extensionId = null; // resolved after CDP is ready
+  }
+
+  console.error('Waiting for CDP...');
+  const ready = await waitForCdp(port);
+  if (!ready) die('Chrome did not start CDP within 10s');
+
+  if (!extensionId) {
+    extensionId = await getExtensionId(port, extPath);
+  }
+  if (!extensionId) {
+    die('Could not determine extension ID. The extension may not have loaded. ' +
+        'Check chrome://extensions in the browser for errors.');
+  }
+
+  const session = {
+    pid,
+    extensionId,
+    extensionPath: resolve(extPath),
+    profileDir,
+    port,
+    chromePath: chrome.path,
+    chromeVariant: chrome.variant,
+  };
+  saveSession(port, session);
+
+  console.log(JSON.stringify(session, null, 2));
+}
+
+async function cmdClose(port) {
+  const session = loadSession(port);
+  if (!session) die(`No session found for port ${port}`);
+
+  try { process.kill(session.pid, 'SIGTERM'); }
+  catch { console.error(`Process ${session.pid} already exited`); }
+
+  await new Promise(r => setTimeout(r, 1000));
+
+  if (existsSync(session.profileDir)) {
+    rmSync(session.profileDir, { recursive: true, force: true });
+    console.error(`Removed profile: ${session.profileDir}`);
+  }
+
+  unlinkSync(sessionPath(port));
+  console.error('Session closed.');
+}
+
+// --- Stubs (replaced in Task 3) ---
+async function cmdOpen() { die('Not yet implemented — see Task 3'); }
+async function cmdStatus() { die('Not yet implemented — see Task 3'); }
+
+// --- Main ---
+
+async function main() {
+  const { command, args: cmdArgs, port } = parseArgs(process.argv);
+
+  switch (command) {
+    case 'launch': await cmdLaunch(cmdArgs[0], port); break;
+    case 'open':   await cmdOpen(cmdArgs[0], port); break;
+    case 'status': await cmdStatus(port); break;
+    case 'close':  await cmdClose(port); break;
+    default:
+      console.error([
+        'Usage: cdp-ext-pilot.mjs <command> [args] [--port N]',
+        '',
+        'Commands:',
+        '  launch <ext-path>     Launch Chrome with extension loaded',
+        '  open <surface>        Open sidepanel|popup|options',
+        '  status                Show session state as JSON',
+        '  close                 Kill Chrome and clean up',
+      ].join('\n'));
+      process.exit(command ? 1 : 0);
+  }
+}
+
+main().catch(err => die(err.message));
