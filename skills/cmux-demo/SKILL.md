@@ -90,45 +90,30 @@ self-contained. Use the library as a reference for correct implementations.
 | **Timing** | |
 | `pause_short`, `pause_medium`, `pause_long` | Named timing pauses (configurable via env) |
 
-## Pipeline Overview
+## Pipeline
 
-```
-User describes their demo
-  1. Discover environment — cmux status, available tools, suggest installs
-  2. Design the demo — acts, layout, panel content, sidebar narrative
-  3. User confirms/adjusts the plan
-  4. Generate the .sh script and .md playbook
-  5. Test run the script
-  6. Iterate based on feedback
-```
+1. Discover environment
+2. Design the demo
+3. User confirms/adjusts
+4. Generate `.sh` script + `.md` playbook
+5. Test run
+6. Iterate
 
 ## Execution
 
 ### Step 1: Discover Environment
-
-Before designing anything, probe what's available.
-
-First, discover the script's own context so it never accidentally
-injects into user-controlled surfaces:
 
 ```bash
 cmux identify --no-caller
 # → workspace:1 surface:1 pane:1
 ```
 
-Store `MY_SURFACE` so the script knows where it lives and avoids it
-when sending commands to other panes.
-
-Then check available tools:
-
 ```bash
 source "$CMUX_LIB"
 detect_tools
 ```
 
-This checks for: `cmux`, `yazi`, `python3`, `node`, `npx`, `claude`.
-
-**If a tool is missing, don't block — suggest alternatives:**
+If a tool is missing, suggest alternatives and proceed:
 
 | Missing | Impact | Alternative |
 |---------|--------|-------------|
@@ -138,27 +123,11 @@ This checks for: `cmux`, `yazi`, `python3`, `node`, `npx`, `claude`.
 | `claude` | No multi-agent workspaces | Use any CLI command as agent stand-in, or skip the act |
 | `yazi` config | No cmux-preview integration | Preview files via `cmux browser navigate` directly |
 
-Present findings as a table and suggest `brew install <tool>` for
-anything the user might want. Proceed with whatever is available —
-the demo plan adapts to the toolset.
-
 ### Step 2: Design the Demo
 
-Work with the user to design the demo structure. Gather:
-
-1. **What's being demoed?** — a product, a workflow, a tool, a concept
-2. **Who's the audience?** — developers, stakeholders, general
-3. **What panels do they want?** — IDE layout, browser preview, file
-   browser, terminals, agent workspaces
-4. **How many acts?** — typically 3-7 natural segments
-5. **Sidebar narrative?** — status updates, progress bar, notifications
-
-Don't over-interview. A brief like "demo my EDS migration workflow with
-yazi + browser preview, 4 acts" is enough to proceed.
+Gather: what's being demoed, audience, desired panels, number of acts (3-7), sidebar narrative. A brief like "demo my EDS migration workflow with yazi + browser preview, 4 acts" is enough.
 
 #### Layout Patterns
-
-Offer these proven layouts as starting points:
 
 **IDE Layout** (most common):
 ```
@@ -202,7 +171,7 @@ Offer these proven layouts as starting points:
 + Agent 2 workspace tab                    +
 ```
 
-**Multi-Window** (multi-monitor setups):
+**Multi-Window** (`cmux new-window` + `move-workspace-to-window`):
 ```
 Window 1 (primary display)       Window 2 (secondary display)
 +------------------------+       +------------------------+
@@ -210,17 +179,14 @@ Window 1 (primary display)       Window 2 (secondary display)
 |  + terminal pane       |       |  (full-screen browser) |
 +------------------------+       +------------------------+
 ```
-Create with `cmux new-window`, then `cmux move-workspace-to-window`.
 
-**Dynamic Layout** (panes resize mid-demo):
+**Dynamic Layout** (`animate_resize` or `resize-pane` in a loop):
 ```
 Act 1: Equal split           Act 2: Browser expanded
 +----------+----------+      +-----+------------------+
 | Terminal | Browser   |  →   | Trm | Browser (wider)  |
 +----------+----------+      +-----+------------------+
 ```
-Use `cmux resize-pane --pane <ref> -R --amount 20` to grow/shrink.
-`animate_resize` in the library does this in smooth steps.
 
 ### Step 3: User Confirms
 

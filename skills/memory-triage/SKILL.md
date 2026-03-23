@@ -38,33 +38,8 @@ user one "discard" decision. A false negative buries useful knowledge.
 
 ## Step 3: Present Candidates
 
-Show promote candidates grouped by theme:
-
-```
-## Memory Triage
-
-### Worth promoting (N entries)
-
-**[Theme: Debugging]**
-
-> [The actual entry text from memory]
-
-Rationale: Documents root cause of X — saves future debugging time.
-
----
-
-**[Theme: Build/CI]**
-
-> [The actual entry text from memory]
-
-Rationale: Non-obvious CI behavior that caused a 2-hour investigation.
-
----
-
-### Filtered as ephemeral (M entries)
-
-These looked task-specific. Say "show filtered" to review them.
-```
+Present candidates grouped by theme with rationale. See
+`references/OUTPUT-FORMATS.md` for format.
 
 If there are no promote candidates:
 > "All N entries look task-specific. Nothing to promote. Say 'show filtered'
@@ -98,20 +73,8 @@ For each promoted entry:
 3. Write the entry using the Edit tool (append) or Write tool (new file).
 4. Do NOT modify or delete the source memory files.
 
-Report a summary when done:
-
-```
-## Triage Complete
-
-- Promoted: 3 entries
-  - ./CLAUDE.md: 1 entry (debugging gotcha)
-  - .claude/rules/ci.md: 1 entry (CI workaround) [new file]
-  - ~/.claude/CLAUDE.md: 1 entry (global preference)
-- Discarded: 5 entries
-- Unchanged: memory files left as-is
-
-Remember to review and commit the changes to share them with your team.
-```
+Report a summary of promoted, discarded, and unchanged entries. See
+`references/OUTPUT-FORMATS.md` for format.
 
 ## Important Notes
 
