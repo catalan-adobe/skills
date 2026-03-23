@@ -11,19 +11,15 @@ with per-act audio clips merged onto the video.
 ## Pipeline Overview
 
 ```
-Video file
-  0. Check dependencies (ffmpeg, edge-tts — auto-installed if missing)
-  1. Extract timestamped contact sheets (default 1 FPS)
-  2. Build context briefing from project (CLAUDE.md, recent commits, docs)
-  3. Parallel subagents analyze contact sheets WITH context briefing
-  4. Ask audience/tone, structure script into word-budgeted acts
-  5. Generate TTS audio per act with automatic rate fitting
-  6. Optionally add fade-in from black
-  7. Merge per-act audio onto video at timed offsets
+0. Check dependencies (ffmpeg, edge-tts)
+1. Extract timestamped contact sheets (1 FPS)
+2. Build context briefing from project
+3. Parallel subagents analyze contact sheets with briefing
+4. Ask audience/tone, write word-budgeted act scripts
+5. Generate TTS audio per act with rate fitting
+6. Optionally add fade-in from black
+7. Merge per-act audio onto video at timed offsets
 ```
-
-Everything runs within Claude Code. The only external dependencies are
-ffmpeg and edge-tts (both auto-installed if missing).
 
 ## Shell Script
 
@@ -81,38 +77,17 @@ Confirm the video file exists and get its duration:
 ffprobe -v error -show_entries format=duration -of csv=p=0 "<video>"
 ```
 
-Extract frames at 1 FPS (default — good for UI demos). Only ask the
-user about FPS if the video is unusually long (>5 minutes) or fast.
+Extract frames at 1 FPS into `<basename>_frames/` (contact sheets of up to 20 frames each):
 
 ```bash
 "$NARRATE_SH" extract "<video>"
 ```
 
-Frames and contact sheets (grids of up to 20 frames each, sized
-dynamically for shorter videos) are created next to the video file
-in a `<basename>_frames/` directory.
-
 Report: filename, duration, frame count, sheet count.
 
 ### Step 2: Build Context Briefing
 
-Before analyzing frames, gather project context so the analysis is
-accurate — not generic. This is the difference between "a sidebar shows
-some list items" and "the scoops panel shows six agents being created."
-
-Build a briefing (~500 words max) by reading:
-- The project's CLAUDE.md (architecture, vocabulary, key concepts)
-- Recent git commits on the current branch (`git log --oneline -20`)
-- Any design docs or plans referenced in commits
-- Key source files relevant to the feature being demoed
-
-The briefing should cover:
-- What the product/feature does (2-3 sentences)
-- Key vocabulary the UI uses (component names, panel labels, states)
-- The workflow being demoed (phases, steps, expected visual sequence)
-- What visual cues map to what concepts
-
-Save the briefing to `<frames_dir>/briefing.txt` for reference.
+Build a ~500-word briefing from CLAUDE.md, recent commits (`git log --oneline -20`), and relevant source files so frame analysis uses the project's own terminology instead of generic descriptions. Save to `<frames_dir>/briefing.txt`.
 
 ### Step 3: Analyze Frames via Parallel Subagents
 
@@ -171,17 +146,10 @@ that fit within the video's time windows.
 
 #### 4a. Ask preferences (one question, three decisions)
 
-Before writing, ask the user a single combined question:
-
-> "Before I write the script, three quick choices:
-> 1. **Audience** — technical, product/general, or mixed?
-> 2. **Voice** — pick from the defaults in `references/REFERENCE.md`,
->    or run `"$NARRATE_SH" voices` for the full list.
-> 3. **Fade-in** — add a 0.5s fade-in from black? (recommended)"
-
-Defaults if the user says "go with defaults": mixed, AriaNeural, yes.
-These choices affect the script (audience), TTS (voice), and timing
-file (fade shifts all offsets).
+Ask the user all three at once:
+- **Audience** — technical / product / mixed (default: mixed)
+- **Voice** — see `references/REFERENCE.md` or `"$NARRATE_SH" voices` (default: AriaNeural)
+- **Fade-in** — 0.5s fade from black? (default: yes)
 
 #### 4b. Define acts and write timing file
 

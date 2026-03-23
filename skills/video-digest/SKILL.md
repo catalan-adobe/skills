@@ -93,15 +93,8 @@ Ask the user for the video URL if not already provided. Then download:
 ```
 
 The work directory defaults to `./video_digest_<video_id>/` in the
-current working directory. The script downloads:
-- Video file (capped at 1080p)
-- Metadata JSON (title, chapters, description, duration, uploader)
-- Thumbnail
-
-After download, report to the user:
-- Title, channel, duration
-- Whether chapters are available
-- File size
+current working directory. After download, report to the user:
+title, channel, duration, whether chapters are available, file size.
 
 ### Steps 2 & 3: Extract Transcript + Keyframes (PARALLEL)
 
@@ -163,36 +156,28 @@ in a single analysis pass (Step 5 without subagents). This avoids
 unnecessary overhead for content that fits in one context window.
 
 **Longer videos with chapters:** Use chapters as segment boundaries.
-Map each frame and transcript segment to its chapter by timecode.
 
-**Longer videos without chapters:** Split into chunks of approximately
-10 minutes. Align chunk boundaries to the nearest extracted keyframe
-timecode so each chunk starts on a clean visual break.
+**Longer videos without chapters:** Split into ~10-minute chunks,
+aligning boundaries to the nearest keyframe timecode.
 
-For each chunk, prepare:
-- The transcript segment (lines within the time window)
-- The contact sheet(s) covering that time window
-- Chapter title (or "Part N: MM:SS - MM:SS" for auto-chunks)
+For each chunk, prepare the transcript segment, contact sheet(s)
+covering that time window, and a title (chapter name or
+"Part N: MM:SS - MM:SS").
 
 ### Step 5: Parallel Subagent Analysis
 
-For short videos (< 10 min), analyze directly without subagents —
-read the transcript and ALL contact sheets yourself (use the Read
-tool on each sheet image) and produce the summary inline. While
-analyzing, identify notable frames for the screenshot gallery
-(same criteria as subagents — see below). Skip to Step 6.
+For short videos (< 10 min), read the transcript and all contact
+sheets yourself (Read tool) and produce the summary inline. Flag
+notable frames for the screenshot gallery. Skip to Step 6.
 
 For longer videos, spawn one Agent per chunk, ALL IN PARALLEL.
-Each subagent MUST receive both the transcript segment AND the
-contact sheet image path(s) for its chunk. Never skip the visual
-frames — even talking-head videos have moments where on-screen
-text, graphics, or body language adds context the audio misses.
+Each subagent receives both the transcript segment and contact
+sheet path(s). Never skip frames — on-screen text, graphics, and
+UI states add context absent from audio.
 
-**Mapping contact sheets to chunks:** Contact sheets are numbered
-sequentially (sheet_001.jpg, sheet_002.jpg, ...) with up to 20
-frames each at 30-second intervals. Use the burned-in timestamps
-on the frames to determine which sheet(s) cover each chunk's time
-window. A chunk may span parts of two sheets — include both.
+**Mapping contact sheets to chunks:** Use burned-in timestamps to
+determine which sheet(s) cover each chunk. A chunk may span two
+sheets — include both.
 
 Spawn one Agent per chunk using the template in
 `references/SUBAGENT-PROMPT.md`. Fill in the placeholders with each
@@ -228,11 +213,9 @@ Create `<workdir>/assets/` and populate it:
    to 4>.jpg`) to find the closest frame file. Copy selected frames
    to `assets/<video_id>_screenshot_01.jpg`, `<video_id>_screenshot_02.jpg`, etc.
 
-   Apply aggressive filtering — only include frames where the visual
-   is genuinely important: architecture diagrams, key slides, code
-   demos, charts, significant UI states. Skip talking heads, generic
-   titles, and static screens. Aim for 3-8 screenshots even for long
-   videos. If no frames are notable, omit the Screenshots section.
+   Only include frames with genuine visual importance (diagrams,
+   slides, code, charts, UI states). Aim for 3-8 screenshots.
+   If none are notable, omit the Screenshots section.
 
 For local files (no yt-dlp download), omit the URL line and thumbnail
 if no thumbnail was downloaded.
@@ -265,8 +248,6 @@ Structure the final markdown:
 
 ## Screenshots
 
-> Curated frames — only visually significant moments.
-
 ![<description>](assets/<video_id>_screenshot_01.jpg)
 *[MM:SS](youtube-deep-link) — <description>*
 
@@ -276,9 +257,7 @@ Structure the final markdown:
 For `brief` depth: tl;dw + Contents with one-line descriptions only.
 For `detailed` depth: full structure as above.
 For `full` depth: full structure plus exhaustive notes per section.
-
-The Screenshots section is included at ALL depth levels when notable
-frames exist. Omit it entirely if no frames were flagged as notable.
+Screenshots are included at all depth levels when notable frames exist.
 
 ### Step 7: Output
 
