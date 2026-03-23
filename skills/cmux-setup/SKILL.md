@@ -21,12 +21,10 @@ workspace coloring based on directory-pattern rules.
 
 ## Standalone Installation
 
-```bash
-git clone https://github.com/catalan-adobe/skills.git /tmp/catalan-skills
-cp /tmp/catalan-skills/skills/cmux-setup/SKILL.md ~/.claude/commands/cmux-setup.md
-cp /tmp/catalan-skills/skills/cmux-setup/scripts/cmux-setup.sh ~/.local/bin/cmux-setup.sh
-chmod +x ~/.local/bin/cmux-setup.sh
-```
+1. Copy `SKILL.md` to `~/.claude/commands/cmux-setup.md`
+2. Copy `scripts/cmux-setup.sh` to `~/.local/bin/cmux-setup.sh`
+   and `chmod +x` it
+3. The fallback search will find it via the `find` command in Script Location
 
 ## Script Location
 
