@@ -331,9 +331,212 @@ async function cmdClose(port) {
   console.error('Session closed.');
 }
 
-// --- Stubs (replaced in Task 3) ---
-async function cmdOpen() { die('Not yet implemented — see Task 3'); }
-async function cmdStatus() { die('Not yet implemented — see Task 3'); }
+// --- Open Extension UI ---
+
+async function getBrowserWsUrl(port) {
+  const res = await fetch(`http://localhost:${port}/json/version`);
+  const data = await res.json();
+  return data.webSocketDebuggerUrl;
+}
+
+async function cdpBrowser(port, method, params = {}) {
+  const wsUrl = await getBrowserWsUrl(port);
+  const ws = new WebSocket(wsUrl);
+  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  let id = 0;
+  const result = await new Promise((res, rej) => {
+    const mid = ++id;
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.id === mid) {
+        if (msg.error) rej(new Error(msg.error.message));
+        else res(msg.result);
+      }
+    };
+    ws.send(JSON.stringify({ id: mid, method, params }));
+    setTimeout(() => rej(new Error(`Timeout: ${method}`)), 10000);
+  });
+  ws.close();
+  return result;
+}
+
+function availableSurfaces(manifest) {
+  const surfaces = [];
+  if (manifest.side_panel?.default_path) surfaces.push('sidepanel');
+  if (manifest.action?.default_popup) surfaces.push('popup');
+  if (manifest.options_page || manifest.options_ui?.page) surfaces.push('options');
+  return surfaces;
+}
+
+async function openSidepanel(session) {
+  const manifest = readManifest(session.extensionPath);
+  if (!manifest.side_panel?.default_path) {
+    const avail = availableSurfaces(manifest);
+    die(`Extension does not declare a sidepanel. Available surfaces: ${avail.join(', ') || 'none'}`);
+  }
+
+  // Need at least one page target for the sidepanel to attach to
+  let targets = await (await fetch(`http://localhost:${session.port}/json`)).json();
+  let pages = targets.filter(t => t.type === 'page'
+    && !t.url.startsWith('chrome-extension://') && !t.url.startsWith('chrome://'));
+  if (pages.length === 0) {
+    // Auto-navigate to about:blank so the sidepanel has a tab to attach to
+    console.error('No page target found — opening about:blank...');
+    await cdpBrowser(session.port, 'Target.createTarget', { url: 'about:blank' });
+    await new Promise(r => setTimeout(r, 1000));
+    targets = await (await fetch(`http://localhost:${session.port}/json`)).json();
+    pages = targets.filter(t => t.type === 'page'
+      && !t.url.startsWith('chrome-extension://') && !t.url.startsWith('chrome://'));
+    if (pages.length === 0) die('Could not create a page target for the sidepanel.');
+  }
+
+  const page = pages[0];
+
+  // Connect to page target to find content script context
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+
+  let msgId = 0;
+  const send = (method, params = {}) => {
+    const id = ++msgId;
+    return new Promise((res, rej) => {
+      const handler = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.id === id) {
+          ws.removeEventListener('message', handler);
+          if (msg.error) rej(new Error(msg.error.message));
+          else res(msg.result);
+        }
+      };
+      ws.addEventListener('message', handler);
+      ws.send(JSON.stringify({ id, method, params }));
+      setTimeout(() => rej(new Error(`Timeout: ${method}`)), 10000);
+    });
+  };
+
+  // Find extension content script context
+  const extCtxId = await new Promise((res, rej) => {
+    const handler = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.method === 'Runtime.executionContextCreated') {
+        const ctx = msg.params.context;
+        if (ctx.origin.includes(session.extensionId)) {
+          ws.removeEventListener('message', handler);
+          res(ctx.id);
+        }
+      }
+    };
+    ws.addEventListener('message', handler);
+    send('Runtime.enable').catch(rej);
+    setTimeout(() => {
+      ws.removeEventListener('message', handler);
+      rej(new Error(
+        'No content script context found. The extension may not inject content ' +
+        'scripts on this page, or the URL may not match its content_scripts.matches pattern.'
+      ));
+    }, 5000);
+  });
+
+  // Send open_side_panel message with userGesture
+  await send('Runtime.evaluate', {
+    contextId: extCtxId,
+    expression: 'chrome.runtime.sendMessage({type: "open_side_panel"})',
+    awaitPromise: true,
+    returnByValue: true,
+    userGesture: true,
+  });
+
+  ws.close();
+
+  // Poll for sidepanel target
+  const start = Date.now();
+  while (Date.now() - start < 5000) {
+    const res = await cdpBrowser(session.port, 'Target.getTargets');
+    const panel = res.targetInfos?.find(t =>
+      t.url.includes(session.extensionId) && t.url.includes('sidepanel'));
+    if (panel) {
+      console.log(JSON.stringify({ targetId: panel.targetId, url: panel.url }));
+      return;
+    }
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  console.error(
+    'Sidepanel declared in manifest but could not be opened programmatically. ' +
+    'The extension may require a manual click on the toolbar icon, or it may ' +
+    'need an "open_side_panel" message handler in its service worker.'
+  );
+  process.exit(1);
+}
+
+async function openPopupOrOptions(session, surface) {
+  const manifest = readManifest(session.extensionPath);
+  let htmlPath;
+
+  if (surface === 'popup') {
+    htmlPath = manifest.action?.default_popup;
+    if (!htmlPath) {
+      const avail = availableSurfaces(manifest);
+      die(`Extension does not declare a popup. Available surfaces: ${avail.join(', ') || 'none'}`);
+    }
+  } else {
+    htmlPath = manifest.options_page || manifest.options_ui?.page;
+    if (!htmlPath) {
+      const avail = availableSurfaces(manifest);
+      die(`Extension does not declare an options page. Available surfaces: ${avail.join(', ') || 'none'}`);
+    }
+  }
+
+  const url = `chrome-extension://${session.extensionId}/${htmlPath}`;
+  const result = await cdpBrowser(session.port, 'Target.createTarget', { url });
+  console.log(JSON.stringify({ targetId: result.targetId, url }));
+}
+
+async function cmdOpen(surface, port) {
+  if (!surface) die('Usage: cdp-ext-pilot.mjs open <sidepanel|popup|options>');
+  const session = loadSession(port);
+  if (!session) die(`No session found for port ${port}. Run 'launch' first.`);
+
+  switch (surface) {
+    case 'sidepanel': await openSidepanel(session); break;
+    case 'popup':
+    case 'options':   await openPopupOrOptions(session, surface); break;
+    default: die(`Unknown surface: ${surface}. Use sidepanel, popup, or options.`);
+  }
+}
+
+async function cmdStatus(port) {
+  const session = loadSession(port);
+  if (!session) {
+    console.log(JSON.stringify({ running: false }));
+    process.exit(1);
+  }
+
+  let running = false;
+  try { process.kill(session.pid, 0); running = true; } catch {}
+
+  let targets = [];
+  if (running) {
+    try {
+      const res = await fetch(`http://localhost:${port}/json`);
+      const all = await res.json();
+      targets = all.map(t => ({
+        id: t.id, type: t.type, url: t.url, title: t.title,
+      }));
+    } catch {}
+  }
+
+  console.log(JSON.stringify({
+    running,
+    pid: session.pid,
+    port: session.port,
+    extensionId: session.extensionId,
+    chromeVariant: session.chromeVariant,
+    targets,
+  }, null, 2));
+
+  process.exit(running ? 0 : 1);
+}
 
 // --- Main ---
 
