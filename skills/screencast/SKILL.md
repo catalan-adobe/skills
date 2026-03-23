@@ -96,11 +96,7 @@ If ffmpeg is missing, tell the user:
 
 Check platform from the `deps` output.
 
-**On macOS**, offer interactive selection first:
-
-> "You're on macOS — I can let you **click on a window** or
-> **drag a region** to select what to record. Or you can pick
-> from a list / type coordinates. Which do you prefer?"
+**On macOS**, offer interactive selection (pick-window or pick-region) first.
 
 If the user chooses interactive:
 ```bash
@@ -138,11 +134,7 @@ Top-left is 0,0."
 
 ### Step 3: Confirm and Start
 
-Before starting, confirm the selection:
-
-> "Ready to record [target description] at 30fps to
-> `screencast_YYYYMMDD_HHMMSS.mp4`. Say **start** when ready,
-> and **stop** when you're done."
+Confirm the target, FPS, and output path before starting.
 
 When the user says start:
 
