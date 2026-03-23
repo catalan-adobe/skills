@@ -96,41 +96,7 @@ Read `.ai-fluency/analysis.json` for the 18 LLM-classified behaviors and `.ai-fl
 
 ### Step 4: Generate the Visual HTML Report
 
-Generate a self-contained HTML report at `.ai-fluency/fluency-report.html`. The report must include:
-
-#### Design System
-- Font: Inter (Google Fonts import) with system fallback
-- Background: `#FAFAF9`, Surface: `#FFFFFF`, Border: `#E7E5E4`
-- Competency colors:
-  - Delegation: `#2563EB` (blue), light: `#EFF6FF`
-  - Description: `#7C3AED` (purple), light: `#F5F3FF`
-  - Discernment: `#0891B2` (cyan), light: `#ECFEFF`
-  - Diligence: `#059669` (green), light: `#ECFDF5`
-- Score colors: 1=`#EF4444`, 2=`#F97316`, 3=`#EAB308`, 4=`#22C55E`, 5=`#10B981`
-
-#### Report Structure
-
-1. **Header**: Title, date, overall score (large number with level label)
-
-2. **Overall Score Card**: Large score with Novice/Emerging/Developing/Proficient/Expert label. Compute as average of 4 competency scores.
-
-3. **Key Takeaways**: Profile summary ("Your Profile: [type]") with two columns — "What You Do Well" (4 strengths with evidence) and "Where You Can Level Up" (4 growth areas with actionable advice). Include a callout box with one concrete habit to try.
-
-4. **4 Competency Summary Cards**: Each shows competency name, color-coded score, progress bar, and sub-competency breakdown. Score = average of sub-competency scores. Sub-competency score = average of behavior scores within it.
-
-5. **Strengths & Growth Areas**: Side-by-side cards showing top 3 strengths (highest-scored behaviors) and top 3 growth areas (lowest-scored behaviors with specific recommendations).
-
-6. **Behavior Heatmap**: Horizontal bar chart ranking all 18 classified behaviors by LLM match count. Scale bars *relative to the highest behavior* (highest = 100% width). Show absolute message counts. Color bars by competency color.
-
-7. **Top Projects Breakdown**: Horizontal bar chart showing message volume per project (top 10), scaled relative to the busiest project.
-
-8. **Footer**: Framework attribution, generation date, classification method
-
-#### Heuristic Bar Formatting
-- Label: "Detected in" (NOT "Detection rate")
-- Value: "N messages" (NOT "N (X%)")
-- Bar width: Scale relative to the max behavior count
-- Projects: Label as "Strongest in" with just project names (NO percentages)
+Generate a self-contained HTML report at `.ai-fluency/fluency-report.html` following `references/REPORT-SPEC.md` for design system, layout, and formatting specifications.
 
 ### Step 5: Open the Report
 
@@ -140,40 +106,4 @@ open .ai-fluency/fluency-report.html
 
 ## Framework Reference
 
-| # | Behavior | Competency | Classification |
-|---|----------|-----------|---------------|
-| 1 | Clarifies goal before asking for help | Delegation | LLM |
-| 2 | Understands problem scope and nature | Delegation | LLM |
-| 3 | Assesses AI fit | Delegation | Questionnaire |
-| 4 | Selects platform | Delegation | Questionnaire |
-| 5 | Consults AI on approach before execution | Delegation | LLM |
-| 6 | Distributes work strategically | Delegation | LLM |
-| 7 | Specifies format and structure needed | Description | LLM |
-| 8 | Defines audience for the output | Description | LLM |
-| 9 | Provides examples of what good looks like | Description | LLM |
-| 10 | Iterates and refines | Description | LLM |
-| 11 | Sets interaction mode | Description | LLM |
-| 12 | Communicates tone and style preferences | Description | LLM |
-| 13 | Checks facts and claims that matter | Discernment | LLM |
-| 14 | Identifies when AI might be missing context | Discernment | LLM |
-| 15 | Questions when AI reasoning doesn't hold up | Discernment | LLM |
-| 16 | Detects hallucination | Discernment | LLM |
-| 17 | Evaluates tone and communication fit | Discernment | LLM |
-| 18 | Recognizes bias in AI outputs | Discernment | Questionnaire |
-| 19 | Chooses AI tools ethically | Diligence | Questionnaire |
-| 20 | Maintains ethical awareness during interaction | Diligence | Questionnaire |
-| 21 | Discloses AI involvement to stakeholders | Diligence | LLM |
-| 22 | Represents AI contribution accurately | Diligence | LLM |
-| 23 | Verifies and tests outputs before sharing | Diligence | LLM |
-| 24 | Takes ongoing accountability | Diligence | Questionnaire |
-
-## Troubleshooting
-
-| Problem | Fix |
-|---------|-----|
-| `No module named 'anthropic'` | Install: `uv pip install anthropic`. Or use `--regex-only` for free approximation. |
-| `No such file or directory: assess.py` | Use the full path to `assess.py` in the skills directory |
-| 0 Claude Code messages found | Check that the sessions directory exists and has JSONL files |
-| API authentication error | Set `ANTHROPIC_API_KEY` or `ANTHROPIC_FOUNDRY_API_KEY` env var |
-| Questionnaire hangs | Don't run interactive mode; ask questions in chat and save programmatically |
-| Bars look like bad scores | Use relative scaling (max behavior = 100% bar width) and absolute counts |
+See `references/FRAMEWORK.md` for the full 24-behavior reference table.
