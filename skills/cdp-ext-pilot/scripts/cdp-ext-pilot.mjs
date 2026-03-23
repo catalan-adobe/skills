@@ -247,16 +247,65 @@ async function waitForCdp(port, maxWait = 10000) {
 
 async function getExtensionId(port, extPath) {
   const manifest = readManifest(extPath);
+  const extName = manifest.name;
+
+  // Check existing targets for chrome-extension:// URLs
   const res = await fetch(`http://localhost:${port}/json`);
   const targets = await res.json();
-  // Look for extension pages
   const extTarget = targets.find(t => t.url?.startsWith('chrome-extension://'));
   if (extTarget) {
     const match = extTarget.url.match(/chrome-extension:\/\/([^/]+)/);
     if (match) return match[1];
   }
-  // Fallback: check chrome://extensions page
-  return null;
+
+  // Fallback: navigate to chrome://extensions and scrape the ID
+  const page = targets.find(t => t.type === 'page');
+  if (!page) return null;
+
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+
+  let msgId = 0;
+  const send = (method, params = {}) => {
+    const id = ++msgId;
+    return new Promise((res, rej) => {
+      const handler = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.id === id) {
+          ws.removeEventListener('message', handler);
+          if (msg.error) rej(new Error(msg.error.message));
+          else res(msg.result);
+        }
+      };
+      ws.addEventListener('message', handler);
+      ws.send(JSON.stringify({ id, method, params }));
+      setTimeout(() => rej(new Error(`Timeout: ${method}`)), 10000);
+    });
+  };
+
+  await send('Page.enable');
+  await send('Page.navigate', { url: 'chrome://extensions' });
+  await new Promise(r => setTimeout(r, 2000));
+
+  // Query the extensions page shadow DOM for our extension's ID
+  const result = await send('Runtime.evaluate', {
+    expression: `(() => {
+      const mgr = document.querySelector('extensions-manager');
+      if (!mgr) return null;
+      const items = mgr.shadowRoot.querySelector('extensions-item-list');
+      if (!items) return null;
+      const exts = items.shadowRoot.querySelectorAll('extensions-item');
+      for (const ext of exts) {
+        const name = ext.shadowRoot.querySelector('#name')?.textContent?.trim();
+        if (name === ${JSON.stringify(extName)}) return ext.id;
+      }
+      return null;
+    })()`,
+    returnByValue: true,
+  });
+
+  ws.close();
+  return result.result?.value || null;
 }
 
 async function cmdLaunch(extPath, port) {
