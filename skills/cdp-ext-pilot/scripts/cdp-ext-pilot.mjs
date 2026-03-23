@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ESM module (.mjs) — uses Node 22 built-in WebSocket global (no import needed)
-import { execSync, spawn } from 'node:child_process';
+import { execFileSync, execSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync,
          unlinkSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -136,15 +136,14 @@ async function installChromeForTesting() {
   writeFileSync(zipPath, buf);
 
   console.error('Extracting...');
-  execSync(`unzip -q -o "${zipPath}" -d "${destDir}"`, { stdio: 'pipe' });
+  execFileSync('unzip', ['-q', '-o', zipPath, '-d', destDir], { stdio: 'pipe' });
   unlinkSync(zipPath);
 
   const bin = cftBinaryPath(destDir);
   if (!bin) die('Chrome for Testing binary not found after extraction');
 
-  // Verify
   try {
-    const ver = execSync(`"${bin}" --version 2>/dev/null`, { encoding: 'utf8' }).trim();
+    const ver = execFileSync(bin, ['--version'], { encoding: 'utf8' }).trim();
     console.error(`Installed: ${ver}`);
   } catch {
     console.error('Warning: could not verify Chrome version');
@@ -153,6 +152,36 @@ async function installChromeForTesting() {
 }
 
 // --- Launch ---
+
+// --- Shared CDP helper ---
+
+async function connectToTarget(wsDebuggerUrl) {
+  const ws = new WebSocket(wsDebuggerUrl);
+  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  let msgId = 0;
+  const send = (method, params = {}) => {
+    const id = ++msgId;
+    return new Promise((res, rej) => {
+      const timer = setTimeout(() => {
+        rej(new Error(`Timeout: ${method}`));
+      }, 10000);
+      const handler = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.id === id) {
+          ws.removeEventListener('message', handler);
+          clearTimeout(timer);
+          if (msg.error) rej(new Error(msg.error.message));
+          else res(msg.result);
+        }
+      };
+      ws.addEventListener('message', handler);
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+  };
+  return { ws, send };
+}
+
+// --- Launch helpers ---
 
 function readManifest(extPath) {
   const p = join(resolve(extPath), 'manifest.json');
@@ -188,6 +217,8 @@ async function launchBranded(chromePath, extPath, port, profileDir) {
   const pipeOut = child.stdio[4];
 
   const extId = await new Promise((res, rej) => {
+    child.on('error', (err) => rej(new Error(`Chrome failed to start: ${err.message}`)));
+    pipeOut.on('error', (err) => rej(new Error(`Pipe read error: ${err.message}`)));
     let buf = Buffer.alloc(0);
     pipeOut.on('data', (chunk) => {
       buf = Buffer.concat([buf, chunk]);
@@ -262,50 +293,34 @@ async function getExtensionId(port, extPath) {
   const page = targets.find(t => t.type === 'page');
   if (!page) return null;
 
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  const { ws, send } = await connectToTarget(page.webSocketDebuggerUrl);
+  try {
+    await send('Page.enable');
+    await send('Page.navigate', { url: 'chrome://extensions' });
+    await new Promise(r => setTimeout(r, 2000));
 
-  let msgId = 0;
-  const send = (method, params = {}) => {
-    const id = ++msgId;
-    return new Promise((res, rej) => {
-      const handler = (e) => {
-        const msg = JSON.parse(e.data);
-        if (msg.id === id) {
-          ws.removeEventListener('message', handler);
-          if (msg.error) rej(new Error(msg.error.message));
-          else res(msg.result);
+    // Query the extensions page shadow DOM for our extension by name
+    // (brittle across Chrome versions — this is a fallback path)
+    const result = await send('Runtime.evaluate', {
+      expression: `(() => {
+        const mgr = document.querySelector('extensions-manager');
+        if (!mgr) return null;
+        const items = mgr.shadowRoot.querySelector('extensions-item-list');
+        if (!items) return null;
+        const exts = items.shadowRoot.querySelectorAll('extensions-item');
+        for (const ext of exts) {
+          const name = ext.shadowRoot.querySelector('#name')?.textContent?.trim();
+          if (name === ${JSON.stringify(extName)}) return ext.id;
         }
-      };
-      ws.addEventListener('message', handler);
-      ws.send(JSON.stringify({ id, method, params }));
-      setTimeout(() => rej(new Error(`Timeout: ${method}`)), 10000);
+        return null;
+      })()`,
+      returnByValue: true,
     });
-  };
 
-  await send('Page.enable');
-  await send('Page.navigate', { url: 'chrome://extensions' });
-  await new Promise(r => setTimeout(r, 2000));
-
-  // Query the extensions page shadow DOM for our extension's ID
-  const result = await send('Runtime.evaluate', {
-    expression: `(() => {
-      const mgr = document.querySelector('extensions-manager');
-      if (!mgr) return null;
-      const items = mgr.shadowRoot.querySelector('extensions-item-list');
-      if (!items) return null;
-      const exts = items.shadowRoot.querySelectorAll('extensions-item');
-      for (const ext of exts) {
-        const name = ext.shadowRoot.querySelector('#name')?.textContent?.trim();
-        if (name === ${JSON.stringify(extName)}) return ext.id;
-      }
-      return null;
-    })()`,
-    returnByValue: true,
-  });
-
-  ws.close();
-  return result.result?.value || null;
+    return result.result?.value || null;
+  } finally {
+    ws.close();
+  }
 }
 
 async function cmdLaunch(extPath, port) {
@@ -376,7 +391,7 @@ async function cmdClose(port) {
     console.error(`Removed profile: ${session.profileDir}`);
   }
 
-  unlinkSync(sessionPath(port));
+  try { unlinkSync(sessionPath(port)); } catch {}
   console.error('Session closed.');
 }
 
@@ -390,23 +405,12 @@ async function getBrowserWsUrl(port) {
 
 async function cdpBrowser(port, method, params = {}) {
   const wsUrl = await getBrowserWsUrl(port);
-  const ws = new WebSocket(wsUrl);
-  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
-  let id = 0;
-  const result = await new Promise((res, rej) => {
-    const mid = ++id;
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.id === mid) {
-        if (msg.error) rej(new Error(msg.error.message));
-        else res(msg.result);
-      }
-    };
-    ws.send(JSON.stringify({ id: mid, method, params }));
-    setTimeout(() => rej(new Error(`Timeout: ${method}`)), 10000);
-  });
-  ws.close();
-  return result;
+  const { ws, send: cdpSend } = await connectToTarget(wsUrl);
+  try {
+    return await cdpSend(method, params);
+  } finally {
+    ws.close();
+  }
 }
 
 function availableSurfaces(manifest) {
@@ -440,69 +444,53 @@ async function openSidepanel(session) {
   }
 
   const page = pages[0];
+  const sidepanelPath = manifest.side_panel.default_path;
 
   // Connect to page target to find content script context
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
-
-  let msgId = 0;
-  const send = (method, params = {}) => {
-    const id = ++msgId;
-    return new Promise((res, rej) => {
+  const { ws, send } = await connectToTarget(page.webSocketDebuggerUrl);
+  try {
+    // Find extension content script context
+    const extCtxId = await new Promise((res, rej) => {
+      const timer = setTimeout(() => {
+        ws.removeEventListener('message', handler);
+        rej(new Error(
+          'No content script context found. The extension may not inject content ' +
+          'scripts on this page, or the URL may not match its content_scripts.matches pattern.'
+        ));
+      }, 5000);
       const handler = (e) => {
         const msg = JSON.parse(e.data);
-        if (msg.id === id) {
-          ws.removeEventListener('message', handler);
-          if (msg.error) rej(new Error(msg.error.message));
-          else res(msg.result);
+        if (msg.method === 'Runtime.executionContextCreated') {
+          const ctx = msg.params.context;
+          if (ctx.origin.includes(session.extensionId)) {
+            ws.removeEventListener('message', handler);
+            clearTimeout(timer);
+            res(ctx.id);
+          }
         }
       };
       ws.addEventListener('message', handler);
-      ws.send(JSON.stringify({ id, method, params }));
-      setTimeout(() => rej(new Error(`Timeout: ${method}`)), 10000);
+      send('Runtime.enable').catch(rej);
     });
-  };
 
-  // Find extension content script context
-  const extCtxId = await new Promise((res, rej) => {
-    const handler = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.method === 'Runtime.executionContextCreated') {
-        const ctx = msg.params.context;
-        if (ctx.origin.includes(session.extensionId)) {
-          ws.removeEventListener('message', handler);
-          res(ctx.id);
-        }
-      }
-    };
-    ws.addEventListener('message', handler);
-    send('Runtime.enable').catch(rej);
-    setTimeout(() => {
-      ws.removeEventListener('message', handler);
-      rej(new Error(
-        'No content script context found. The extension may not inject content ' +
-        'scripts on this page, or the URL may not match its content_scripts.matches pattern.'
-      ));
-    }, 5000);
-  });
-
-  // Send open_side_panel message with userGesture
-  await send('Runtime.evaluate', {
-    contextId: extCtxId,
-    expression: 'chrome.runtime.sendMessage({type: "open_side_panel"})',
-    awaitPromise: true,
-    returnByValue: true,
-    userGesture: true,
-  });
-
-  ws.close();
+    // Send open_side_panel message with userGesture
+    await send('Runtime.evaluate', {
+      contextId: extCtxId,
+      expression: 'chrome.runtime.sendMessage({type: "open_side_panel"})',
+      awaitPromise: true,
+      returnByValue: true,
+      userGesture: true,
+    });
+  } finally {
+    ws.close();
+  }
 
   // Poll for sidepanel target
   const start = Date.now();
   while (Date.now() - start < 5000) {
     const res = await cdpBrowser(session.port, 'Target.getTargets');
     const panel = res.targetInfos?.find(t =>
-      t.url.includes(session.extensionId) && t.url.includes('sidepanel'));
+      t.url.includes(session.extensionId) && t.url.includes(sidepanelPath));
     if (panel) {
       console.log(JSON.stringify({ targetId: panel.targetId, url: panel.url }));
       return;
