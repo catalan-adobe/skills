@@ -76,7 +76,7 @@ Do not proceed with browser actions — this is a blocking error.
 
 ## Load Reference
 
-Load the detected layer's command reference from `references/LAYERS.md`.
+Load the detected layer's command reference from [the layers guide](references/LAYERS.md).
 Read only the section matching the detected layer (Playwright MCP, Slicc
 playwright-cli, cmux-browser, or CDP) for targeting model, key commands,
 and layer-specific gotchas.

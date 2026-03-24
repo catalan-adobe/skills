@@ -376,7 +376,7 @@ re-running safe — `bash demo.sh cleanup && bash demo.sh`.
 
 ## Reference Material
 
-Read `references/cmux-reference.md` when generating demo scripts.
+Read [the cmux reference](references/cmux-reference.md) when generating demo scripts.
 It contains:
 
 - **cmux Command Reference** — all commands grouped by category

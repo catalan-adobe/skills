@@ -220,7 +220,7 @@ When `dismiss` is null, attempt in order:
    `button:has(svg)`, `button[class*="close"]`.
 3. **Element removal** — evaluate `document.querySelector('<selector>')?.remove()`.
 
-Consult `references/known-patterns.md` for CMP-specific dismiss patterns when
+Consult [known patterns](references/known-patterns.md) for CMP-specific dismiss patterns when
 the above three steps fail.
 
 ## Watch Mode
