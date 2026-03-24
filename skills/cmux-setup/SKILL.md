@@ -16,13 +16,13 @@ workspace coloring based on directory-pattern rules.
 
 ## Prerequisites
 
-- jq (JSON parsing)
+- Node 22+ (JSON parsing, file I/O)
 - cmux CLI (only needed for `apply`, not config management)
 
 ## Standalone Installation
 
 1. Copy `SKILL.md` to `~/.claude/commands/cmux-setup.md`
-2. Copy `scripts/cmux-setup.sh` to `~/.local/bin/cmux-setup.sh`
+2. Copy `scripts/cmux-setup.js` to `~/.local/bin/cmux-setup.js`
    and `chmod +x` it
 3. The fallback search will find it via the `find` command in Script Location
 
@@ -30,13 +30,13 @@ workspace coloring based on directory-pattern rules.
 
 ```bash
 if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
-  CMUX_SETUP="${CLAUDE_SKILL_DIR}/scripts/cmux-setup.sh"
+  CMUX_SETUP="${CLAUDE_SKILL_DIR}/scripts/cmux-setup.js"
 else
-  CMUX_SETUP="$(find ~/.claude -path "*/cmux-setup/scripts/cmux-setup.sh" \
+  CMUX_SETUP="$(find ~/.claude -path "*/cmux-setup/scripts/cmux-setup.js" \
     -type f 2>/dev/null | head -1)"
 fi
 if [[ -z "$CMUX_SETUP" || ! -f "$CMUX_SETUP" ]]; then
-  echo "Error: cmux-setup.sh not found." >&2
+  echo "Error: cmux-setup.js not found." >&2
 fi
 ```
 
@@ -45,13 +45,13 @@ Store in `CMUX_SETUP` and use for all commands below.
 ## Commands
 
 ```bash
-bash "$CMUX_SETUP" apply [dir]                          # Apply matching rule to workspace (default: cwd)
-bash "$CMUX_SETUP" list                                 # List all configured rules
-bash "$CMUX_SETUP" add --pattern <glob> --color <hex> --icon <sf.symbol> --label <text>
-bash "$CMUX_SETUP" remove --pattern <glob>              # Remove rule by pattern
-bash "$CMUX_SETUP" match [dir]                          # Show which rule matches a directory
-bash "$CMUX_SETUP" install-hook                         # Install zsh chpwd hook in ~/.zshrc
-bash "$CMUX_SETUP" uninstall-hook                       # Remove zsh chpwd hook from ~/.zshrc
+node "$CMUX_SETUP" apply [dir]                          # Apply matching rule to workspace (default: cwd)
+node "$CMUX_SETUP" list                                 # List all configured rules
+node "$CMUX_SETUP" add --pattern <glob> --color <hex> --icon <sf.symbol> --label <text>
+node "$CMUX_SETUP" remove --pattern <glob>              # Remove rule by pattern
+node "$CMUX_SETUP" match [dir]                          # Show which rule matches a directory
+node "$CMUX_SETUP" install-hook                         # Install zsh chpwd hook in ~/.zshrc
+node "$CMUX_SETUP" uninstall-hook                       # Remove zsh chpwd hook from ~/.zshrc
 ```
 
 ## Mode 1: Persistent Setup
