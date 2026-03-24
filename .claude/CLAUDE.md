@@ -21,7 +21,7 @@ docs/plans/                        Design specs and implementation plans
 - SKILL.md must include a fallback search if `CLAUDE_SKILL_DIR` is not set
 - Tests go in `tests/<skill-name>/`, never under `skills/` (anything under `skills/` ships to users)
 - Design specs follow `docs/plans/YYYY-MM-DD-<topic>-design.md`
-- Update README.md, plugin.json, and marketplace.json when adding a new skill
+- When skills change, follow the full publishing checklist in `.claude/rules/publishing.md`
 
 ## Local Installation
 
@@ -42,7 +42,7 @@ Recommended workflow:
 3. **Implement** — use `superpowers:subagent-driven-development` for parallel implementation
 4. **Evaluate** — use `skill-creator:skill-creator` to run test cases (with-skill vs baseline)
 5. **Live test** — test on real content before shipping; eval frameworks miss platform-specific bugs and edge cases
-6. **Ship** — feature branch → PR → squash merge
+6. **Ship** — feature branch → PR → squash merge → publish (see `.claude/rules/publishing.md`)
 
 ## Skill Quality (tessl)
 
