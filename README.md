@@ -99,6 +99,18 @@ monitor console/network events against any Chrome running with
 
 See [SKILL.md](skills/cdp-connect/SKILL.md) for the full command reference.
 
+### cdp-ext-pilot
+
+Launch Chrome with an unpacked extension loaded and test its UI via CDP.
+Auto-installs Chrome for Testing if needed. Opens sidepanel, popup, or
+options page and hands off to `cdp-connect` for interaction. Handles
+Chrome 137+ branded build restrictions and sidepanel user gesture
+requirements.
+
+**Dependencies:** Node 22+, `cdp-connect` skill
+
+See [SKILL.md](skills/cdp-ext-pilot/SKILL.md) for the full workflow.
+
 ### screencast
 
 Guided screen recording from Claude Code. Pick a display, window, or

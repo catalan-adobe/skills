@@ -67,6 +67,7 @@ Portfolio baseline: 97.5% average as of 2026-03-23 (7/13 at 100%). Most common i
 | `gemini-icon-set` | Generate colorful icon sets using Google Imagen 4 |
 | `video-digest` | Multimodal video summarization with timestamped YouTube links |
 | `cdp-connect` | Connect to existing Chrome browser via CDP |
+| `cdp-ext-pilot` | Launch Chrome with unpacked extension, open UI surfaces, test via CDP |
 | `screencast` | Guided screen recording with ffmpeg; macOS interactive window/region selection |
 | `cmux-demo` | Scripted cmux terminal demos with multi-pane layouts |
 | `cmux-setup` | Manage cmux workspace colors via directory-pattern rules |
