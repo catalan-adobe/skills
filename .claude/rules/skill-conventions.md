@@ -3,9 +3,10 @@
 ## Structure
 
 - `SKILL.md` = pure prompt; bundled scripts handle mechanical work
-- Scripts live at `scripts/<skill-name>.sh` inside the skill directory
+- Scripts live at `scripts/<skill-name>.sh` inside the skill directory (not skill root — tessl warns about files outside `scripts/`, `references/`, `assets/`)
 - Locate scripts via `${CLAUDE_SKILL_DIR}/scripts/` with fallback search
 - Keep SKILL.md under ~500 lines; extract reference material to `references/`
+- Reference `references/` files with markdown link syntax `[label](references/FILE.md)`, not backtick code spans — tessl only recognizes markdown links as entrypoint references
 - For large reference files (>300 lines), include a table of contents
 
 ## Script Patterns

@@ -55,7 +55,7 @@ Key constraints from the Agent Skills spec (agentskills.io):
 
 Install: `curl -fsSL https://get.tessl.io | sh`. GitHub Action `tesslio/skill-review@v1` can enforce quality gates on PRs (no auth required).
 
-Portfolio baseline: 97.5% average as of 2026-03-23 (7/13 at 100%). Most common improvement: extracting monolithic content to `references/` directories.
+All 14 skills lint clean as of 2026-03-24. All published to tessl registry. Run `tessl skill lint skills/<name>` before publishing — catches orphaned references and spec violations.
 
 ## Available Skills
 

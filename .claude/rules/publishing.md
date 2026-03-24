@@ -20,7 +20,8 @@ After all skills are published, update these in a single commit:
    - Description lists all skills with short purpose
    - Keywords cover all skills
 4. **Skills table** — `.claude/CLAUDE.md` "Available Skills" table lists every skill
-5. **Local sync** — `./scripts/sync-skills.sh`
+5. **README** — `README.md` "Available Skills" section has an entry per skill
+6. **Local sync** — `./scripts/sync-skills.sh`
 
 ## Detecting unpublished changes
 
