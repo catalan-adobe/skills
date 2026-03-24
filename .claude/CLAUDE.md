@@ -73,3 +73,5 @@ Portfolio baseline: 97.5% average as of 2026-03-23 (7/13 at 100%). Most common i
 | `cmux-setup` | Manage cmux workspace colors via directory-pattern rules |
 | `page-prep` | Detect and remove webpage overlays for clean interaction |
 | `browser-universal` | Detect browser layer and load commands for layer-agnostic interaction |
+| `slack-cdp` | Control Slack via CDP or headless API tokens |
+| `kite-teleport` | Teleport Kite task sessions to local Claude Code |
