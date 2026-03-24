@@ -180,7 +180,7 @@ determine which sheet(s) cover each chunk. A chunk may span two
 sheets — include both.
 
 Spawn one Agent per chunk using the template in
-`references/SUBAGENT-PROMPT.md`. Fill in the placeholders with each
+[the subagent prompt](references/SUBAGENT-PROMPT.md). Fill in the placeholders with each
 chunk's title, time range, transcript segment, and contact sheet
 path(s).
 

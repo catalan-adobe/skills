@@ -31,7 +31,7 @@ Parse each file into distinct entries using markdown headers (`#`, `##`,
 Classify each entry as either a **promote candidate** or **ephemeral**.
 The core question: would a different developer benefit from knowing this?
 
-See `references/CLASSIFICATION.md` for detailed examples of each category.
+See [classification examples](references/CLASSIFICATION.md) for detailed examples of each category.
 
 When uncertain, classify as promote candidate. A false positive costs the
 user one "discard" decision. A false negative buries useful knowledge.
@@ -45,7 +45,7 @@ common secret patterns (e.g., `sk-...`, `ghp_...`, `Bearer ...`,
 secrets in conversation history.
 
 Present candidates grouped by theme with rationale. See
-`references/OUTPUT-FORMATS.md` for format.
+[output formats](references/OUTPUT-FORMATS.md) for format.
 
 If there are no promote candidates:
 > "All N entries look task-specific. Nothing to promote. Say 'show filtered'
@@ -80,7 +80,7 @@ For each promoted entry:
 4. Do NOT modify or delete the source memory files.
 
 Report a summary of promoted, discarded, and unchanged entries. See
-`references/OUTPUT-FORMATS.md` for format.
+[output formats](references/OUTPUT-FORMATS.md) for format.
 
 ## Important Notes
 
