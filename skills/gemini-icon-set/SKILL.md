@@ -236,7 +236,7 @@ Manifest:  ./icons/manifest.json
 Sizes:     16px, 24px, 32px, 48px, 64px, 96px, 128px, 256px (16 files each)
 ```
 
-See `references/STYLES.md` for style preset prompts, manifest format, and output directory structure.
+See [the styles reference](references/STYLES.md) for style preset prompts, manifest format, and output directory structure.
 
 ## Important Notes
 

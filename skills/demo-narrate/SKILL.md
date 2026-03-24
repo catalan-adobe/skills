@@ -50,7 +50,7 @@ fi
 
 Store the result in `NARRATE_SH` and use it for all subsequent commands.
 
-See `references/REFERENCE.md` for the full command reference.
+See [the reference guide](references/REFERENCE.md) for the full command reference.
 
 ## Execution
 
@@ -148,7 +148,7 @@ that fit within the video's time windows.
 
 Ask the user all three at once:
 - **Audience** — technical / product / mixed (default: mixed)
-- **Voice** — see `references/REFERENCE.md` or `"$NARRATE_SH" voices` (default: AriaNeural)
+- **Voice** — see [the reference guide](references/REFERENCE.md) or `"$NARRATE_SH" voices` (default: AriaNeural)
 - **Fade-in** — 0.5s fade from black? (default: yes)
 
 #### 4b. Define acts and write timing file
@@ -308,5 +308,5 @@ ffprobe -v error -show_entries stream=codec_type,duration -of json "<output>"
 Report: output file path, duration, file size. Open the file for the
 user to review.
 
-See `references/REFERENCE.md` for output directory structure, voice
+See [the reference guide](references/REFERENCE.md) for output directory structure, voice
 options, and standalone installation instructions.

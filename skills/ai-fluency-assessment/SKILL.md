@@ -18,15 +18,15 @@ Then run `assess.py` to scan and classify all 18 observable behaviors. The scrip
 
 ```bash
 # Default: scan ~/.claude/projects/, classify with Claude Haiku
-python3 /path/to/skills/ai-fluency-assessment/assess.py \
+python3 /path/to/skills/ai-fluency-assessment/scripts/assess.py \
   --output-dir .ai-fluency --max-sessions 6000
 
 # Custom sessions directory (e.g., exported sessions, another machine's data)
-python3 /path/to/skills/ai-fluency-assessment/assess.py \
+python3 /path/to/skills/ai-fluency-assessment/scripts/assess.py \
   --sessions-dir <PATH> --output-dir .ai-fluency --max-sessions 6000
 
 # Fast/free fallback (regex only, 11 behaviors, less accurate)
-python3 /path/to/skills/ai-fluency-assessment/assess.py \
+python3 /path/to/skills/ai-fluency-assessment/scripts/assess.py \
   --output-dir .ai-fluency --max-sessions 6000 --regex-only
 ```
 
@@ -96,7 +96,7 @@ Read `.ai-fluency/analysis.json` for the 18 LLM-classified behaviors and `.ai-fl
 
 ### Step 4: Generate the Visual HTML Report
 
-Generate a self-contained HTML report at `.ai-fluency/fluency-report.html` following `references/REPORT-SPEC.md` for design system, layout, and formatting specifications.
+Generate a self-contained HTML report at `.ai-fluency/fluency-report.html` following [the report spec](references/REPORT-SPEC.md) for design system, layout, and formatting specifications.
 
 ### Step 5: Open the Report
 
@@ -106,4 +106,4 @@ open .ai-fluency/fluency-report.html
 
 ## Framework Reference
 
-See `references/FRAMEWORK.md` for the full 24-behavior reference table.
+See [the framework reference](references/FRAMEWORK.md) for the full 24-behavior reference table.

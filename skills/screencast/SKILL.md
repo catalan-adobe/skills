@@ -153,4 +153,4 @@ Report: file path, duration, and file size.
 - If `stop` finds a dead process, report it and note whether a
   partial file exists.
 
-See `references/REFERENCE.md` for macOS picker details, tips, and standalone installation.
+See [the reference guide](references/REFERENCE.md) for macOS picker details, tips, and standalone installation.
