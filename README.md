@@ -206,6 +206,15 @@ directory, and offers branch checkout.
 
 See [SKILL.md](skills/kite-teleport/SKILL.md) for details.
 
+### spectrum-2-web
+
+Design and build web UIs with Adobe Spectrum 2 design system. Outputs
+vanilla CSS with Spectrum tokens (static pages) or Spectrum Web
+Components (interactive apps). Recommends output tier based on
+complexity.
+
+See [SKILL.md](skills/spectrum-2-web/SKILL.md) for details.
+
 ## License
 
 MIT

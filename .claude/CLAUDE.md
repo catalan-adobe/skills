@@ -75,3 +75,4 @@ All 14 skills lint clean as of 2026-03-24. All published to tessl registry. Run 
 | `browser-universal` | Detect browser layer and load commands for layer-agnostic interaction |
 | `slack-cdp` | Control Slack via CDP or headless API tokens |
 | `kite-teleport` | Teleport Kite task sessions to local Claude Code |
+| `spectrum-2-web` | Design and build web UIs with Spectrum 2 + Spectrum Web Components |
