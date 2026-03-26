@@ -1,0 +1,107 @@
+# Header Migration — Autoresearch Program
+
+## Goal
+
+Migrate the header from {{URL}} into an AEM Edge Delivery Services header block with maximum visual fidelity. The source header has:
+
+{{HEADER_DESCRIPTION}}
+
+**Total source header height: ~{{HEADER_HEIGHT}}px at desktop.** Matching this height is critical for the visual score.
+
+## Your Environment
+
+- AEM Edge Delivery Services dev server running at http://localhost:{{PORT}}
+- Content served from project root via `aem up --html-folder .`
+- Test page: http://localhost:{{PORT}}/
+- Nav loaded from: http://localhost:{{PORT}}/nav (resolves to nav.plain.html)
+
+## What You CAN Modify
+
+You may ONLY modify these three files:
+
+1. `blocks/header/header.js` — Header block decoration logic
+2. `blocks/header/header.css` — Header block styles
+3. `nav.plain.html` — Navigation content structure (at project root)
+
+## What You CANNOT Modify
+
+Everything else is off-limits. In particular:
+- `autoresearch/` — evaluation infrastructure (immutable)
+- `loop.sh`, `program.md` — loop infrastructure
+- `scripts/`, `styles/` — EDS core files
+- `results.tsv` — managed by the outer loop
+
+## How to Read History
+
+Before making changes, ALWAYS review what has been tried:
+1. `cat results.tsv` — Full experiment log (iteration, score, status, description)
+2. `git log --oneline` — Only successful improvements are in the git log
+3. `cat autoresearch/results/latest-evaluation.json` — Last evaluation breakdown with per-viewport scores AND source/rendered heights
+4. **Read the diff images** — `autoresearch/results/desktop-diff.png` shows pixel-level mismatches in red/yellow. Read this image to see WHERE the visual differences are and target your changes accordingly.
+5. `git diff HEAD~1` (if available) — see what the last successful change actually did
+6. `cat autoresearch/results/last-reverted.diff` (if exists) — see the exact diff of the last FAILED attempt, so you don't repeat it
+
+If results.tsv shows repeated reverts for similar approaches (e.g., multiple "height" or "padding" attempts), DO NOT try that approach again. Try something fundamentally different.
+
+## How the Evaluator Scores You
+
+After you exit, an immutable evaluator runs. It produces a composite score (0-100):
+- **70% weight**: Visual similarity via pixelmatch (desktop 60%, tablet 20%, mobile 20%)
+- **30% weight**: Nav completeness (are all {{NAV_ITEM_COUNT}} source nav items present in the rendered HTML?)
+
+**Important**: The evaluator pads images to equal dimensions before comparing. If your rendered header is shorter than the source, the missing rows count as full-row pixel mismatches. **Matching the source header height (~{{HEADER_HEIGHT}}px) is essential for a good visual score.**
+
+The outer loop keeps your changes if the score improves, reverts if it doesn't.
+
+## Source Reference
+
+- `autoresearch/source/desktop.png` — Screenshot of source header at 1440px
+- `autoresearch/source/tablet.png` — Screenshot at 768px
+- `autoresearch/source/mobile.png` — Screenshot at 375px
+- `autoresearch/source/nav-structure.json` — Extracted nav items ({{NAV_ITEM_COUNT}} items)
+
+## EDS Header Block Conventions
+
+The boilerplate header block (`blocks/header/header.js`) works as follows:
+- Fetches nav content from `/nav` path (resolved to `nav.plain.html`)
+- The nav fragment's top-level `<div>` children become sections
+- Sections are assigned classes in order: `nav-brand`, `nav-sections`, `nav-tools`
+- A hamburger menu is auto-generated for mobile
+- The block's `decorate(block)` function receives the header block element
+
+You may restructure the JS and CSS completely. The only contract is:
+- `export default async function decorate(block)` must exist
+- The block should render a functional header inside the `<header>` element
+
+## Constraints
+
+1. **Vanilla JS and CSS only.** No frameworks, no build tools, no external dependencies.
+2. **The header must render.** A broken header that doesn't display scores 0. Prefer incremental progress over risky rewrites.
+3. **Commit before exiting.** Stage your changes and commit with a descriptive message: `git add blocks/header/ nav.plain.html && git commit -m "description of change"`
+4. **Read results.tsv and diff images first.** Understand what was already tried. Do not repeat approaches that were reverted.
+5. **You may make multiple related changes in one iteration.** For example: adjust height + change background color + update font together if they serve a coherent goal. Avoid unrelated changes.
+
+## Strategy
+
+### Phase 1: Structure (score < 30)
+Get all navigation items rendering in the DOM. Restructure nav.plain.html and header.js to display all rows described in the goal.
+
+### Phase 2: Dimensions (score 30-50)
+Match the source header height (~{{HEADER_HEIGHT}}px desktop). Set correct row heights for each bar. Override the EDS default --nav-height: 64px. The evaluator pads to equal dimensions, so height mismatches count as full-row pixel mismatches.
+
+### Phase 3: Colors and layout (score 50-70)
+Match background colors for each row. Match the horizontal layout: logo placement, element alignment, spacing. Add any decorative elements (borders, gradients, separators).
+
+### Phase 4: Visual polish (score > 70)
+Typography (font families, sizes, weights), exact spacing, icon styling, CTA button styling, search bar or input styling, hover states.
+
+### If stuck (3+ reverts in a row on similar approaches)
+Try a fundamentally different approach:
+- Completely rewrite header.js with a different DOM structure
+- Change the nav.plain.html section model
+- Look at the diff image to find the largest red areas and target those specifically
+- Read the source screenshot to re-examine what you're trying to match
+
+## NEVER STOP
+
+Continue working until you have made your changes and committed them. Then exit cleanly. The outer loop will evaluate and decide whether to keep your work. Do not second-guess the evaluator — just make your best change and commit.
