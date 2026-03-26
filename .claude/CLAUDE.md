@@ -40,9 +40,10 @@ Recommended workflow:
 1. **Brainstorm** — use `superpowers:brainstorming` to design the skill (clarify scope, pick approach)
 2. **Plan** — use `superpowers:writing-plans` to create an implementation plan
 3. **Implement** — use `superpowers:subagent-driven-development` for parallel implementation
-4. **Evaluate** — use `skill-creator:skill-creator` to run test cases (with-skill vs baseline)
-5. **Live test** — test on real content before shipping; eval frameworks miss platform-specific bugs and edge cases
-6. **Ship** — feature branch → PR → squash merge → publish (see `.claude/rules/publishing.md`)
+4. **Register** — tessl import, lint, update manifests, sync local (see `.claude/rules/adding-skills.md`)
+5. **Evaluate** — use `skill-creator:skill-creator` to run test cases (with-skill vs baseline)
+6. **Live test** — test on real content before shipping; eval frameworks miss platform-specific bugs and edge cases
+7. **Ship** — feature branch → PR → squash merge → publish (see `.claude/rules/publishing.md`)
 
 ## Skill Quality (tessl)
 
@@ -55,7 +56,7 @@ Key constraints from the Agent Skills spec (agentskills.io):
 
 Install: `curl -fsSL https://get.tessl.io | sh`. GitHub Action `tesslio/skill-review@v1` can enforce quality gates on PRs (no auth required).
 
-All 14 skills lint clean as of 2026-03-24. All published to tessl registry. Run `tessl skill lint skills/<name>` before publishing — catches orphaned references and spec violations.
+All skills lint clean. All published to tessl registry. Run `tessl skill lint skills/<name>` before publishing — catches orphaned references and spec violations.
 
 ## Available Skills
 
