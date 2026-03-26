@@ -2,7 +2,13 @@
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const { PNG } = require(join(__dirname, 'node_modules', 'pngjs'));
 
 const SESSION = 'header-capture';
 
@@ -69,8 +75,22 @@ function cli(...args) {
   ).trim();
 }
 
+function parseEvalOutput(raw) {
+  const resultIdx = raw.indexOf('### Result');
+  const codeIdx = raw.indexOf('### Ran Playwright code');
+  if (resultIdx === -1) return raw;
+  const start = resultIdx + '### Result'.length;
+  const end = codeIdx !== -1 ? codeIdx : raw.length;
+  let value = raw.slice(start, end).trim();
+  if (value.startsWith('"') && value.endsWith('"')) {
+    value = JSON.parse(value);
+  }
+  return value;
+}
+
 function cliEval(js) {
-  return cli('eval', js);
+  const raw = cli('eval', js);
+  return parseEvalOutput(raw);
 }
 
 function verifyInstalled() {
@@ -227,38 +247,75 @@ function extractNavItems(headerSelector) {
   return JSON.parse(raw);
 }
 
+function cropHeader(fullPath, cropPath, headerSelector) {
+  const selectorEscaped = headerSelector.replace(/'/g, "\\'");
+  const rectRaw = cliEval(
+    `JSON.stringify(document.querySelector('${selectorEscaped}')?.getBoundingClientRect()?.toJSON() || null)`
+  );
+  const rect = JSON.parse(rectRaw);
+  if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+
+  const fullBuf = readFileSync(fullPath);
+  const full = PNG.sync.read(fullBuf);
+  const x = Math.max(0, Math.round(rect.x));
+  const y = Math.max(0, Math.round(rect.y));
+  const w = Math.min(Math.round(rect.width), full.width - x);
+  const h = Math.min(Math.round(rect.height), full.height - y);
+  if (w <= 0 || h <= 0) return false;
+
+  const cropped = new PNG({ width: w, height: h });
+  for (let row = 0; row < h; row++) {
+    for (let col = 0; col < w; col++) {
+      const srcIdx = ((y + row) * full.width + (x + col)) * 4;
+      const dstIdx = (row * w + col) * 4;
+      cropped.data[dstIdx] = full.data[srcIdx];
+      cropped.data[dstIdx + 1] = full.data[srcIdx + 1];
+      cropped.data[dstIdx + 2] = full.data[srcIdx + 2];
+      cropped.data[dstIdx + 3] = full.data[srcIdx + 3];
+    }
+  }
+  writeFileSync(cropPath, PNG.sync.write(cropped));
+  return true;
+}
+
 function captureScreenshots(outputDir, headerSelector) {
   log('  Taking screenshots...');
 
   const screenshots = {};
-  const selectorEscaped = headerSelector.replace(/'/g, "\\'");
 
   for (const vp of VIEWPORTS) {
     cli('resize', String(vp.width), String(vp.height));
 
     const filename = `${vp.name}.png`;
     const filepath = join(outputDir, filename);
+    const fullPath = join(outputDir, `${vp.name}-full.png`);
 
-    const hasHeader = cliEval(
-      `!!document.querySelector('${selectorEscaped}')`
-    );
+    // Take full viewport screenshot
+    cli('screenshot', `--filename=${fullPath}`);
 
-    if (hasHeader === 'false') {
+    // Crop header from full screenshot
+    const cropped = cropHeader(fullPath, filepath, headerSelector);
+    if (!cropped) {
       log(
         `  Header not visible at ${vp.width}x${vp.height},`
-        + ' using page-clip fallback'
+        + ' using top-120px fallback'
       );
-      cli(
-        'screenshot',
-        `--filename=${filepath}`,
-        `--clip=0,0,${vp.width},120`
-      );
-    } else {
-      cli(
-        'screenshot',
-        `--filename=${filepath}`,
-        `--selector=${headerSelector}`
-      );
+      // Fallback: crop top 120px from full screenshot
+      const fullBuf = readFileSync(fullPath);
+      const full = PNG.sync.read(fullBuf);
+      const h = Math.min(120, full.height);
+      const fallback = new PNG({ width: full.width, height: h });
+      for (let row = 0; row < h; row++) {
+        for (let col = 0; col < full.width; col++) {
+          const srcIdx = (row * full.width + col) * 4;
+          const dstIdx = (row * full.width + col) * 4;
+          fallback.data[dstIdx] = full.data[srcIdx];
+          fallback.data[dstIdx + 1] = full.data[srcIdx + 1];
+          fallback.data[dstIdx + 2] = full.data[srcIdx + 2];
+          fallback.data[dstIdx + 3] = full.data[srcIdx + 3];
+        }
+      }
+      writeFileSync(filepath, PNG.sync.write(fallback));
     }
 
     screenshots[vp.name] = filename;

@@ -44,6 +44,23 @@ function cli(args) {
   }).trim();
 }
 
+function parseEvalOutput(raw) {
+  const resultIdx = raw.indexOf('### Result');
+  const codeIdx = raw.indexOf('### Ran Playwright code');
+  if (resultIdx === -1) return raw;
+  const start = resultIdx + '### Result'.length;
+  const end = codeIdx !== -1 ? codeIdx : raw.length;
+  let value = raw.slice(start, end).trim();
+  if (value.startsWith('"') && value.endsWith('"')) {
+    value = JSON.parse(value);
+  }
+  return value;
+}
+
+function cliEval(js) {
+  return parseEvalOutput(cli(`eval "${js.replace(/"/g, '\\"')}"`));
+}
+
 function compareImages(sourcePath, renderedPath, diffPath) {
   if (!existsSync(sourcePath)) return { similarity: 0, error: 'source missing' };
   if (!existsSync(renderedPath)) return { similarity: 0, error: 'rendered missing' };
@@ -191,17 +208,17 @@ for (const vp of VIEWPORTS) {
     cli(`screenshot --filename=${fullPath}`);
 
     // Get header bounding rect for cropping
-    const rectJson = cli(
-      'eval "JSON.stringify(document.querySelector(\'header\')?.getBoundingClientRect()?.toJSON() || null)"',
+    const rectRaw = cliEval(
+      "JSON.stringify(document.querySelector('header')?.getBoundingClientRect()?.toJSON() || null)",
     );
-    const rect = JSON.parse(rectJson);
+    const rect = JSON.parse(rectRaw);
 
     if (rect && rect.width > 0 && rect.height > 0) {
       cropHeaderFromScreenshot(fullPath, renderedPath, rect);
 
       if (vp.name === 'desktop') {
-        renderedHtml = cli(
-          'eval "document.querySelector(\'header\')?.innerHTML || \'\'"',
+        renderedHtml = cliEval(
+          "document.querySelector('header')?.innerHTML || ''",
         );
       }
 
