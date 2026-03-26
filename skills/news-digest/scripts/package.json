@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "defuddle": "0.14.0",
     "fast-xml-parser": "5.5.9",
-    "js-yaml": "4.1.1"
+    "js-yaml": "4.1.1",
+    "linkedom": "0.18.12"
   }
 }
