@@ -1,0 +1,252 @@
+/** IMMUTABLE EVALUATOR — the agent must not modify this file.
+ *
+ * Captures rendered EDS header, compares against source screenshots,
+ * and outputs a composite score. Used by loop.sh for keep/discard decisions.
+ *
+ * Usage: node autoresearch/evaluate.js
+ * Output: JSON to stdout with score and breakdown
+ */
+import {
+  readFileSync, writeFileSync, existsSync, mkdirSync,
+} from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
+import { PNG } from 'pngjs';
+import pixelmatch from 'pixelmatch';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SOURCE_DIR = join(__dirname, 'source');
+const RESULTS_DIR = join(__dirname, 'results');
+const PORT = '{{PORT}}';
+const PAGE_PATH = '{{PAGE_PATH}}';
+const BASE_URL = `http://localhost:${PORT}${PAGE_PATH}`;
+const SESSION = 'header-eval';
+
+mkdirSync(RESULTS_DIR, { recursive: true });
+
+const VIEWPORTS = [
+  {
+    name: 'desktop', width: 1440, height: 900, weight: 0.6,
+  },
+  {
+    name: 'tablet', width: 768, height: 1024, weight: 0.2,
+  },
+  {
+    name: 'mobile', width: 375, height: 812, weight: 0.2,
+  },
+];
+
+function cli(args) {
+  return execSync(`playwright-cli -s=${SESSION} ${args}`, {
+    encoding: 'utf-8',
+    timeout: 30000,
+  }).trim();
+}
+
+function compareImages(sourcePath, renderedPath, diffPath) {
+  if (!existsSync(sourcePath)) return { similarity: 0, error: 'source missing' };
+  if (!existsSync(renderedPath)) return { similarity: 0, error: 'rendered missing' };
+
+  const sourceImg = PNG.sync.read(readFileSync(sourcePath));
+  const renderedImg = PNG.sync.read(readFileSync(renderedPath));
+
+  // Use LARGER dimensions and pad smaller image with white.
+  // Rewards matching source height rather than penalizing it.
+  const width = Math.max(sourceImg.width, renderedImg.width);
+  const height = Math.max(sourceImg.height, renderedImg.height);
+
+  // Place image onto a white canvas of target dimensions (top-left aligned)
+  const padPng = (img, w, h) => {
+    const padded = new PNG({ width: w, height: h });
+    // Fill with white
+    for (let i = 0; i < padded.data.length; i += 4) {
+      padded.data[i] = 255;
+      padded.data[i + 1] = 255;
+      padded.data[i + 2] = 255;
+      padded.data[i + 3] = 255;
+    }
+    // Copy original pixels
+    for (let y = 0; y < img.height && y < h; y++) {
+      for (let x = 0; x < img.width && x < w; x++) {
+        const srcIdx = (y * img.width + x) * 4;
+        const dstIdx = (y * w + x) * 4;
+        padded.data[dstIdx] = img.data[srcIdx];
+        padded.data[dstIdx + 1] = img.data[srcIdx + 1];
+        padded.data[dstIdx + 2] = img.data[srcIdx + 2];
+        padded.data[dstIdx + 3] = img.data[srcIdx + 3];
+      }
+    }
+    return padded;
+  };
+
+  const src = sourceImg.width === width && sourceImg.height === height
+    ? sourceImg : padPng(sourceImg, width, height);
+  const ren = renderedImg.width === width && renderedImg.height === height
+    ? renderedImg : padPng(renderedImg, width, height);
+
+  const diff = new PNG({ width, height });
+  const mismatchedPixels = pixelmatch(
+    src.data,
+    ren.data,
+    diff.data,
+    width,
+    height,
+    { threshold: 0.15, alpha: 0.5 },
+  );
+
+  writeFileSync(diffPath, PNG.sync.write(diff));
+
+  const totalPixels = width * height;
+  const similarity = ((totalPixels - mismatchedPixels) / totalPixels) * 100;
+  return {
+    similarity: Math.round(similarity * 100) / 100,
+    mismatchedPixels,
+    totalPixels,
+    width,
+    height,
+    sourceHeight: sourceImg.height,
+    renderedHeight: renderedImg.height,
+  };
+}
+
+function checkNavCompleteness(navStructurePath, renderedHtml) {
+  if (!existsSync(navStructurePath)) return { score: 50, reason: 'no source nav structure' };
+
+  const source = JSON.parse(readFileSync(navStructurePath, 'utf-8'));
+  if (!source?.topNav?.length) return { score: 50, reason: 'empty source nav' };
+
+  const sourceItems = source.topNav
+    .map((item) => item.text.toLowerCase().trim())
+    .filter((text) => text.length > 0);
+  const renderedLower = renderedHtml.toLowerCase();
+
+  let found = 0;
+  const missing = [];
+  for (const item of sourceItems) {
+    if (renderedLower.includes(item)) {
+      found++;
+    } else {
+      missing.push(item);
+    }
+  }
+
+  const score = sourceItems.length > 0
+    ? (found / sourceItems.length) * 100
+    : 0;
+
+  return {
+    score: Math.round(score * 100) / 100, found, total: sourceItems.length, missing,
+  };
+}
+
+function cropHeaderFromScreenshot(fullPath, cropPath, rect) {
+  if (!existsSync(fullPath)) return false;
+  const full = PNG.sync.read(readFileSync(fullPath));
+  const x = Math.round(rect.x);
+  const y = Math.round(rect.y);
+  const w = Math.min(Math.round(rect.width), full.width - x);
+  const h = Math.min(Math.round(rect.height), full.height - y);
+  if (w <= 0 || h <= 0) return false;
+
+  const cropped = new PNG({ width: w, height: h });
+  for (let row = 0; row < h; row++) {
+    for (let col = 0; col < w; col++) {
+      const srcIdx = ((y + row) * full.width + (x + col)) * 4;
+      const dstIdx = (row * w + col) * 4;
+      cropped.data[dstIdx] = full.data[srcIdx];
+      cropped.data[dstIdx + 1] = full.data[srcIdx + 1];
+      cropped.data[dstIdx + 2] = full.data[srcIdx + 2];
+      cropped.data[dstIdx + 3] = full.data[srcIdx + 3];
+    }
+  }
+  writeFileSync(cropPath, PNG.sync.write(cropped));
+  return true;
+}
+
+// Main evaluation
+const results = { viewports: {}, navCompleteness: null, compositeScore: 0 };
+let renderedHtml = '';
+
+try {
+  cli(`open ${BASE_URL}`);
+} catch (err) {
+  console.error(JSON.stringify({ error: `Failed to open ${BASE_URL}: ${err.message}` }));
+  process.exit(1);
+}
+
+for (const vp of VIEWPORTS) {
+  const sourcePath = join(SOURCE_DIR, `${vp.name}.png`);
+  const fullPath = join(RESULTS_DIR, `${vp.name}-full.png`);
+  const renderedPath = join(RESULTS_DIR, `${vp.name}-rendered.png`);
+  const diffPath = join(RESULTS_DIR, `${vp.name}-diff.png`);
+
+  try {
+    cli(`resize ${vp.width} ${vp.height}`);
+
+    // Wait for layout to settle after resize
+    execSync('sleep 2');
+
+    // Take full-viewport screenshot
+    cli(`screenshot --filename=${fullPath}`);
+
+    // Get header bounding rect for cropping
+    const rectJson = cli(
+      'eval "JSON.stringify(document.querySelector(\'header\')?.getBoundingClientRect()?.toJSON() || null)"',
+    );
+    const rect = JSON.parse(rectJson);
+
+    if (rect && rect.width > 0 && rect.height > 0) {
+      cropHeaderFromScreenshot(fullPath, renderedPath, rect);
+
+      if (vp.name === 'desktop') {
+        renderedHtml = cli(
+          'eval "document.querySelector(\'header\')?.innerHTML || \'\'"',
+        );
+      }
+
+      const comparison = compareImages(sourcePath, renderedPath, diffPath);
+      results.viewports[vp.name] = { ...comparison, weight: vp.weight };
+    } else {
+      results.viewports[vp.name] = {
+        similarity: 0, error: 'header not found', weight: vp.weight,
+      };
+    }
+  } catch (err) {
+    results.viewports[vp.name] = {
+      similarity: 0, error: err.message, weight: vp.weight,
+    };
+  }
+}
+
+// Close playwright-cli session
+try {
+  cli('close');
+} catch {
+  // Session may already be closed
+}
+
+// Nav completeness
+const navStructurePath = join(SOURCE_DIR, 'nav-structure.json');
+results.navCompleteness = checkNavCompleteness(navStructurePath, renderedHtml);
+
+// Composite score: 70% visual similarity (weighted) + 30% nav completeness
+let visualScore = 0;
+let totalWeight = 0;
+for (const [, vp] of Object.entries(results.viewports)) {
+  visualScore += (vp.similarity || 0) * vp.weight;
+  totalWeight += vp.weight;
+}
+if (totalWeight > 0) visualScore /= totalWeight;
+
+const navScore = results.navCompleteness?.score || 0;
+results.compositeScore = Math.round((visualScore * 0.7 + navScore * 0.3) * 100) / 100;
+
+// Output
+console.log(JSON.stringify(results, null, 2));
+
+// Also write to file for agent to read
+writeFileSync(
+  join(RESULTS_DIR, 'latest-evaluation.json'),
+  JSON.stringify(results, null, 2),
+);
