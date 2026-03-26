@@ -4,7 +4,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { XMLParser } from 'fast-xml-parser';
-import { extractArticle } from './article-extractor.mjs';
+import { decodeGoogleNewsUrls, extractArticle } from './article-extractor.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -101,7 +101,8 @@ async function extractAll(stories, concurrency = 5) {
     const batch = stories.slice(i, i + concurrency);
     const extracted = await Promise.all(
       batch.map(async (story) => {
-        const article = await extractArticle(story.url);
+        const fetchUrl = story.resolvedUrl || story.url;
+        const article = await extractArticle(fetchUrl);
         return { ...story, ...article };
       }),
     );
@@ -120,7 +121,9 @@ async function main() {
       { name: 'Search', query: flags.query },
       settings,
     );
-    const enriched = await extractAll(stories.slice(0, 15));
+    const sliced = stories.slice(0, 15);
+    await decodeGoogleNewsUrls(sliced);
+    const enriched = await extractAll(sliced);
     console.log(JSON.stringify(enriched, null, 2));
     return;
   }
@@ -165,6 +168,7 @@ async function main() {
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, maxStories);
 
+  await decodeGoogleNewsUrls(recent);
   const enriched = await extractAll(recent);
   console.log(JSON.stringify(enriched, null, 2));
 }

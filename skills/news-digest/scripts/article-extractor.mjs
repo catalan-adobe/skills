@@ -1,10 +1,12 @@
 #!/usr/bin/env node
+import { execFileSync } from 'node:child_process';
 import { parseHTML } from 'linkedom';
 import Defuddle from 'defuddle';
 
 const ARTICLE_TIMEOUT_MS = 60_000;
+const PLAYWRIGHT_CLI = 'playwright-cli';
+const SESSION_NAME = 'news-digest';
 const GOOGLE_NEWS_HOST = 'news.google.com';
-const BATCHEXECUTE_URL = 'https://news.google.com/_/DotsSplashUi/data/batchexecute';
 
 const VIDEO_DOMAINS = [
   'youtube.com', 'youtube-nocookie.com', 'youtu.be',
@@ -68,86 +70,102 @@ function detectPaywall(document, content) {
   return PAYWALL_MARKERS.some((marker) => text.includes(marker));
 }
 
-/**
- * Resolves a Google News RSS/article URL to the real article URL by calling
- * the batchexecute RPC endpoint (reverse-engineered from google-news-decoder).
- *
- * @param {string} url - A news.google.com URL (rss/articles or articles path)
- * @returns {Promise<string>} The decoded article URL
- * @throws {Error} If decoding fails at any step
- */
-async function decodeGoogleNewsUrl(url) {
-  const parsed = new URL(url);
-
-  // Extract the article ID — the last non-empty path segment
-  const articleId = parsed.pathname.split('/').filter(Boolean).at(-1);
-  if (!articleId) throw new Error(`Cannot extract article ID from path: ${parsed.pathname}`);
-
-  // Fetch the interstitial page to get signature and timestamp
-  const interstitialUrl = `https://${GOOGLE_NEWS_HOST}/articles/${articleId}`;
-  const interstitialRes = await fetch(interstitialUrl, {
-    redirect: 'follow',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-        + 'AppleWebKit/537.36 (KHTML, like Gecko) '
-        + 'Chrome/124.0.0.0 Safari/537.36',
-    },
-  });
-
-  if (!interstitialRes.ok) {
-    throw new Error(`Interstitial fetch returned HTTP ${interstitialRes.status}`);
-  }
-
-  const interstitialHtml = await interstitialRes.text();
-  const { document: interstitialDoc } = parseHTML(interstitialHtml);
-
-  // data-n-a-sg (signature) and data-n-a-ts (timestamp) live on a c-wiz > div[jscontroller]
-  const dataEl = interstitialDoc.querySelector('c-wiz > div[jscontroller]');
-  const signature = dataEl?.getAttribute('data-n-a-sg');
-  const timestamp = dataEl?.getAttribute('data-n-a-ts');
-
-  if (!signature || !timestamp) {
-    throw new Error(
-      `data-n-a-sg / data-n-a-ts not found in interstitial page for ${articleId}`,
-    );
-  }
-
-  // Build batchexecute RPC payload
-  const payload = [
-    'Fbv4je',
-    `["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",null,1,null,null,null,null,null,0,1],"X","X",1,[1,1,1],1,1,null,0,0,null,0],"${articleId}",${timestamp},"${signature}"]`,
-  ];
-  const body = `f.req=${encodeURIComponent(JSON.stringify([[payload]]))}`;
-
-  const rpcRes = await fetch(BATCHEXECUTE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-        + 'AppleWebKit/537.36 (KHTML, like Gecko) '
-        + 'Chrome/124.0.0.0 Safari/537.36',
-    },
-    body,
-  });
-
-  if (!rpcRes.ok) {
-    throw new Error(`batchexecute returned HTTP ${rpcRes.status}`);
-  }
-
-  const responseText = await rpcRes.text();
-
-  // Response is XSSI-protected: first line is `)]}'`, real JSON starts after first blank line
-  const jsonPart = responseText.split('\n\n')[1];
-  if (!jsonPart) throw new Error('Unexpected batchexecute response format (no double-newline)');
-
-  const decodedUrl = JSON.parse(JSON.parse(jsonPart)[0][2])[1];
-  if (typeof decodedUrl !== 'string' || !decodedUrl.startsWith('http')) {
-    throw new Error(`Decoded URL looks invalid: ${String(decodedUrl).slice(0, 80)}`);
-  }
-
-  return decodedUrl;
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function pwcli(...args) {
+  try {
+    const output = execFileSync(PLAYWRIGHT_CLI, [`-s=${SESSION_NAME}`, ...args], {
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    return output;
+  } catch (err) {
+    return err.stdout || '';
+  }
+}
+
+function extractResult(output) {
+  const match = output.match(/### Result\n"(.+)"/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Batch-decodes Google News URLs using a playwright-cli browser session.
+ * Sets `resolvedUrl` on each story object in-place.
+ *
+ * @param {Array<{url: string}>} stories - Stories whose URLs may be Google News links
+ * @returns {Promise<Array>} The same stories array with `resolvedUrl` populated
+ */
+export async function decodeGoogleNewsUrls(stories) {
+  const googleStories = stories.filter((s) => {
+    try {
+      return new URL(s.url).hostname === GOOGLE_NEWS_HOST;
+    } catch {
+      return false;
+    }
+  });
+
+  if (googleStories.length === 0) return stories;
+
+  pwcli('open');
+
+  // Handle Google consent page on first navigation
+  const firstUrl = googleStories[0].url;
+  pwcli('goto', firstUrl);
+  const locationAfterFirst = extractResult(pwcli('eval', 'window.location.href'));
+  if (locationAfterFirst && locationAfterFirst.includes('consent.google.com')) {
+    pwcli('eval', 'void(document.querySelector("form[action*=consent] button").click())');
+    await sleep(2_000);
+  }
+
+  for (let i = 0; i < googleStories.length; i++) {
+    const story = googleStories[i];
+
+    // First story was already navigated to above; navigate others
+    if (i > 0) {
+      pwcli('goto', story.url);
+    }
+
+    await sleep(3_000);
+
+    let href = extractResult(pwcli('eval', 'window.location.href'));
+
+    if (href && href.includes(GOOGLE_NEWS_HOST)) {
+      await sleep(3_000);
+      href = extractResult(pwcli('eval', 'window.location.href'));
+    }
+
+    if (href && !href.includes(GOOGLE_NEWS_HOST)) {
+      story.resolvedUrl = href;
+    } else {
+      story.resolvedUrl = null;
+    }
+
+    if (i < googleStories.length - 1) {
+      await sleep(2_000);
+    }
+  }
+
+  pwcli('close');
+
+  // Pass through non-Google stories with their URL as resolvedUrl
+  for (const story of stories) {
+    if (!Object.prototype.hasOwnProperty.call(story, 'resolvedUrl')) {
+      story.resolvedUrl = story.url;
+    }
+  }
+
+  return stories;
+}
+
+/**
+ * Fetches and extracts article content from a real (non-Google-News) URL.
+ *
+ * @param {string} url - A direct article URL (already decoded if from Google News)
+ * @returns {Promise<object>} Extracted article data
+ */
 export async function extractArticle(url) {
   const result = {
     resolvedUrl: null,
@@ -158,18 +176,6 @@ export async function extractArticle(url) {
     error: null,
   };
 
-  // Decode Google News interstitial URLs before fetching the real article
-  let fetchUrl = url;
-  try {
-    const parsedUrl = new URL(url);
-    if (parsedUrl.hostname === GOOGLE_NEWS_HOST) {
-      fetchUrl = await decodeGoogleNewsUrl(url);
-    }
-  } catch (err) {
-    result.error = `Google News URL decoding failed for ${url}: ${err.message}`;
-    return result;
-  }
-
   let res;
   try {
     const controller = new AbortController();
@@ -177,7 +183,7 @@ export async function extractArticle(url) {
       () => controller.abort(),
       ARTICLE_TIMEOUT_MS,
     );
-    res = await fetch(fetchUrl, {
+    res = await fetch(url, {
       redirect: 'follow',
       signal: controller.signal,
       headers: {
@@ -189,9 +195,9 @@ export async function extractArticle(url) {
     clearTimeout(timeout);
   } catch (err) {
     if (err.name === 'AbortError') {
-      result.error = `Timeout after ${ARTICLE_TIMEOUT_MS / 1000}s fetching ${fetchUrl}`;
+      result.error = `Timeout after ${ARTICLE_TIMEOUT_MS / 1000}s fetching ${url}`;
     } else {
-      result.error = `Fetch failed for ${fetchUrl}: ${err.message}`;
+      result.error = `Fetch failed for ${url}: ${err.message}`;
     }
     return result;
   }
