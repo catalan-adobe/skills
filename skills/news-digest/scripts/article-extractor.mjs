@@ -227,7 +227,15 @@ export async function extractArticle(url) {
     const { document } = parseHTML(html);
     const extracted = new Defuddle(document).parse();
 
-    result.content = extracted?.content || null;
+    const htmlContent = extracted?.content || null;
+    if (htmlContent) {
+      const { document: contentDoc } = parseHTML(htmlContent);
+      result.content = (
+        contentDoc.documentElement?.textContent
+        || contentDoc.body?.textContent
+        || ''
+      ).trim() || null;
+    }
     result.images = extractImages(document);
     result.videos = extractVideos(document);
     result.paywall = detectPaywall(document, result.content);
