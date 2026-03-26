@@ -4,6 +4,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { XMLParser } from 'fast-xml-parser';
+import { extractArticle } from './article-extractor.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -94,6 +95,21 @@ async function fetchAlert(alert) {
   return stories.map((s) => ({ ...s, topic: alert.name }));
 }
 
+async function extractAll(stories, concurrency = 5) {
+  const results = [];
+  for (let i = 0; i < stories.length; i += concurrency) {
+    const batch = stories.slice(i, i + concurrency);
+    const extracted = await Promise.all(
+      batch.map(async (story) => {
+        const article = await extractArticle(story.url);
+        return { ...story, ...article };
+      }),
+    );
+    results.push(...extracted);
+  }
+  return results;
+}
+
 async function main() {
   const flags = parseArgs(process.argv);
 
@@ -104,7 +120,8 @@ async function main() {
       { name: 'Search', query: flags.query },
       settings,
     );
-    console.log(JSON.stringify(stories.slice(0, 15), null, 2));
+    const enriched = await extractAll(stories.slice(0, 15));
+    console.log(JSON.stringify(enriched, null, 2));
     return;
   }
 
@@ -148,7 +165,8 @@ async function main() {
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, maxStories);
 
-  console.log(JSON.stringify(recent, null, 2));
+  const enriched = await extractAll(recent);
+  console.log(JSON.stringify(enriched, null, 2));
 }
 
 main();
