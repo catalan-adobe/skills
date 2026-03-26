@@ -65,7 +65,7 @@ check_server() {
     "http://localhost:${PORT}/" 2>/dev/null) || true
   if [[ "${status}" != "200" ]]; then
     err "Dev server not running on port ${PORT}."
-    err "Start it with: cd ${PROJECT_DIR} && aem up"
+    err "Start it with: cd ${PROJECT_DIR} && aem up --html-folder ."
     exit 1
   fi
 }
@@ -80,7 +80,7 @@ run_evaluation() {
     return
   fi
 
-  echo "${eval_output}" | node -e "
+  echo "${eval_output}" | node --input-type=commonjs -e "
     const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));
     const fields = [
       d.compositeScore||0,

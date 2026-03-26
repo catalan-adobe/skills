@@ -264,7 +264,7 @@ Read these files:
 ## EDS Conventions
 
 Read the EDS header conventions reference:
-<SKILL_DIR>/references/eds-header-conventions.md
+${CLAUDE_SKILL_DIR}/references/eds-header-conventions.md
 
 This document defines all required patterns: decorate(block) contract,
 nav document structure, CSS scoping, responsive breakpoints, hamburger
@@ -348,7 +348,7 @@ node "$SKILL_SCRIPTS/setup-polish-loop.js" \
 Verify the generated files exist:
 
 ```bash
-for f in autoresearch/evaluate.js autoresearch/program.md loop.sh; do
+for f in autoresearch/evaluate.js program.md loop.sh; do
   if [[ ! -f "$WORKTREE_PATH/$f" ]]; then
     echo "ERROR: Polish loop setup failed -- missing $f"
     exit 1
@@ -413,7 +413,7 @@ if [[ -n "$AEM_PID" ]]; then
 fi
 ```
 
-**Read results** from `$WORKTREE_PATH/autoresearch/results/results.tsv`
+**Read results** from `$WORKTREE_PATH/results.tsv`
 and `$WORKTREE_PATH/autoresearch/results/latest-evaluation.json`.
 Extract: composite score, desktop/tablet/mobile scores, nav completeness,
 iteration count (kept vs reverted).
