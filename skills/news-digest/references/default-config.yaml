@@ -1,0 +1,15 @@
+topics:
+  - name: AI Infrastructure
+    query: "AI infrastructure OR AI agents"
+  - name: Adobe
+    query: "Adobe"
+
+alerts: []
+#  - name: Claude Code
+#    feed_url: "https://www.google.com/alerts/feeds/..."
+
+settings:
+  max_stories: 15
+  language: en
+  country: US
+  hours_back: 24

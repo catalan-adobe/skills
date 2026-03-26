@@ -156,6 +156,13 @@ on-demand coloring. Most-specific pattern wins.
 
 See [SKILL.md](skills/cmux-setup/SKILL.md) for the full workflow.
 
+### news-digest
+
+Fetch and digest news from Google News RSS feeds and Google Alerts by
+topic. Scans configured topics, deduplicates stories, and produces a
+tight markdown digest. Use when you want a news summary, topic scan, or
+daily digest of headlines.
+
 ### page-prep
 
 Prepare webpages for clean interaction by detecting and removing disruptive

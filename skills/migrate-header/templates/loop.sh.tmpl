@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Autoresearch loop for EDS header migration.
+# Outer loop: fresh claude session each iteration, immutable evaluator,
+# git ratchet with plateau detection.
+
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+EVALUATE="node ${PROJECT_DIR}/autoresearch/evaluate.js"
+RESULTS_FILE="${PROJECT_DIR}/results.tsv"
+PROGRAM_FILE="${PROJECT_DIR}/program.md"
+PORT="${AEM_PORT:-{{PORT}}}"
+MAX_ITERATIONS="${MAX_ITERATIONS:-{{MAX_ITERATIONS}}}"
+MAX_CONSECUTIVE_REVERTS="${MAX_CONSECUTIVE_REVERTS:-{{MAX_CONSECUTIVE_REVERTS}}}"
+HEADER_FILES="{{HEADER_FILES}}"
+BEST_SCORE=0
+ITERATION=0
+CONSECUTIVE_REVERTS=0
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log() { echo -e "${BLUE}[loop]${NC} $1"; }
+ok()  { echo -e "${GREEN}[loop]${NC} $1"; }
+warn() { echo -e "${YELLOW}[loop]${NC} $1"; }
+err() { echo -e "${RED}[loop]${NC} $1"; }
+
+cleanup() {
+  echo ""
+  log "Stopping... Final best score: ${BEST_SCORE}"
+  if [[ -f "${RESULTS_FILE}" ]]; then
+    log "Results saved to ${RESULTS_FILE}"
+    log "Total iterations: ${ITERATION}"
+    log "Consecutive reverts at exit: ${CONSECUTIVE_REVERTS}"
+  fi
+  exit 0
+}
+trap cleanup SIGINT SIGTERM
+
+# Initialize results file
+if [[ ! -f "${RESULTS_FILE}" ]]; then
+  printf "iteration\tcommit\tscore\tvisual_desktop\tvisual_tablet\tvisual_mobile\tnav_completeness\tstatus\tdescription\n" \
+    > "${RESULTS_FILE}"
+fi
+
+# Resume support: read best score and iteration count from existing results
+if [[ -f "${RESULTS_FILE}" ]]; then
+  existing_best=$(tail -n +2 "${RESULTS_FILE}" \
+    | awk -F'\t' '{print $3}' | sort -rn | head -1)
+  if [[ -n "${existing_best}" ]]; then
+    BEST_SCORE="${existing_best}"
+    ITERATION=$(tail -n +2 "${RESULTS_FILE}" | wc -l | tr -d ' ')
+    log "Resuming from iteration ${ITERATION}, best score: ${BEST_SCORE}"
+  fi
+fi
+
+# Check dev server is reachable
+check_server() {
+  local status
+  status=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://localhost:${PORT}/" 2>/dev/null) || true
+  if [[ "${status}" != "200" ]]; then
+    err "Dev server not running on port ${PORT}."
+    err "Start it with: cd ${PROJECT_DIR} && aem up --html-folder ."
+    exit 1
+  fi
+}
+
+# Run evaluator and extract score fields
+run_evaluation() {
+  local eval_output
+  eval_output=$(${EVALUATE} "${PORT}" 2>/dev/null) || true
+
+  if [[ -z "${eval_output}" ]]; then
+    echo "0|0|0|0|0"
+    return
+  fi
+
+  echo "${eval_output}" | node --input-type=commonjs -e "
+    const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));
+    const fields = [
+      d.compositeScore||0,
+      d.viewports?.desktop?.similarity||0,
+      d.viewports?.tablet?.similarity||0,
+      d.viewports?.mobile?.similarity||0,
+      d.navCompleteness?.score||0,
+    ];
+    console.log(fields.join('|'));
+  " 2>/dev/null || echo "0|0|0|0|0"
+}
+
+# Main loop
+log "Starting header migration autoresearch loop"
+log "Max iterations: ${MAX_ITERATIONS}"
+log "Plateau threshold: ${MAX_CONSECUTIVE_REVERTS} consecutive reverts"
+log "Evaluator: ${EVALUATE}"
+echo ""
+
+check_server
+
+while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
+  ITERATION=$((ITERATION + 1))
+  log "=== Iteration ${ITERATION}/${MAX_ITERATIONS} (best: ${BEST_SCORE}, reverts: ${CONSECUTIVE_REVERTS}/${MAX_CONSECUTIVE_REVERTS}) ==="
+
+  # Record HEAD before agent session
+  head_before=$(git -C "${PROJECT_DIR}" rev-parse HEAD)
+
+  # Fresh claude session with program.md (must cd — claude has no --cwd flag)
+  log "Launching fresh Claude session..."
+  (cd "${PROJECT_DIR}" && claude -p "$(cat "${PROGRAM_FILE}")" \
+    --allowedTools "Edit,Write,Read,Glob,Grep,Bash" \
+    > /dev/null 2>&1) || true
+
+  # Check if agent committed (HEAD moved) or left uncommitted changes
+  head_after=$(git -C "${PROJECT_DIR}" rev-parse HEAD)
+  has_uncommitted=false
+  git -C "${PROJECT_DIR}" diff --quiet 2>/dev/null || has_uncommitted=true
+  git -C "${PROJECT_DIR}" diff --cached --quiet 2>/dev/null \
+    || has_uncommitted=true
+
+  if [[ "${head_before}" == "${head_after}" ]] \
+    && [[ "${has_uncommitted}" == "false" ]]; then
+    warn "No changes detected, skipping evaluation"
+    printf "%d\t-\t%s\t-\t-\t-\t-\tno_changes\tAgent made no modifications\n" \
+      "${ITERATION}" "${BEST_SCORE}" >> "${RESULTS_FILE}"
+    CONSECUTIVE_REVERTS=$((CONSECUTIVE_REVERTS + 1))
+    if [[ ${CONSECUTIVE_REVERTS} -ge ${MAX_CONSECUTIVE_REVERTS} ]]; then
+      err "Plateau: ${CONSECUTIVE_REVERTS} consecutive non-improvements. Stopping."
+      break
+    fi
+    continue
+  fi
+
+  # If agent left uncommitted changes, commit them
+  if [[ "${has_uncommitted}" == "true" ]]; then
+    # shellcheck disable=SC2086
+    git -C "${PROJECT_DIR}" add ${HEADER_FILES} 2>/dev/null || true
+    git -C "${PROJECT_DIR}" commit \
+      -m "iteration-${ITERATION}: agent modifications (uncommitted)" \
+      2>/dev/null || true
+  fi
+
+  local_commit=$(git -C "${PROJECT_DIR}" rev-parse --short HEAD)
+  commit_msg=$(git -C "${PROJECT_DIR}" log -1 --format=%s)
+  changed_files=$(git -C "${PROJECT_DIR}" diff --name-only \
+    "${head_before}" HEAD 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+
+  # Run immutable evaluator
+  log "Running evaluation..."
+  eval_result=$(run_evaluation)
+  IFS='|' read -r score desktop tablet mobile nav_score <<< "${eval_result}"
+
+  # Compare with best — strict improvement required
+  keep=$(node -e "console.log(${score} > ${BEST_SCORE} ? 'yes' : 'no')" \
+    2>/dev/null || echo "no")
+
+  if [[ "${keep}" == "yes" ]]; then
+    ok "IMPROVED: ${BEST_SCORE} -> ${score} (desktop=${desktop}, tablet=${tablet}, mobile=${mobile}, nav=${nav_score})"
+    BEST_SCORE="${score}"
+    CONSECUTIVE_REVERTS=0
+    printf "%d\t%s\t%s\t%s\t%s\t%s\t%s\timproved\t%s [%s]\n" \
+      "${ITERATION}" "${local_commit}" "${score}" \
+      "${desktop}" "${tablet}" "${mobile}" "${nav_score}" \
+      "${commit_msg}" "${changed_files}" \
+      >> "${RESULTS_FILE}"
+  else
+    warn "NO IMPROVEMENT: ${score} <= ${BEST_SCORE} — reverting"
+    # shellcheck disable=SC2086
+    git -C "${PROJECT_DIR}" diff "${head_before}" HEAD -- ${HEADER_FILES} \
+      > "${PROJECT_DIR}/autoresearch/results/last-reverted.diff" \
+      2>/dev/null || true
+    git -C "${PROJECT_DIR}" reset --hard "${head_before}" 2>/dev/null || true
+    CONSECUTIVE_REVERTS=$((CONSECUTIVE_REVERTS + 1))
+    printf "%d\t%s\t%s\t%s\t%s\t%s\t%s\treverted\t%s [%s]\n" \
+      "${ITERATION}" "${local_commit}" "${score}" \
+      "${desktop}" "${tablet}" "${mobile}" "${nav_score}" \
+      "${commit_msg}" "${changed_files}" \
+      >> "${RESULTS_FILE}"
+
+    if [[ ${CONSECUTIVE_REVERTS} -ge ${MAX_CONSECUTIVE_REVERTS} ]]; then
+      err "Plateau: ${CONSECUTIVE_REVERTS} consecutive non-improvements. Stopping."
+      break
+    fi
+  fi
+
+  echo ""
+done
+
+log "Loop finished. Best score: ${BEST_SCORE} after ${ITERATION} iterations."
