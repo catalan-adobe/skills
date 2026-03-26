@@ -1,0 +1,245 @@
+#!/usr/bin/env node
+
+/**
+ * Reads extraction JSON + templates and writes populated loop
+ * infrastructure into a target directory (the worktree where the
+ * header migration is happening).
+ *
+ * Usage:
+ *   node setup-polish-loop.js \
+ *     --layout=path/to/layout.json \
+ *     --branding=path/to/branding.json \
+ *     --source-dir=path/to/source/ \
+ *     --target-dir=path/to/worktree/ \
+ *     --port=3000 \
+ *     --max-iterations=30
+ */
+
+import {
+  copyFileSync, existsSync, mkdirSync,
+  readFileSync, writeFileSync, chmodSync,
+} from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const TEMPLATES_DIR = join(__dirname, '..', 'templates');
+
+function parseArgs(argv) {
+  const named = {};
+  for (const arg of argv.slice(2)) {
+    const m = arg.match(/^--([a-z-]+)=(.+)$/);
+    if (m) named[m[1]] = m[2];
+  }
+
+  const required = ['layout', 'branding', 'source-dir', 'target-dir'];
+  const missing = required.filter((k) => !named[k]);
+  if (missing.length > 0) {
+    console.error(
+      `Missing required arguments: ${missing.map((k) => `--${k}`).join(', ')}`
+    );
+    console.error(
+      'Usage: node setup-polish-loop.js'
+      + ' --layout=<path> --branding=<path>'
+      + ' --source-dir=<path> --target-dir=<path>'
+      + ' [--port=3000] [--max-iterations=30]'
+    );
+    process.exit(1);
+  }
+
+  return {
+    layoutPath: resolve(named['layout']),
+    brandingPath: resolve(named['branding']),
+    sourceDir: resolve(named['source-dir']),
+    targetDir: resolve(named['target-dir']),
+    port: named['port'] || '3000',
+    maxIterations: named['max-iterations'] || '30',
+  };
+}
+
+function loadJSON(path, label) {
+  if (!existsSync(path)) {
+    console.error(`${label} not found: ${path}`);
+    process.exit(1);
+  }
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8'));
+  } catch (err) {
+    console.error(`Failed to parse ${label}: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+function loadTemplate(name) {
+  const path = join(TEMPLATES_DIR, name);
+  if (!existsSync(path)) {
+    console.error(`Template not found: ${path}`);
+    process.exit(1);
+  }
+  return readFileSync(path, 'utf-8');
+}
+
+function buildHeaderDescription(layout, branding) {
+  const colors = branding.colors || {};
+  const lines = [];
+
+  for (const row of layout.rows) {
+    const heightStr = `~${Math.round(row.height)}px`;
+    const elements = row.elements.join(', ') || 'unknown';
+    const bgKey = `${row.role}-bg`;
+    const bgColor = colors[bgKey];
+    const bgStr = bgColor ? `, ${bgColor} background` : '';
+    lines.push(
+      `${lines.length + 1}. **${row.role}** (${heightStr}): `
+      + `${elements}${bgStr}`
+    );
+  }
+
+  return lines.join('\n');
+}
+
+function countNavItems(layout) {
+  const primary = layout.navItems?.primary?.length || 0;
+  const secondary = layout.navItems?.secondary?.length || 0;
+  return primary + secondary;
+}
+
+function buildNavStructure(layout) {
+  const primary = layout.navItems?.primary || [];
+  const secondary = layout.navItems?.secondary || [];
+  const topNav = [...primary, ...secondary].map((text) => ({
+    text,
+    href: '#',
+  }));
+  return { topNav };
+}
+
+function copySourceFile(sourceDir, targetDir, filename) {
+  const src = join(sourceDir, filename);
+  if (!existsSync(src)) {
+    console.error(`  WARNING: source file not found: ${src}`);
+    return;
+  }
+  copyFileSync(src, join(targetDir, filename));
+}
+
+function log(msg) {
+  console.error(msg);
+}
+
+function main() {
+  const args = parseArgs(process.argv);
+
+  // Load extraction data
+  const layout = loadJSON(args.layoutPath, 'layout.json');
+  const branding = loadJSON(args.brandingPath, 'branding.json');
+
+  // Load snapshot.json to get URL
+  const snapshotPath = join(args.sourceDir, 'snapshot.json');
+  const snapshot = loadJSON(snapshotPath, 'snapshot.json');
+  const sourceUrl = snapshot.url;
+  if (!sourceUrl) {
+    console.error('snapshot.json is missing the "url" field');
+    process.exit(1);
+  }
+
+  // Build template values
+  const headerDescription = buildHeaderDescription(layout, branding);
+  const navItemCount = countNavItems(layout);
+  const headerHeight = Math.round(layout.headerHeight || 0);
+
+  const replacements = {
+    '{{PORT}}': args.port,
+    '{{PAGE_PATH}}': '/',
+    '{{MAX_ITERATIONS}}': args.maxIterations,
+    '{{MAX_CONSECUTIVE_REVERTS}}': '5',
+    '{{HEADER_FILES}}': 'blocks/header/ nav.plain.html',
+    '{{HEADER_DESCRIPTION}}': headerDescription,
+    '{{HEADER_HEIGHT}}': String(headerHeight),
+    '{{NAV_ITEM_COUNT}}': String(navItemCount),
+    '{{URL}}': sourceUrl,
+  };
+
+  // Load templates
+  const evaluateTmpl = loadTemplate('evaluate.js.tmpl');
+  const loopTmpl = loadTemplate('loop.sh.tmpl');
+  const programTmpl = loadTemplate('program.md.tmpl');
+
+  // Apply replacements
+  function applyReplacements(template) {
+    let result = template;
+    for (const [key, value] of Object.entries(replacements)) {
+      while (result.includes(key)) {
+        result = result.replace(key, value);
+      }
+    }
+    return result;
+  }
+
+  const evaluateContent = applyReplacements(evaluateTmpl);
+  const loopContent = applyReplacements(loopTmpl);
+  const programContent = applyReplacements(programTmpl);
+
+  // Create directory structure
+  const autoresearchDir = join(args.targetDir, 'autoresearch');
+  const sourceOutDir = join(autoresearchDir, 'source');
+  const resultsDir = join(autoresearchDir, 'results');
+
+  mkdirSync(sourceOutDir, { recursive: true });
+  mkdirSync(resultsDir, { recursive: true });
+  log(`Created ${autoresearchDir}/`);
+
+  // Write populated templates
+  writeFileSync(join(autoresearchDir, 'evaluate.js'), evaluateContent);
+  log('  Wrote autoresearch/evaluate.js');
+
+  const loopPath = join(args.targetDir, 'loop.sh');
+  writeFileSync(loopPath, loopContent);
+  chmodSync(loopPath, 0o755);
+  log('  Wrote loop.sh (chmod +x)');
+
+  writeFileSync(join(args.targetDir, 'program.md'), programContent);
+  log('  Wrote program.md');
+
+  // Copy source screenshots
+  for (const file of ['desktop.png', 'tablet.png', 'mobile.png']) {
+    copySourceFile(args.sourceDir, sourceOutDir, file);
+    log(`  Copied source/${file}`);
+  }
+
+  // Generate nav-structure.json
+  const navStructure = buildNavStructure(layout);
+  writeFileSync(
+    join(sourceOutDir, 'nav-structure.json'),
+    JSON.stringify(navStructure, null, 2)
+  );
+  log(`  Wrote source/nav-structure.json (${navStructure.topNav.length} items)`);
+
+  // Install npm dependencies for evaluator
+  log('Installing evaluator dependencies...');
+  execSync('npm init -y', {
+    cwd: autoresearchDir,
+    stdio: 'pipe',
+  });
+  // Set type: module for ESM imports in evaluate.js
+  const pkgPath = join(autoresearchDir, 'package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+  pkg.type = 'module';
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+
+  execSync('npm install pixelmatch pngjs', {
+    cwd: autoresearchDir,
+    stdio: 'pipe',
+  });
+  log('  Installed pixelmatch + pngjs');
+
+  log('');
+  log('Polish loop infrastructure ready.');
+  log(`  Target: ${args.targetDir}`);
+  log(`  Source URL: ${sourceUrl}`);
+  log(`  Header: ${headerHeight}px, ${layout.rows.length} rows, ${navItemCount} nav items`);
+  log(`  Run: cd ${args.targetDir} && ./loop.sh`);
+}
+
+main();
