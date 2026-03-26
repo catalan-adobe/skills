@@ -74,4 +74,5 @@ All 14 skills lint clean as of 2026-03-24. All published to tessl registry. Run 
 | `page-prep` | Detect and remove webpage overlays for clean interaction |
 | `browser-universal` | Detect browser layer and load commands for layer-agnostic interaction |
 | `slack-cdp` | Control Slack via CDP or headless API tokens |
+| `news-digest` | Google News RSS digests with full article extraction via playwright-cli |
 | `kite-teleport` | Teleport Kite task sessions to local Claude Code |
