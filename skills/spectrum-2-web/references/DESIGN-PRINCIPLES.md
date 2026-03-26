@@ -66,7 +66,7 @@ gap, and positioning — never hardcode pixel values.
 | `--spectrum-spacing-200` | 16 px | Standard gap between sibling elements |
 | `--spectrum-spacing-300` | 24 px | Section padding, card internal padding |
 | `--spectrum-spacing-400` | 32 px | Larger section gaps, dialog padding |
-| `--spectrum-500` | 40 px | Major visual separation within a page |
+| `--spectrum-spacing-500` | 40 px | Major visual separation within a page |
 | `--spectrum-spacing-600` | 48 px | Between distinct page sections or zones |
 
 **Usage guidance:**

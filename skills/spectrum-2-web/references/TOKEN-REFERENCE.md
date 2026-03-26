@@ -2,6 +2,25 @@
 
 CSS design token system for Spectrum 2 Web Components.
 
+## Table of Contents
+
+1. [Token Naming Convention](#token-naming-convention)
+2. [Three-Tier Hierarchy](#three-tier-hierarchy)
+3. [Tokens by Purpose](#tokens-by-purpose)
+   - [Spacing](#spacing)
+   - [Gray Scale](#gray-scale)
+   - [Semantic Background Colors](#semantic-background-colors)
+   - [Typography](#typography)
+   - [Component Sizing](#component-sizing)
+   - [Border Radius](#border-radius)
+   - [Animation](#animation)
+4. [S2 Color System](#s2-color-system)
+5. [`--mod-*` Customization Pattern](#--mod--customization-pattern)
+6. [CSS Parts](#css-parts)
+7. [`--system-*` Warning](#--system--warning)
+8. [Practical CSS Examples](#practical-css-examples)
+9. [S1 → S2 Token Migration](#s1--s2-token-migration)
+
 ## Token Naming Convention
 
 ```

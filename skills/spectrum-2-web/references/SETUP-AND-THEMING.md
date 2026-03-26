@@ -1,5 +1,21 @@
 # SWC Setup and Theming Reference
 
+## Table of Contents
+
+1. [SWC vs React Spectrum S2 Decision Table](#swc-vs-react-spectrum-s2-decision-table)
+2. [Installation Patterns](#installation-patterns)
+   - [Option 1: npm — Individual Packages](#option-1-npm--individual-packages-production)
+   - [Option 2: Bundle Package](#option-2-bundle-package-prototyping-only)
+   - [Option 3: CDN via JSPM](#option-3-cdn-via-jspm-no-build--prototyping)
+3. [ESM-Only](#esm-only)
+4. [Side-Effect Import Pattern](#side-effect-import-pattern)
+5. [Auto-Imported Dependencies](#auto-imported-dependencies)
+6. [`<sp-theme>` Setup](#sp-theme-setup)
+7. [S2 Activation](#s2-activation)
+8. [Nested Themes](#nested-themes)
+9. [Dynamic Theme Switching](#dynamic-theme-switching)
+10. [Context Detection Logic](#context-detection-logic)
+
 ## SWC vs React Spectrum S2 Decision Table
 
 | Dimension | SWC | React Spectrum S2 |

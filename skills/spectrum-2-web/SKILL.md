@@ -17,6 +17,12 @@ description: >-
 Design and build web UIs using Adobe Spectrum 2 with Spectrum Web
 Components (SWC) or vanilla CSS with Spectrum design tokens.
 
+## Reference Location
+
+Read references from this skill's directory. If `CLAUDE_SKILL_DIR` is
+available, references are at `${CLAUDE_SKILL_DIR}/references/`. Otherwise,
+use Glob to find `skills/spectrum-2-web/SKILL.md` and derive the path.
+
 ## Phase 1 — Classify
 
 Always run this phase first. No reference files are needed yet.
@@ -135,7 +141,7 @@ Generate a single HTML file:
           type="module" async></script>
   <style>
     /* Layout using Spectrum tokens */
-    body { margin: 0; font-family: var(--spectrum-body-sans-serif-font-family); }
+    body { margin: 0; font-family: 'Adobe Clean', 'Source Sans Pro', -apple-system, BlinkMacSystemFont, sans-serif; }
   </style>
 </head>
 <body>
@@ -239,6 +245,8 @@ These rules apply across all phases:
    - Never invent fake `<sp-*>` tags
 
 ## Quick Reference
+
+Full details in [Token reference](references/TOKEN-REFERENCE.md) and [Component guide](references/COMPONENT-GUIDE.md).
 
 ### Theme setup
 

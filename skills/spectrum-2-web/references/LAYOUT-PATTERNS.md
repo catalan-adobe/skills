@@ -27,46 +27,38 @@ hierarchy on the left and a large content area on the right.
 **Layout:** CSS Grid `grid-template-columns: 240px 1fr`
 
 **Key tokens:**
-- Gap between sidebar and content: `--spectrum-spacing-400` (16px)
-- Sidebar internal padding: `--spectrum-spacing-300` (12px)
+- Gap between sidebar and content: `--spectrum-spacing-400` (32px)
+- Sidebar internal padding: `--spectrum-spacing-300` (24px)
 
 **Responsive:** Collapse sidebar at `max-width: 768px` — move nav to a top drawer or hamburger menu.
 
 ```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sidebar + Main</title>
-  <script src="https://jspm.dev/@spectrum-web-components/bundle/elements.js" type="module" async></script>
-  <style>
-    body { margin: 0; font-family: adobe-clean, sans-serif; }
-    .app {
-      display: grid;
-      grid-template-columns: 240px 1fr;
-      min-height: 100vh;
-    }
-    .sidebar {
-      border-right: 1px solid var(--spectrum-gray-200);
-      padding: var(--spectrum-spacing-300);
-      background: var(--spectrum-gray-50);
-    }
-    .sidebar h2 {
-      margin: 0 0 var(--spectrum-spacing-300);
-      font-size: var(--spectrum-font-size-200);
-      color: var(--spectrum-gray-900);
-    }
-    .main {
-      padding: var(--spectrum-spacing-400);
-    }
-    @media (max-width: 768px) {
-      .app { grid-template-columns: 1fr; }
-      .sidebar { border-right: none; border-bottom: 1px solid var(--spectrum-gray-200); }
-    }
-  </style>
-</head>
-<body>
+<!-- Use CDN setup from top of file -->
+<style>
+  body { margin: 0; font-family: adobe-clean, sans-serif; }
+  .app {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: 100vh;
+  }
+  .sidebar {
+    border-right: 1px solid var(--spectrum-gray-200);
+    padding: var(--spectrum-spacing-300);
+    background: var(--spectrum-gray-50);
+  }
+  .sidebar h2 {
+    margin: 0 0 var(--spectrum-spacing-300);
+    font-size: var(--spectrum-font-size-200);
+    color: var(--spectrum-gray-900);
+  }
+  .main {
+    padding: var(--spectrum-spacing-400);
+  }
+  @media (max-width: 768px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { border-right: none; border-bottom: 1px solid var(--spectrum-gray-200); }
+  }
+</style>
 <sp-theme system="spectrum-two" color="light" scale="medium">
   <div class="app">
     <nav class="sidebar">
@@ -88,8 +80,6 @@ hierarchy on the left and a large content area on the right.
     </main>
   </div>
 </sp-theme>
-</body>
-</html>
 ```
 
 ---
@@ -107,24 +97,16 @@ hierarchy on the left and a large content area on the right.
 - Content padding: `--spectrum-spacing-400`
 
 ```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Top Nav + Content</title>
-  <script src="https://jspm.dev/@spectrum-web-components/bundle/elements.js" type="module" async></script>
-  <style>
-    body { margin: 0; font-family: adobe-clean, sans-serif; }
-    sp-top-nav { position: sticky; top: 0; z-index: 10; }
-    .content {
-      max-width: 960px;
-      margin: 0 auto;
-      padding: var(--spectrum-spacing-400);
-    }
-  </style>
-</head>
-<body>
+<!-- Use CDN setup from top of file -->
+<style>
+  body { margin: 0; font-family: adobe-clean, sans-serif; }
+  sp-top-nav { position: sticky; top: 0; z-index: 10; }
+  .content {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: var(--spectrum-spacing-400);
+  }
+</style>
 <sp-theme system="spectrum-two" color="light" scale="medium">
   <sp-top-nav>
     <sp-top-nav-item href="#">Home</sp-top-nav-item>
@@ -138,8 +120,6 @@ hierarchy on the left and a large content area on the right.
     <p>Page content goes here. The nav stays pinned to the top as you scroll.</p>
   </main>
 </sp-theme>
-</body>
-</html>
 ```
 
 ---
@@ -158,49 +138,41 @@ multiple KPIs or data summaries in a scannable grid.
 - Card internal padding: `--spectrum-spacing-300`
 
 ```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard</title>
-  <script src="https://jspm.dev/@spectrum-web-components/bundle/elements.js" type="module" async></script>
-  <style>
-    body { margin: 0; font-family: adobe-clean, sans-serif; background: var(--spectrum-gray-100); }
-    .dashboard {
-      padding: var(--spectrum-spacing-400);
-    }
-    .dashboard h1 { margin-top: 0; }
-    .cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: var(--spectrum-spacing-300);
-    }
-    .card-body {
-      padding: var(--spectrum-spacing-300);
-      display: flex;
-      flex-direction: column;
-      gap: var(--spectrum-spacing-200);
-    }
-    .card-stat {
-      font-size: var(--spectrum-font-size-500);
-      font-weight: bold;
-      color: var(--spectrum-gray-900);
-    }
-    .card-label {
-      font-size: var(--spectrum-font-size-75);
-      color: var(--spectrum-gray-700);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    .status-row {
-      display: flex;
-      align-items: center;
-      gap: var(--spectrum-spacing-100);
-    }
-  </style>
-</head>
-<body>
+<!-- Use CDN setup from top of file -->
+<style>
+  body { margin: 0; font-family: adobe-clean, sans-serif; background: var(--spectrum-gray-100); }
+  .dashboard {
+    padding: var(--spectrum-spacing-400);
+  }
+  .dashboard h1 { margin-top: 0; }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--spectrum-spacing-300);
+  }
+  .card-body {
+    padding: var(--spectrum-spacing-300);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-spacing-200);
+  }
+  .card-stat {
+    font-size: var(--spectrum-font-size-500);
+    font-weight: bold;
+    color: var(--spectrum-gray-900);
+  }
+  .card-label {
+    font-size: var(--spectrum-font-size-75);
+    color: var(--spectrum-gray-700);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spectrum-spacing-100);
+  }
+</style>
 <sp-theme system="spectrum-two" color="light" scale="medium">
   <div class="dashboard">
     <h1>System Dashboard</h1>
@@ -259,8 +231,6 @@ multiple KPIs or data summaries in a scannable grid.
     </div>
   </div>
 </sp-theme>
-</body>
-</html>
 ```
 
 ---
@@ -283,45 +253,37 @@ form with cancel on the left and submit on the right.
 - Gap inside button row: `--spectrum-spacing-200`
 
 ```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Form Page</title>
-  <script src="https://jspm.dev/@spectrum-web-components/bundle/elements.js" type="module" async></script>
-  <style>
-    body { margin: 0; font-family: adobe-clean, sans-serif; background: var(--spectrum-gray-100); }
-    .page {
-      max-width: 600px;
-      margin: 0 auto;
-      padding: var(--spectrum-spacing-400);
-    }
-    .page h1 { margin-top: 0; }
-    form {
-      background: var(--spectrum-gray-50);
-      border: 1px solid var(--spectrum-gray-200);
-      border-radius: var(--spectrum-corner-radius-100);
-      padding: var(--spectrum-spacing-400);
-      display: flex;
-      flex-direction: column;
-      gap: var(--spectrum-spacing-400);
-    }
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: var(--spectrum-spacing-75);
-    }
-    .button-row {
-      display: flex;
-      justify-content: flex-end;
-      gap: var(--spectrum-spacing-200);
-      padding-top: var(--spectrum-spacing-200);
-      border-top: 1px solid var(--spectrum-gray-200);
-    }
-  </style>
-</head>
-<body>
+<!-- Use CDN setup from top of file -->
+<style>
+  body { margin: 0; font-family: adobe-clean, sans-serif; background: var(--spectrum-gray-100); }
+  .page {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: var(--spectrum-spacing-400);
+  }
+  .page h1 { margin-top: 0; }
+  form {
+    background: var(--spectrum-gray-50);
+    border: 1px solid var(--spectrum-gray-200);
+    border-radius: var(--spectrum-corner-radius-100);
+    padding: var(--spectrum-spacing-400);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-spacing-400);
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-spacing-75);
+  }
+  .button-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spectrum-spacing-200);
+    padding-top: var(--spectrum-spacing-200);
+    border-top: 1px solid var(--spectrum-gray-200);
+  }
+</style>
 <sp-theme system="spectrum-two" color="light" scale="medium">
   <div class="page">
     <h1>Create Project</h1>
@@ -361,8 +323,6 @@ form with cancel on the left and submit on the right.
     </form>
   </div>
 </sp-theme>
-</body>
-</html>
 ```
 
 ---
@@ -383,73 +343,65 @@ sub-sections in the main area.
 - Tab panel padding: `--spectrum-spacing-400`
 
 ```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Settings Panel</title>
-  <script src="https://jspm.dev/@spectrum-web-components/bundle/elements.js" type="module" async></script>
-  <style>
-    body { margin: 0; font-family: adobe-clean, sans-serif; }
-    .settings {
-      display: grid;
-      grid-template-columns: 220px 1fr;
-      min-height: 100vh;
-    }
-    .settings-sidebar {
-      border-right: 1px solid var(--spectrum-gray-200);
-      padding: var(--spectrum-spacing-300);
-      background: var(--spectrum-gray-50);
-    }
-    .settings-sidebar h2 {
-      margin: 0 0 var(--spectrum-spacing-300);
-      font-size: var(--spectrum-font-size-200);
-      color: var(--spectrum-gray-900);
-    }
-    .settings-main {
-      padding: var(--spectrum-spacing-400);
-    }
-    .settings-main h1 {
-      margin-top: 0;
-      font-size: var(--spectrum-font-size-400);
-    }
-    sp-tab-panel {
-      display: flex;
-      flex-direction: column;
-      gap: var(--spectrum-spacing-400);
-      padding-top: var(--spectrum-spacing-400);
-    }
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: var(--spectrum-spacing-75);
-      max-width: 480px;
-    }
-    .switch-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      max-width: 480px;
-      padding: var(--spectrum-spacing-200) 0;
-      border-bottom: 1px solid var(--spectrum-gray-200);
-    }
-    .switch-label {
-      font-size: var(--spectrum-font-size-100);
-      color: var(--spectrum-gray-800);
-    }
-    .button-row {
-      display: flex;
-      gap: var(--spectrum-spacing-200);
-      padding-top: var(--spectrum-spacing-200);
-    }
-    @media (max-width: 700px) {
-      .settings { grid-template-columns: 1fr; }
-      .settings-sidebar { border-right: none; border-bottom: 1px solid var(--spectrum-gray-200); }
-    }
-  </style>
-</head>
-<body>
+<!-- Use CDN setup from top of file -->
+<style>
+  body { margin: 0; font-family: adobe-clean, sans-serif; }
+  .settings {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+  }
+  .settings-sidebar {
+    border-right: 1px solid var(--spectrum-gray-200);
+    padding: var(--spectrum-spacing-300);
+    background: var(--spectrum-gray-50);
+  }
+  .settings-sidebar h2 {
+    margin: 0 0 var(--spectrum-spacing-300);
+    font-size: var(--spectrum-font-size-200);
+    color: var(--spectrum-gray-900);
+  }
+  .settings-main {
+    padding: var(--spectrum-spacing-400);
+  }
+  .settings-main h1 {
+    margin-top: 0;
+    font-size: var(--spectrum-font-size-400);
+  }
+  sp-tab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-spacing-400);
+    padding-top: var(--spectrum-spacing-400);
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-spacing-75);
+    max-width: 480px;
+  }
+  .switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 480px;
+    padding: var(--spectrum-spacing-200) 0;
+    border-bottom: 1px solid var(--spectrum-gray-200);
+  }
+  .switch-label {
+    font-size: var(--spectrum-font-size-100);
+    color: var(--spectrum-gray-800);
+  }
+  .button-row {
+    display: flex;
+    gap: var(--spectrum-spacing-200);
+    padding-top: var(--spectrum-spacing-200);
+  }
+  @media (max-width: 700px) {
+    .settings { grid-template-columns: 1fr; }
+    .settings-sidebar { border-right: none; border-bottom: 1px solid var(--spectrum-gray-200); }
+  }
+</style>
 <sp-theme system="spectrum-two" color="light" scale="medium">
   <div class="settings">
 
@@ -482,8 +434,8 @@ sub-sections in the main area.
             <sp-help-text>Used for account recovery and notifications.</sp-help-text>
           </div>
           <div class="button-row">
-            <sp-button variant="accent">Save changes</sp-button>
             <sp-button variant="secondary" treatment="outline">Cancel</sp-button>
+            <sp-button variant="accent">Save changes</sp-button>
           </div>
         </sp-tab-panel>
 
@@ -523,6 +475,4 @@ sub-sections in the main area.
 
   </div>
 </sp-theme>
-</body>
-</html>
 ```
