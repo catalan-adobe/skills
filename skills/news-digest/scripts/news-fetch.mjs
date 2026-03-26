@@ -4,7 +4,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { XMLParser } from 'fast-xml-parser';
-import { decodeGoogleNewsUrls, extractArticle } from './article-extractor.mjs';
+import { fetchAllArticles } from './article-extractor.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -95,22 +95,6 @@ async function fetchAlert(alert) {
   return stories.map((s) => ({ ...s, topic: alert.name }));
 }
 
-async function extractAll(stories, concurrency = 5) {
-  const results = [];
-  for (let i = 0; i < stories.length; i += concurrency) {
-    const batch = stories.slice(i, i + concurrency);
-    const extracted = await Promise.all(
-      batch.map(async (story) => {
-        const fetchUrl = story.resolvedUrl || story.url;
-        const article = await extractArticle(fetchUrl);
-        return { ...story, ...article };
-      }),
-    );
-    results.push(...extracted);
-  }
-  return results;
-}
-
 async function main() {
   const flags = parseArgs(process.argv);
 
@@ -122,8 +106,7 @@ async function main() {
       settings,
     );
     const sliced = stories.slice(0, 15);
-    await decodeGoogleNewsUrls(sliced);
-    const enriched = await extractAll(sliced);
+    const enriched = await fetchAllArticles(sliced);
     console.log(JSON.stringify(enriched, null, 2));
     return;
   }
@@ -168,8 +151,7 @@ async function main() {
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, maxStories);
 
-  await decodeGoogleNewsUrls(recent);
-  const enriched = await extractAll(recent);
+  const enriched = await fetchAllArticles(recent);
   console.log(JSON.stringify(enriched, null, 2));
 }
 
