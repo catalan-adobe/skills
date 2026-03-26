@@ -1,0 +1,9 @@
+{
+  "name": "news-digest-scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "fast-xml-parser": "5.5.9",
+    "js-yaml": "4.1.1"
+  }
+}
