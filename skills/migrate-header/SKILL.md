@@ -247,13 +247,34 @@ If either script fails, report the error and stop.
 
 ### Stage 7: Scaffold Generation
 
-Dispatch an Agent subagent to generate initial EDS header code.
+This stage copies a battle-tested base header block and then dispatches
+a subagent to customize the CSS and generate nav.plain.html from the
+extraction data.
+
+**Step 1 — Copy base block files:**
+
+```bash
+mkdir -p "$WORKTREE_PATH/blocks/header"
+cp "${CLAUDE_SKILL_DIR}/block-files/header.js" "$WORKTREE_PATH/blocks/header/header.js"
+cp "${CLAUDE_SKILL_DIR}/block-files/header.css" "$WORKTREE_PATH/blocks/header/header.css"
+```
+
+The base block (420-line JS, 574-line CSS) handles: multi-section layout
+via section-metadata, mega menu auto-detection, 3 mobile dropdown modes
+(accordion/slide-in/fullscreen), keyboard navigation, hover gap bridges,
+accessibility (aria-haspopup, aria-expanded, aria-label), and DA-wrapped
+content selectors. The JS stays as-is. The subagent customizes the CSS
+and generates nav.plain.html.
+
+**Step 2 — Dispatch scaffold subagent:**
+
 The subagent receives this prompt:
 
 ```
-You are generating an AEM Edge Delivery Services header block from
-structured extraction data. You will create three files in a git
-worktree and commit them.
+You are customizing an EDS header block for a specific website. The
+header.js is already in place and must NOT be modified. You will:
+1. Customize the CSS custom properties in header.css
+2. Generate nav.plain.html from extraction data
 
 ## Input Data
 
@@ -261,65 +282,62 @@ Read these files:
 - Layout: <WORKTREE_PATH>/autoresearch/extraction/layout.json
 - Branding: <WORKTREE_PATH>/autoresearch/extraction/branding.json
 
-## EDS Conventions
+## Reference Docs
 
-Read the EDS header conventions reference:
-${CLAUDE_SKILL_DIR}/references/eds-header-conventions.md
+Read ALL of these for patterns and mapping guidance:
+- ${CLAUDE_SKILL_DIR}/references/eds-header-conventions.md
+- ${CLAUDE_SKILL_DIR}/references/content-mapping.md
+- ${CLAUDE_SKILL_DIR}/references/styling-guide.md
+- ${CLAUDE_SKILL_DIR}/references/header-block-guide.md
 
-This document defines all required patterns: decorate(block) contract,
-nav document structure, CSS scoping, responsive breakpoints, hamburger
-toggle, vanilla-only constraints.
+## Task 1: Customize header.css
 
-## Output Files
+Open <WORKTREE_PATH>/blocks/header/header.css and update ONLY the CSS
+custom properties block at the top (.header.block { ... }) to match the
+extracted branding:
 
-Generate these three files:
+- --header-background: use branding.colors.main-bar-bg
+- --header-nav-gap: use branding.spacing.nav-gap
+- --header-nav-font-size: use branding.fonts.nav-size
+- --header-nav-font-weight: use branding.fonts.nav-weight
+- --header-section-padding: use branding.spacing.header-padding-x
+- Add font-family from branding.fonts.family
+- Add --header-text-color from branding.colors.text-primary
+- For multi-row headers: add section-specific background colors
+  (e.g., .header-brand { background: <brand-bar-bg> })
+- For CTA buttons: add .header-tools-inline a:last-child styles with
+  branding.colors.cta-bg, cta-text, and decorations.cta-border-radius
 
-### 1. <WORKTREE_PATH>/blocks/header/header.js
+Do NOT modify the structural CSS (layout, mobile, dropdowns, etc.).
 
-EDS header block JavaScript. Must follow these rules:
-- Export default async function decorate(block)
-- Import { getMetadata } from '../../scripts/aem.js'
-- Fetch nav content from /nav.plain.html (use getMetadata('nav') for override)
-- Build DOM structure matching the extracted layout rows
-- Classify nav sections: brand, nav-links, actions
-- Create hamburger toggle for mobile (breakpoint at 900px)
-- Use aria-expanded for menu state
-- Lock body scroll when mobile menu is open
-- No frameworks, no npm packages, no build tools
+## Task 2: Generate nav.plain.html
 
-### 2. <WORKTREE_PATH>/blocks/header/header.css
+Create <WORKTREE_PATH>/nav.plain.html following the content-mapping
+guide patterns. Use the extraction data:
 
-Header styling with CSS custom properties derived from branding data:
-- Define --header-bg, --header-text, --header-font, --header-height,
-  --header-max-width, --header-padding from branding extraction
-- Override header { height: auto !important; } (EDS sets 64px default)
-- Scope styles under header nav or .header.block
-- Reset margins/padding on nav p, ul, li, div
-- Responsive layout: desktop flex-row, mobile flex-column
-- Hamburger icon via CSS pseudo-elements
-- @media (width >= 900px) and @media (width < 900px) breakpoints
-- Use extracted colors, fonts, spacing, border-radius values
+- layout.rows tells you the section structure (brand, main-nav, etc.)
+- layout.navItems.primary are the main nav links
+- layout.navItems.secondary are secondary/utility links
+- layout.rows[].elements tells you what each section contains
 
-### 3. <WORKTREE_PATH>/nav.plain.html
+Each section needs a section-metadata block with Style property.
+See content-mapping.md for exact HTML patterns per section type.
 
-Nav document content matching the extracted nav structure:
-- First <div>: brand/logo section with <a> containing <img> or text
-- Second <div>: navigation links as <ul> with <li><a> items
-- Third <div>: utility/action links (CTAs, search, account)
-- Match the hierarchy from layout.json nav items
-- Use placeholder image paths for logos (e.g., /media/logo.png)
+For single-row headers (1 row): use a single main-nav section with
+inline brand and tools.
+
+For multi-row headers: use separate sections (brand, main-nav, utility)
+each with their own section-metadata.
 
 ## After Generating
 
-1. Ensure the blocks/header/ directory exists (mkdir -p)
-2. Write all three files
-3. Stage and commit in the worktree:
-   cd <WORKTREE_PATH>
-   git add blocks/header/header.js blocks/header/header.css nav.plain.html
-   git commit -m "scaffold: initial header from extraction data"
+Stage and commit:
+  cd <WORKTREE_PATH>
+  git add blocks/header/header.css nav.plain.html
+  git commit -m "scaffold: customize header CSS and generate nav content"
 ```
 
-After the subagent completes, verify the three files exist:
+After the subagent completes, verify the files exist:
 
 ```bash
 for f in blocks/header/header.js blocks/header/header.css nav.plain.html; do

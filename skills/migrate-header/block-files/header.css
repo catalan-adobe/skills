@@ -1,0 +1,573 @@
+/* Header Block - All rules scoped under .header.block for specificity */
+
+/* ==========================================================================
+   CSS Custom Properties (Theming)
+   ========================================================================== */
+.header.block {
+  /* Layout */
+  --header-section-padding: 0.5rem 1rem;
+  --header-background: #fff;
+  --header-max-width: 1400px;
+
+  /* Navigation */
+  --header-nav-gap: 2rem;
+  --header-nav-font-size: 1rem;
+  --header-nav-font-weight: 500;
+
+  /* Dropdowns */
+  --header-dropdown-background: #fff;
+  --header-dropdown-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --header-dropdown-padding: 1.5rem;
+
+  /* Mega panels */
+  --header-mega-max-width: 1200px;
+
+  /* Mobile */
+  --header-mobile-breakpoint: 1024px;
+  --header-mobile-menu-background: #fff;
+
+  /* Block-level styles */
+  background: var(--header-background);
+  position: relative;
+}
+
+/* ==========================================================================
+   Page Header Element (sticky behavior)
+   ========================================================================== */
+header:has(.header.block) {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: auto !important; /* Override global height constraints */
+}
+
+/* ==========================================================================
+   Sections - All scoped under .header.block
+   ========================================================================== */
+.header.block .header-section {
+  display: flex;
+  align-items: center;
+  padding: var(--header-section-padding);
+  max-width: var(--header-max-width);
+  margin: 0 auto;
+}
+
+.header.block .header-section-content {
+  width: 100%;
+}
+
+/* ==========================================================================
+   Brand Section
+   ========================================================================== */
+.header.block .header-brand img {
+  max-height: 40px;
+  width: auto;
+}
+
+/* ==========================================================================
+   Top Bar Section
+   ========================================================================== */
+.header.block .header-top-bar {
+  background: var(--header-top-bar-background, #f5f5f5);
+  font-size: 0.875rem;
+}
+
+/* ==========================================================================
+   Utility Section
+   ========================================================================== */
+.header.block .header-utility {
+  font-size: 0.875rem;
+}
+
+.header.block .header-utility ul {
+  display: flex;
+  gap: 1.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  justify-content: flex-end;
+}
+
+.header.block .header-utility a,
+.header.block .header-utility a:any-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.header.block .header-utility a:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   Main Nav Section
+   ========================================================================== */
+.header.block .header-main-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header.block .header-main-nav .header-section-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2rem;
+}
+
+/* ==========================================================================
+   Inline Brand (logo for single-row header)
+   ========================================================================== */
+.header.block .header-brand-inline {
+  flex-shrink: 0;
+}
+
+.header.block .header-brand-inline img {
+  max-height: 40px;
+  width: auto;
+}
+
+.header.block .header-brand-inline p {
+  margin: 0;
+}
+
+/* ==========================================================================
+   Inline Tools/Utility (for single-row header)
+   ========================================================================== */
+.header.block .header-tools-inline {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+
+.header.block .header-tools-inline p {
+  margin: 0;
+}
+
+.header.block .header-tools-inline a,
+.header.block .header-tools-inline a:any-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.header.block .header-tools-inline a:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   Navigation
+   ========================================================================== */
+.header.block .header-nav {
+  display: none;
+}
+
+.header.block .header-nav-list {
+  display: flex;
+  gap: var(--header-nav-gap);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.header.block .header-nav-item {
+  position: relative;
+}
+
+/* Nav item links - handle both direct <a> and DA-wrapped <p><a> structures */
+.header.block .header-nav-item > a,
+.header.block .header-nav-item > a:any-link,
+.header.block .header-nav-item > p > a,
+.header.block .header-nav-item > p > a:any-link {
+  display: block;
+  padding: 0.75rem 0;
+  font-size: var(--header-nav-font-size);
+  font-weight: var(--header-nav-font-weight);
+  text-decoration: none;
+  color: inherit;
+}
+
+.header.block .header-nav-item > a:hover,
+.header.block .header-nav-item > p > a:hover {
+  text-decoration: underline;
+}
+
+/* Dropdown indicator for items with children */
+.header.block .header-nav-item.has-dropdown > a::after,
+.header.block .header-nav-item.has-dropdown > p > a::after {
+  content: '';
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-left: 0.5em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  vertical-align: middle;
+}
+
+/* ==========================================================================
+   Dropdowns
+   ========================================================================== */
+.header.block .header-dropdown {
+  display: none;
+  position: absolute;
+  left: 0;
+  background: var(--header-dropdown-background);
+  box-shadow: var(--header-dropdown-shadow);
+  z-index: 10;
+}
+
+.header.block .header-nav-item.is-open > .header-dropdown {
+  display: block;
+}
+
+/* Simple dropdown */
+.header.block .header-dropdown--simple {
+  min-width: 200px;
+  padding: var(--header-dropdown-padding);
+}
+
+.header.block .header-dropdown--simple ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.header.block .header-dropdown--simple li {
+  margin: 0;
+}
+
+.header.block .header-dropdown--simple a,
+.header.block .header-dropdown--simple a:any-link {
+  display: block;
+  padding: 0.5rem 0;
+  text-decoration: none;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.header.block .header-dropdown--simple a:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   Mega Dropdown
+   ========================================================================== */
+.header.block .header-dropdown--mega {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--header-max-width);
+  padding: var(--header-dropdown-padding);
+  padding-top: calc(var(--header-dropdown-padding) + 1rem);
+  margin-top: 0;
+  box-sizing: border-box;
+}
+
+/* Reset positioning context so mega spans full header width */
+.header.block .header-nav-item.has-dropdown:has(.header-dropdown--mega) {
+  position: static;
+}
+
+.header.block .header-dropdown--mega > ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 2rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.header.block .header-dropdown--mega > ul > li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.header.block .header-dropdown--mega > ul > li > a,
+.header.block .header-dropdown--mega > ul > li > a:any-link {
+  color: var(--link-color, #0066cc);
+  text-decoration: none;
+}
+
+.header.block .header-dropdown--mega > ul > li > a:hover {
+  text-decoration: underline;
+}
+
+.header.block .header-dropdown--mega img {
+  max-width: 100%;
+  height: auto;
+}
+
+.header.block .header-dropdown--mega h1,
+.header.block .header-dropdown--mega h2,
+.header.block .header-dropdown--mega h3,
+.header.block .header-dropdown--mega h4,
+.header.block .header-dropdown--mega h5,
+.header.block .header-dropdown--mega h6 {
+  margin: 0 0 0.5rem;
+}
+
+.header.block .header-dropdown--mega p {
+  margin: 0 0 1rem;
+}
+
+/* ==========================================================================
+   Mobile Toggle
+   ========================================================================== */
+.header.block .header-menu-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #000;
+  position: relative;
+  z-index: 200;
+}
+
+.header.block .header-menu-icon {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: currentColor;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.header.block .header-menu-icon::before,
+.header.block .header-menu-icon::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: currentColor;
+  transition: transform 0.2s;
+}
+
+.header.block .header-menu-icon::before {
+  top: -8px;
+}
+
+.header.block .header-menu-icon::after {
+  top: 8px;
+}
+
+/* Toggle open state */
+.header.block .header-menu-toggle[aria-expanded="true"] .header-menu-icon {
+  background: transparent;
+}
+
+.header.block .header-menu-toggle[aria-expanded="true"] .header-menu-icon::before {
+  top: 0;
+  transform: rotate(45deg);
+}
+
+.header.block .header-menu-toggle[aria-expanded="true"] .header-menu-icon::after {
+  top: 0;
+  transform: rotate(-45deg);
+}
+
+/* ==========================================================================
+   Desktop Responsive
+   ========================================================================== */
+@media (min-width: 1024px) {
+  .header.block .header-nav {
+    display: block;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .header.block .header-nav-list {
+    justify-content: center;
+  }
+
+  .header.block .header-menu-toggle {
+    display: none;
+  }
+}
+
+/* Hide inline tools on mobile */
+@media (max-width: 1023px) {
+  .header.block .header-tools-inline {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Mobile Navigation
+   ========================================================================== */
+@media (max-width: 1023px) {
+  /* Position toggle fixed when menu is open */
+  .header.block .header-menu-toggle[aria-expanded="true"] {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 200;
+  }
+
+  .header.block .header-nav {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--header-mobile-menu-background);
+    padding: 1rem;
+    padding-top: 4rem;
+    overflow-y: auto;
+    z-index: 100;
+  }
+
+  .header.block .header-nav.is-open {
+    display: block;
+  }
+
+  .header.block .header-nav-list {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .header.block .header-nav-item > a,
+  .header.block .header-nav-item > p > a {
+    padding: 1rem 0;
+    border-bottom: 1px solid #eee;
+  }
+
+  /* Dropdown indicator rotation on mobile */
+  .header.block .header-nav-item.has-dropdown > a::after,
+  .header.block .header-nav-item.has-dropdown > p > a::after {
+    transition: transform 0.2s;
+  }
+
+  .header.block .header-nav-item.has-dropdown.is-expanded > a::after,
+  .header.block .header-nav-item.has-dropdown.is-expanded > p > a::after {
+    transform: rotate(-135deg);
+  }
+
+  /* Mobile dropdown base */
+  .header.block .header-dropdown {
+    position: static;
+    box-shadow: none;
+    display: none;
+    transform: none;
+    width: 100%;
+    max-width: none;
+  }
+
+  /* Accordion mode */
+  .header.block .header-nav-item.is-expanded > .header-dropdown {
+    display: block;
+    padding-left: 1rem;
+  }
+
+  /* Slide-in mode */
+  .header.block [data-mobile-style="slide-in"] .header-dropdown {
+    position: fixed;
+    top: 0;
+    left: 100%;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    transition: left 0.3s ease;
+    padding: 1rem;
+    padding-top: 4rem;
+    overflow-y: auto;
+    background: var(--header-mobile-menu-background);
+  }
+
+  .header.block [data-mobile-style="slide-in"] .header-nav-item.is-expanded > .header-dropdown {
+    left: 0;
+  }
+
+  /* Fullscreen mode */
+  .header.block [data-mobile-style="fullscreen"] .header-dropdown {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    padding: 1rem;
+    padding-top: 4rem;
+    overflow-y: auto;
+    background: var(--header-mobile-menu-background);
+  }
+
+  .header.block [data-mobile-style="fullscreen"] .header-nav-item.is-expanded > .header-dropdown {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* Back button */
+  .header.block .header-dropdown-back {
+    display: block;
+    padding: 1rem 0;
+    border: none;
+    background: none;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-bottom: 1rem;
+    color: inherit;
+  }
+
+  .header.block .header-dropdown-back::before {
+    content: '\2190 ';
+  }
+
+  /* Hide back button in accordion mode */
+  .header.block [data-mobile-style="accordion"] .header-dropdown-back {
+    display: none;
+  }
+
+  /* Mega menu on mobile - stack content */
+  .header.block .header-dropdown--mega > ul {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .header.block .header-dropdown-back {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
+.header.block .header-nav-item > a:focus,
+.header.block .header-nav-item > a:any-link:focus,
+.header.block .header-nav-item > p > a:focus,
+.header.block .header-nav-item > p > a:any-link:focus,
+.header.block .header-dropdown a:focus,
+.header.block .header-dropdown a:any-link:focus,
+.header.block .header-menu-toggle:focus {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.header.block .header-skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #000;
+  color: #fff;
+  padding: 8px;
+  z-index: 1000;
+}
+
+.header.block .header-skip-link:focus {
+  top: 0;
+}
