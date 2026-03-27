@@ -3,11 +3,13 @@ name: migrate-header
 description: >
   Migrate any website header to AEM Edge Delivery Services with pixel-accurate
   fidelity using an automated extraction + scaffold + visual polish pipeline.
-  Takes a URL, creates a worktree, runs overlay detection, captures DOM snapshots,
-  extracts layout and branding, generates scaffold code, then launches an
-  autonomous visual polish loop. Requires being in an EDS git repository.
-  Triggers on: "migrate header", "header migration", "migrate-header",
-  "/migrate-header", "convert header to EDS", "EDS header from URL".
+  Takes a URL, runs overlay detection, captures DOM snapshots, extracts layout
+  and branding, generates scaffold code, then launches an autonomous visual
+  polish loop. Requires being in an EDS git repository. Works in the current
+  directory — the caller is responsible for worktree/branch setup if isolation
+  is needed. Triggers on: "migrate header", "header migration",
+  "migrate-header", "/migrate-header", "convert header to EDS",
+  "EDS header from URL".
 ---
 
 # Migrate Header
@@ -20,28 +22,27 @@ to converge on pixel-accurate fidelity.
 ## Pipeline Overview
 
 ```
-URL --> PARSE --> VALIDATE --> WORKTREE --> OVERLAY --> SNAPSHOT --> EXTRACT --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
-        (args)    (EDS?)    (git branch)   (LLM)     (pw-cli)   (scripts)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
+URL --> PARSE --> VALIDATE --> OVERLAY --> SNAPSHOT --> EXTRACT --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
+        (args)    (EDS?)      (LLM)     (pw-cli)   (scripts)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
 ```
 
 ## Scripts
 
 All deterministic work goes through Node scripts bundled with this skill.
-
-**Locating scripts:** Use `${CLAUDE_SKILL_DIR}` to resolve paths:
+Resolve the skill directory once, then use it for all asset paths:
 
 ```bash
-SKILL_SCRIPTS="${CLAUDE_SKILL_DIR}/scripts"
+SKILL_HOME="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/migrate-header}"
 ```
 
-If `CLAUDE_SKILL_DIR` is not set, fall back:
-`SKILL_SCRIPTS="$(find ~/.claude -path "*/migrate-header/scripts" -type d 2>/dev/null | head -1)"`
+Scripts:
+- `node $SKILL_HOME/scripts/capture-snapshot.js <url> <output-dir> [--header-selector=header] [--overlay-recipe=path]`
+- `node $SKILL_HOME/scripts/extract-layout.js <snapshot.json>` (stdout JSON)
+- `node $SKILL_HOME/scripts/extract-branding.js <snapshot.json>` (stdout JSON)
+- `node $SKILL_HOME/scripts/setup-polish-loop.js --layout=... --branding=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
 
-Available scripts:
-- `capture-snapshot.js` -- `node $SKILL_SCRIPTS/capture-snapshot.js <url> <output-dir> [--header-selector=header] [--overlay-recipe=path]`
-- `extract-layout.js` -- `node $SKILL_SCRIPTS/extract-layout.js <snapshot.json>` (stdout JSON)
-- `extract-branding.js` -- `node $SKILL_SCRIPTS/extract-branding.js <snapshot.json>` (stdout JSON)
-- `setup-polish-loop.js` -- `node $SKILL_SCRIPTS/setup-polish-loop.js --layout=... --branding=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
+Block-files: `$SKILL_HOME/block-files/header.{js,css}`
+Reference docs: `$SKILL_HOME/references/*.md`
 
 See [EDS header conventions](references/eds-header-conventions.md) for block patterns used in scaffold generation.
 
@@ -51,7 +52,7 @@ Track state across stages with these variables. Set each one as its
 stage completes. Use them in error handling to know what to clean up.
 
 ```
-WORKTREE_PATH=""
+PROJECT_ROOT="$(git rev-parse --show-toplevel)"
 AEM_PID=""
 ```
 
@@ -109,57 +110,33 @@ fi
 echo "EDS repository validated."
 ```
 
-### Stage 3: Create Worktree
+### Stage 3: Prepare Working Directory
 
-Sanitize the domain from the URL, create a git worktree for all pipeline work.
-
-```bash
-# Extract domain and sanitize for branch name
-DOMAIN=$(echo "$URL" | sed -E 's|https?://||; s|/.*||; s|[^a-zA-Z0-9]|-|g')
-BRANCH="header-migration-${DOMAIN}"
-WORKTREE_PATH="$(git rev-parse --show-toplevel)/.claude/worktrees/${BRANCH}"
-
-# Create worktree
-git worktree add "$WORKTREE_PATH" -b "$BRANCH"
-echo "Worktree created at: $WORKTREE_PATH (branch: $BRANCH)"
-```
-
-If the branch already exists, tell the user:
-"Branch `<name>` already exists. A previous migration may be in progress.
-Delete it with `git worktree remove <path> && git branch -D <name>` to
-start fresh, or provide a different URL."
-
-From this point forward, **all file operations happen inside `$WORKTREE_PATH`**.
-Create the autoresearch directory structure:
+All file operations happen in the current project root. Create the
+autoresearch directory structure:
 
 ```bash
-mkdir -p "$WORKTREE_PATH/autoresearch/source"
-mkdir -p "$WORKTREE_PATH/autoresearch/extraction"
-mkdir -p "$WORKTREE_PATH/autoresearch/results"
+mkdir -p "$PROJECT_ROOT/autoresearch/source"
+mkdir -p "$PROJECT_ROOT/autoresearch/extraction"
+mkdir -p "$PROJECT_ROOT/autoresearch/results"
 ```
 
 ### Stage 4: Overlay Detection
 
-If `--overlay-recipe` was provided, copy it into the worktree and skip
+If `--overlay-recipe` was provided, copy it into the project and skip
 to Stage 5:
 
 ```bash
-cp "$OVERLAY_RECIPE" "$WORKTREE_PATH/autoresearch/overlay-recipe.json"
+cp "$OVERLAY_RECIPE" "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
 ```
 
 Otherwise, detect overlays using the page-prep skill's CMP database
 (300+ known consent managers) via headless playwright-cli.
 
-**Locate page-prep scripts:**
+**Locate page-prep scripts** (sibling skill):
 
 ```bash
-if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
-  PAGE_PREP_DIR="$(find "$(dirname "$CLAUDE_SKILL_DIR")" -path "*/page-prep/scripts" -type d 2>/dev/null | head -1)"
-fi
-if [[ -z "${PAGE_PREP_DIR:-}" ]]; then
-  PAGE_PREP_DIR="$(dirname "$(command -v overlay-db.js 2>/dev/null || \
-    find ~/.claude -path "*/page-prep/scripts/overlay-db.js" -type f 2>/dev/null | head -1)")"
-fi
+PAGE_PREP_DIR="$(dirname "$SKILL_HOME")/page-prep/scripts"
 ```
 
 If page-prep scripts are not found, write an empty recipe and skip to
@@ -167,7 +144,7 @@ Stage 5:
 
 ```bash
 if [[ -z "$PAGE_PREP_DIR" || ! -f "$PAGE_PREP_DIR/overlay-db.js" ]]; then
-  echo '{ "selectors": [], "action": "remove" }' > "$WORKTREE_PATH/autoresearch/overlay-recipe.json"
+  echo '{ "selectors": [], "action": "remove" }' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
   echo "Warning: page-prep scripts not found. Skipping overlay detection."
 fi
 ```
@@ -213,14 +190,14 @@ echo "$REPORT_RAW" | node -e "
   } catch {
     console.log(JSON.stringify({ selectors: [], action: 'remove' }, null, 2));
   }
-" > "$WORKTREE_PATH/autoresearch/overlay-recipe.json"
+" > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
 ```
 
 Verify the recipe file exists:
 
 ```bash
-if [[ ! -f "$WORKTREE_PATH/autoresearch/overlay-recipe.json" ]]; then
-  echo '{ "selectors": [], "action": "remove" }' > "$WORKTREE_PATH/autoresearch/overlay-recipe.json"
+if [[ ! -f "$PROJECT_ROOT/autoresearch/overlay-recipe.json" ]]; then
+  echo '{ "selectors": [], "action": "remove" }' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
   echo "Warning: Overlay detection produced no recipe. Using empty recipe."
 fi
 ```
@@ -230,18 +207,18 @@ fi
 Run the capture script via Bash:
 
 ```bash
-node "$SKILL_SCRIPTS/capture-snapshot.js" \
+node "$SKILL_HOME/scripts/capture-snapshot.js" \
   "$URL" \
-  "$WORKTREE_PATH/autoresearch/source" \
+  "$PROJECT_ROOT/autoresearch/source" \
   "--header-selector=$HEADER_SELECTOR" \
-  "--overlay-recipe=$WORKTREE_PATH/autoresearch/overlay-recipe.json"
+  "--overlay-recipe=$PROJECT_ROOT/autoresearch/overlay-recipe.json"
 ```
 
 Verify output files exist:
 
 ```bash
 for f in snapshot.json desktop.png tablet.png mobile.png; do
-  if [[ ! -f "$WORKTREE_PATH/autoresearch/source/$f" ]]; then
+  if [[ ! -f "$PROJECT_ROOT/autoresearch/source/$f" ]]; then
     echo "ERROR: Snapshot capture failed -- missing $f"
     exit 1
   fi
@@ -256,13 +233,13 @@ If capture fails, suggest: different `--header-selector`, manual `--overlay-reci
 Run both extraction scripts via Bash:
 
 ```bash
-node "$SKILL_SCRIPTS/extract-layout.js" \
-  "$WORKTREE_PATH/autoresearch/source/snapshot.json" \
-  > "$WORKTREE_PATH/autoresearch/extraction/layout.json"
+node "$SKILL_HOME/scripts/extract-layout.js" \
+  "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
+  > "$PROJECT_ROOT/autoresearch/extraction/layout.json"
 
-node "$SKILL_SCRIPTS/extract-branding.js" \
-  "$WORKTREE_PATH/autoresearch/source/snapshot.json" \
-  > "$WORKTREE_PATH/autoresearch/extraction/branding.json"
+node "$SKILL_HOME/scripts/extract-branding.js" \
+  "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
+  > "$PROJECT_ROOT/autoresearch/extraction/branding.json"
 ```
 
 After extraction, read both JSON files and log a summary:
@@ -283,9 +260,9 @@ extraction data.
 **Step 1 — Copy base block files:**
 
 ```bash
-mkdir -p "$WORKTREE_PATH/blocks/header"
-cp "${CLAUDE_SKILL_DIR}/block-files/header.js" "$WORKTREE_PATH/blocks/header/header.js"
-cp "${CLAUDE_SKILL_DIR}/block-files/header.css" "$WORKTREE_PATH/blocks/header/header.css"
+mkdir -p "$PROJECT_ROOT/blocks/header"
+cp "$SKILL_HOME/block-files/header.js" "$PROJECT_ROOT/blocks/header/header.js"
+cp "$SKILL_HOME/block-files/header.css" "$PROJECT_ROOT/blocks/header/header.css"
 ```
 
 The base block (420-line JS, 574-line CSS) handles: multi-section layout
@@ -308,20 +285,20 @@ header.js is already in place and must NOT be modified. You will:
 ## Input Data
 
 Read these files:
-- Layout: <WORKTREE_PATH>/autoresearch/extraction/layout.json
-- Branding: <WORKTREE_PATH>/autoresearch/extraction/branding.json
+- Layout: <PROJECT_ROOT>/autoresearch/extraction/layout.json
+- Branding: <PROJECT_ROOT>/autoresearch/extraction/branding.json
 
 ## Reference Docs
 
 Read ALL of these for patterns and mapping guidance:
-- ${CLAUDE_SKILL_DIR}/references/eds-header-conventions.md
-- ${CLAUDE_SKILL_DIR}/references/content-mapping.md
-- ${CLAUDE_SKILL_DIR}/references/styling-guide.md
-- ${CLAUDE_SKILL_DIR}/references/header-block-guide.md
+- $SKILL_HOME/references/eds-header-conventions.md
+- $SKILL_HOME/references/content-mapping.md
+- $SKILL_HOME/references/styling-guide.md
+- $SKILL_HOME/references/header-block-guide.md
 
 ## Task 1: Customize header.css
 
-Open <WORKTREE_PATH>/blocks/header/header.css and update ONLY the CSS
+Open <PROJECT_ROOT>/blocks/header/header.css and update ONLY the CSS
 custom properties block at the top (.header.block { ... }) to match the
 extracted branding:
 
@@ -341,7 +318,7 @@ Do NOT modify the structural CSS (layout, mobile, dropdowns, etc.).
 
 ## Task 2: Generate nav.plain.html
 
-Create <WORKTREE_PATH>/nav.plain.html following the content-mapping
+Create <PROJECT_ROOT>/nav.plain.html following the content-mapping
 guide patterns. Use the extraction data:
 
 - layout.rows tells you the section structure (brand, main-nav, etc.)
@@ -359,7 +336,7 @@ Use `layout.logo` as the primary source (it includes `href`).
 Fall back to `branding.logo` only if `layout.logo` is null;
 use `href="/"` in that case since `branding.logo` has no link.
 
-1. Download the logo image to <WORKTREE_PATH>/images/logo.png (or
+1. Download the logo image to <PROJECT_ROOT>/images/logo.png (or
    matching extension). Use curl or fetch.
 2. In nav.plain.html, use the local path:
    `<p><a href="<logo.href>"><img src="./images/logo.png" alt="<logo.alt>"></a></p>`
@@ -378,7 +355,7 @@ each with their own section-metadata.
 ## After Generating
 
 Stage and commit:
-  cd <WORKTREE_PATH>
+  cd <PROJECT_ROOT>
   git add blocks/header/header.css nav.plain.html images/
   git commit -m "scaffold: customize header CSS and generate nav content"
 ```
@@ -387,7 +364,7 @@ After the subagent completes, verify the files exist:
 
 ```bash
 for f in blocks/header/header.js blocks/header/header.css nav.plain.html; do
-  if [[ ! -f "$WORKTREE_PATH/$f" ]]; then
+  if [[ ! -f "$PROJECT_ROOT/$f" ]]; then
     echo "ERROR: Scaffold generation failed -- missing $f"
     exit 1
   fi
@@ -400,11 +377,11 @@ echo "Scaffold committed."
 Run the setup script to generate the polish loop infrastructure:
 
 ```bash
-node "$SKILL_SCRIPTS/setup-polish-loop.js" \
-  "--layout=$WORKTREE_PATH/autoresearch/extraction/layout.json" \
-  "--branding=$WORKTREE_PATH/autoresearch/extraction/branding.json" \
-  "--source-dir=$WORKTREE_PATH/autoresearch/source" \
-  "--target-dir=$WORKTREE_PATH" \
+node "$SKILL_HOME/scripts/setup-polish-loop.js" \
+  "--layout=$PROJECT_ROOT/autoresearch/extraction/layout.json" \
+  "--branding=$PROJECT_ROOT/autoresearch/extraction/branding.json" \
+  "--source-dir=$PROJECT_ROOT/autoresearch/source" \
+  "--target-dir=$PROJECT_ROOT" \
   "--port=3000" \
   "--max-iterations=$MAX_ITERATIONS"
 ```
@@ -413,12 +390,12 @@ Verify the generated files exist:
 
 ```bash
 for f in autoresearch/evaluate.js program.md loop.sh; do
-  if [[ ! -f "$WORKTREE_PATH/$f" ]]; then
+  if [[ ! -f "$PROJECT_ROOT/$f" ]]; then
     echo "ERROR: Polish loop setup failed -- missing $f"
     exit 1
   fi
 done
-chmod +x "$WORKTREE_PATH/loop.sh"
+chmod +x "$PROJECT_ROOT/loop.sh"
 echo "Polish loop infrastructure ready."
 ```
 
@@ -429,7 +406,7 @@ Start the AEM dev server in the background, then launch the polish loop.
 **Start dev server:**
 
 ```bash
-cd "$WORKTREE_PATH" && aem up --html-folder . &
+cd "$PROJECT_ROOT" && aem up --html-folder . &
 AEM_PID=$!
 echo "AEM dev server starting (PID: $AEM_PID)..."
 ```
@@ -453,7 +430,7 @@ echo "AEM dev server ready on http://localhost:3000/"
 **Launch the polish loop** (this blocks until completion):
 
 ```bash
-cd "$WORKTREE_PATH" && ./loop.sh
+cd "$PROJECT_ROOT" && ./loop.sh
 ```
 
 The loop runs autonomously. It terminates on:
@@ -477,8 +454,8 @@ if [[ -n "$AEM_PID" ]]; then
 fi
 ```
 
-**Read results** from `$WORKTREE_PATH/results.tsv`
-and `$WORKTREE_PATH/autoresearch/results/latest-evaluation.json`.
+**Read results** from `$PROJECT_ROOT/results.tsv`
+and `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json`.
 Extract: composite score, desktop/tablet/mobile scores, nav completeness,
 iteration count (kept vs reverted).
 
@@ -488,8 +465,8 @@ iteration count (kept vs reverted).
 ## Header Migration Complete
 
 **Source:** <URL>
-**Branch:** <BRANCH>
-**Worktree:** <WORKTREE_PATH>
+**Branch:** $(git branch --show-current)
+**Directory:** <PROJECT_ROOT>
 
 ### Final Score
 - Composite: <score>%
@@ -502,17 +479,9 @@ iteration count (kept vs reverted).
 - Total: <N> (<kept> kept, <reverted> reverted)
 
 ### Next Steps
-1. Review the header at <WORKTREE_PATH>/blocks/header/
-2. Preview locally: cd <WORKTREE_PATH> && aem up --html-folder .
-3. When satisfied, merge the branch:
-   git checkout main
-   cp -r <WORKTREE_PATH>/blocks/header/ blocks/header/
-   cp <WORKTREE_PATH>/nav.plain.html nav.plain.html
-   git add blocks/header/ nav.plain.html
-   git commit -m "feat: add migrated header from <domain>"
-4. Clean up the worktree:
-   git worktree remove <WORKTREE_PATH>
-   git branch -D <BRANCH>
+1. Review the header at <PROJECT_ROOT>/blocks/header/
+2. Preview locally: cd <PROJECT_ROOT> && aem up --html-folder .
+3. When satisfied, commit and open a PR
 ```
 
 ### Stage 11: Retrospective
@@ -522,13 +491,13 @@ learnings that could improve the skill for future header migrations.
 
 **Read all data sources:**
 
-1. `$WORKTREE_PATH/results.tsv` — iteration scores and keep/revert decisions
-2. `$WORKTREE_PATH/autoresearch/results/latest-evaluation.json` — detailed score breakdown
-3. `$WORKTREE_PATH/autoresearch/extraction/layout.json` — extracted layout structure
-4. `$WORKTREE_PATH/autoresearch/extraction/branding.json` — extracted branding values
-5. `$WORKTREE_PATH/autoresearch/overlay-recipe.json` — overlays detected
-6. Source screenshots in `$WORKTREE_PATH/autoresearch/source/` — visual reference
-7. `git log --oneline` in the worktree — changes made during polish
+1. `$PROJECT_ROOT/results.tsv` — iteration scores and keep/revert decisions
+2. `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json` — detailed score breakdown
+3. `$PROJECT_ROOT/autoresearch/extraction/layout.json` — extracted layout structure
+4. `$PROJECT_ROOT/autoresearch/extraction/branding.json` — extracted branding values
+5. `$PROJECT_ROOT/autoresearch/overlay-recipe.json` — overlays detected
+6. Source screenshots in `$PROJECT_ROOT/autoresearch/source/` — visual reference
+7. `git log --oneline` — changes made during polish
 
 **Analyze these dimensions:**
 
@@ -543,7 +512,7 @@ learnings that could improve the skill for future header migrations.
 
 **Generate the retrospective:**
 
-Save to `$WORKTREE_PATH/autoresearch/results/retrospective.md` using
+Save to `$PROJECT_ROOT/autoresearch/results/retrospective.md` using
 this structure:
 
 ```markdown
@@ -592,7 +561,7 @@ this structure:
 ### Retrospective
 
 Learnings from this migration saved to:
-<WORKTREE_PATH>/autoresearch/results/retrospective.md
+<PROJECT_ROOT>/autoresearch/results/retrospective.md
 
 **Reinforcements:** <1-2 sentence summary of what worked>
 **Improvements:** <1-2 sentence summary of what struggled>
@@ -613,10 +582,9 @@ If any stage fails, follow this cleanup procedure:
      kill "$AEM_PID" 2>/dev/null
    fi
    ```
-4. Do NOT delete the worktree -- it contains partial results the user
-   may want to inspect or resume from
-5. Tell the user the worktree path and branch name so they can inspect
-   or clean up manually
+4. Do NOT delete the autoresearch directory -- it contains partial
+   results the user may want to inspect or resume from
+5. Tell the user the project path so they can inspect
 
 Example failure report:
 
@@ -628,12 +596,12 @@ Example failure report:
 **Completed stages:**
 - [x] Stage 1: Arguments parsed (URL: https://example.com)
 - [x] Stage 2: EDS repository validated
-- [x] Stage 3: Worktree created at <path> (branch: <name>)
+- [x] Stage 3: Working directory prepared
 - [x] Stage 4: Overlay detection (2 overlays found)
 - [ ] Stage 5: Snapshot capture -- FAILED
 
 **Suggestion:** Try a different header selector:
   /migrate-header https://example.com --header-selector="nav.main-nav"
 
-**Worktree preserved at:** <path>
+**Partial results at:** <PROJECT_ROOT>/autoresearch/
 ```
