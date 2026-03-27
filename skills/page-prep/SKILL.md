@@ -19,6 +19,17 @@ Detect and remove overlays (cookie banners, GDPR consent, modals, paywalls,
 login walls) before screenshots, scraping, or browser automation.
 Node 22+ required. No npm dependencies.
 
+## Mode
+
+The `mode` parameter controls dismiss strategy and verification depth.
+Default is `thorough`. Callers can request `quick` mode in natural language
+("use page-prep in quick mode") or the agent infers from context.
+
+| Mode | Dismiss | Verification | Use case |
+|------|---------|--------------|----------|
+| `thorough` (default) | Click-first, hide as fallback | DOM check + viewport screenshot | Persistent sessions, interactive work |
+| `quick` | Hide-only (CSS injection) | DOM check only | Ephemeral sessions, repeated evaluations |
+
 ## Script Location
 
 ```bash
