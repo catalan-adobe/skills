@@ -98,13 +98,34 @@ manifest (see Recipe Manifest Format). Include the global `scroll_fix` if
 
 ### Step 8 — Execute the recipe
 
-- **Visual cleanup** (fast): batch-evaluate the `hide.js` block in one
-  `browser_evaluate` call. Hides all overlays and restores scroll.
-- **Interactive dismiss** (thorough): execute each `dismiss.steps` entry
-  sequentially using the browser tool's click/key primitives. Use this when
-  the site requires a real consent signal (analytics, A/B tests).
+**Thorough mode (default) — click-first:**
+
+1. For each overlay with a `dismiss` recipe (`source: "cmp-match"`): execute
+   the `dismiss.steps` entries sequentially using the browser tool's click/key
+   primitives. Clicking sets consent cookies that persist across all tabs in
+   the same browser session — the overlay will not reappear.
+2. For each overlay with `dismiss: null` (`source: "heuristic"`): run the
+   Agent Fallback sequence (see below).
+3. Apply `scroll_fix` if `scroll_locked` is true.
+4. If any click fails or times out after 5 seconds: fall back to the hide
+   path for that overlay (batch-evaluate its `hide.js` rule).
+
+**Quick mode — hide-only:**
+
+1. Batch-evaluate all `hide.js` rules in one `browser_evaluate` call.
+2. Apply `scroll_fix` if `scroll_locked` is true.
+3. Skip interactive dismiss entirely.
+
+Use quick mode for ephemeral browser sessions where cookies are lost on close
+(e.g., repeated evaluations in a polish loop). The detection recipe can be
+saved and replayed cheaply without re-running the full pipeline.
 
 ### Step 9 — Verify the page is clean
+
+Verification runs in two layers. The DOM check runs in both modes. The
+screenshot check runs only in thorough mode.
+
+#### Step 9a — DOM residual check (both modes)
 
 The detection script catches known CMPs and common heuristic patterns, but
 it will miss overlays that don't fit those signals — third-party login
@@ -135,9 +156,30 @@ legitimate elements (navigation bars, toolbars) and remove the rest:
 2. Re-run the check.
 3. Repeat until only legitimate page elements remain.
 
-This verification loop is the agent's value over the heuristic script
-alone — the script handles the 80% of known patterns fast, the agent
-handles the 20% that requires judgment.
+In quick mode, stop here. In thorough mode, continue to Step 9b.
+
+#### Step 9b — Viewport screenshot verification (thorough mode only)
+
+The DOM check misses iframes, Shadow DOM, absolute-positioned overlays,
+and `<dialog>::backdrop`. A viewport screenshot catches what DOM queries
+cannot.
+
+1. Take a **viewport screenshot** (not fullpage) via the active browser tool.
+   Overlays use `position:fixed` and are always visible in the viewport
+   regardless of scroll position.
+2. Visually analyze the screenshot: are there visible overlays, banners,
+   modals, or backdrop dimming still present?
+3. If the page is clean: verification complete.
+4. If overlays remain: attempt to dismiss them (click close buttons or
+   remove elements via `document.querySelector('<selector>')?.remove()`),
+   then take another viewport screenshot. Maximum 2 retries.
+5. After retries exhausted: report remaining overlays to the caller but
+   do not block — the page is as clean as achievable.
+
+This two-layer verification is the agent's value over the heuristic script
+alone — the script and DOM check handle the 80% of known patterns fast,
+the screenshot catches the remaining edge cases that require visual
+judgment.
 
 ### Step 10 — Optionally inject watch mode
 
