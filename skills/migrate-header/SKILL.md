@@ -147,47 +147,76 @@ to Stage 5:
 cp "$OVERLAY_RECIPE" "$WORKTREE_PATH/autoresearch/overlay-recipe.json"
 ```
 
-Otherwise, dispatch an Agent subagent to detect overlays.
+Otherwise, detect overlays using the page-prep skill's CMP database
+(300+ known consent managers) via headless playwright-cli.
 
-The subagent receives this prompt:
+**Locate page-prep scripts:**
 
-```
-You are detecting overlays that block a website header. This is a
-RESEARCH-ONLY task -- do not modify any project files.
-
-## Task
-
-1. Use playwright to navigate to: <URL>
-2. Wait for the page to fully load (wait for networkidle)
-3. Take a full-viewport screenshot and save it to:
-   <WORKTREE_PATH>/autoresearch/source/overlay-check.png
-4. Take a DOM snapshot of the page
-5. Analyze the screenshot and DOM to identify elements that overlay
-   or block the header area:
-   - Cookie consent banners (OneTrust, CookieBot, custom)
-   - GDPR/privacy dialogs
-   - Newsletter signup modals
-   - Splash screens or interstitials
-   - Any element with position:fixed or position:absolute and high
-     z-index that covers the top portion of the viewport
-
-6. For each overlay found, record its CSS selector (prefer #id, then
-   [data-*] attributes, then .class combinations)
-
-7. Write the recipe JSON to:
-   <WORKTREE_PATH>/autoresearch/overlay-recipe.json
-
-   Format:
-   {
-     "selectors": ["#onetrust-banner-sdk", ".modal-overlay"],
-     "action": "remove"
-   }
-
-   If no overlays are detected, write:
-   { "selectors": [], "action": "remove" }
+```bash
+if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
+  PAGE_PREP_DIR="$(find "$(dirname "$CLAUDE_SKILL_DIR")" -path "*/page-prep/scripts" -type d 2>/dev/null | head -1)"
+fi
+if [[ -z "${PAGE_PREP_DIR:-}" ]]; then
+  PAGE_PREP_DIR="$(dirname "$(command -v overlay-db.js 2>/dev/null || \
+    find ~/.claude -path "*/page-prep/scripts/overlay-db.js" -type f 2>/dev/null | head -1)")"
+fi
 ```
 
-After the subagent completes, verify the recipe file exists:
+If page-prep scripts are not found, write an empty recipe and skip to
+Stage 5:
+
+```bash
+if [[ -z "$PAGE_PREP_DIR" || ! -f "$PAGE_PREP_DIR/overlay-db.js" ]]; then
+  echo '{ "selectors": [], "action": "remove" }' > "$WORKTREE_PATH/autoresearch/overlay-recipe.json"
+  echo "Warning: page-prep scripts not found. Skipping overlay detection."
+fi
+```
+
+**Refresh database and generate bundle:**
+
+```bash
+node "$PAGE_PREP_DIR/overlay-db.js" refresh
+BUNDLE="$(node "$PAGE_PREP_DIR/overlay-db.js" bundle)"
+```
+
+**Inject via headless playwright-cli:**
+
+Open the URL, inject the page-prep detection bundle, and capture the
+detection report. playwright-cli runs headless by default.
+
+```bash
+playwright-cli -s=overlay-detect open "$URL"
+REPORT_RAW=$(playwright-cli -s=overlay-detect eval "$BUNDLE")
+playwright-cli -s=overlay-detect close
+```
+
+**Convert detection report to overlay recipe:**
+
+The detection report contains an `overlays` array with selectors for
+each detected overlay. Extract all selectors and write the recipe in
+the format `capture-snapshot.js` expects:
+
+```bash
+echo "$REPORT_RAW" | node -e "
+  const raw = require('fs').readFileSync('/dev/stdin', 'utf-8');
+  const idx = raw.indexOf('### Result');
+  const end = raw.indexOf('### Ran Playwright code');
+  const json = idx === -1
+    ? raw.trim()
+    : raw.slice(idx + 10, end === -1 ? undefined : end).trim();
+  try {
+    const parsed = json.startsWith('\"') ? JSON.parse(json) : json;
+    const report = JSON.parse(parsed);
+    const selectors = (report.overlays || [])
+      .map(o => o.selector).filter(Boolean);
+    console.log(JSON.stringify({ selectors, action: 'remove' }, null, 2));
+  } catch {
+    console.log(JSON.stringify({ selectors: [], action: 'remove' }, null, 2));
+  }
+" > "$WORKTREE_PATH/autoresearch/overlay-recipe.json"
+```
+
+Verify the recipe file exists:
 
 ```bash
 if [[ ! -f "$WORKTREE_PATH/autoresearch/overlay-recipe.json" ]]; then
@@ -319,6 +348,23 @@ guide patterns. Use the extraction data:
 - layout.navItems.primary are the main nav links
 - layout.navItems.secondary are secondary/utility links
 - layout.rows[].elements tells you what each section contains
+- layout.logo has the logo image data (src, alt, width, height, href)
+- branding.logo also has the logo image data (src, alt, width, height)
+
+### Logo Handling
+
+If layout.logo or branding.logo has a src URL:
+
+Use `layout.logo` as the primary source (it includes `href`).
+Fall back to `branding.logo` only if `layout.logo` is null;
+use `href="/"` in that case since `branding.logo` has no link.
+
+1. Download the logo image to <WORKTREE_PATH>/images/logo.png (or
+   matching extension). Use curl or fetch.
+2. In nav.plain.html, use the local path:
+   `<p><a href="<logo.href>"><img src="./images/logo.png" alt="<logo.alt>"></a></p>`
+
+If no logo URL is available, use text: `<p><a href="/">Company Name</a></p>`
 
 Each section needs a section-metadata block with Style property.
 See content-mapping.md for exact HTML patterns per section type.
@@ -333,7 +379,7 @@ each with their own section-metadata.
 
 Stage and commit:
   cd <WORKTREE_PATH>
-  git add blocks/header/header.css nav.plain.html
+  git add blocks/header/header.css nav.plain.html images/
   git commit -m "scaffold: customize header CSS and generate nav content"
 ```
 

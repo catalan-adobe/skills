@@ -398,6 +398,9 @@ colors['accent'] = accent;
 colors['cta-bg'] = ctaBg;
 colors['cta-text'] = ctaText;
 
+// --- LOGO ---
+const logo = extractLogoFromTree(header);
+
 const result = {
   colors,
   fonts: {
@@ -413,6 +416,33 @@ const result = {
     'gradient-underline': gradientUnderline,
     'cta-border-radius': ctaBorderRadius,
   },
+  logo,
 };
 
 console.log(JSON.stringify(result, null, 2));
+
+function extractLogoFromTree(root) {
+  const headerBottom = (root.boundingRect?.y || 0)
+    + (root.boundingRect?.height || 200);
+  let found = null;
+  const walk = (node) => {
+    if (found) return;
+    if (node.tag === 'IMG' && node.attrs?.src
+      && node.boundingRect?.x < 300
+      && node.boundingRect?.y < headerBottom) {
+      const cls = (node.classes || []).join(' ').toLowerCase();
+      const w = node.boundingRect.width;
+      if (cls.includes('logo') || (w >= 40 && w < 300)) {
+        found = {
+          src: node.attrs.src,
+          alt: node.attrs.alt || '',
+          width: w,
+          height: node.boundingRect.height,
+        };
+      }
+    }
+    for (const child of node.children || []) walk(child);
+  };
+  walk(root);
+  return found;
+}

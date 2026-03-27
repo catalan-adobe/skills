@@ -167,10 +167,26 @@ function captureHeaderDOM(headerSelector) {
       ? (node.textContent || '').trim().slice(0, 100)
       : undefined;
 
+    var attrs = {};
+    var tag = node.tagName;
+    if (tag === 'IMG') {
+      var src = node.getAttribute('src');
+      if (src) attrs.src = src;
+      var alt = node.getAttribute('alt');
+      if (alt !== null) attrs.alt = alt || '';
+    }
+    if (tag === 'A') {
+      var href = node.getAttribute('href');
+      if (href) attrs.href = href;
+    }
+    var dataSrc = node.getAttribute('data-src');
+    if (dataSrc) attrs['data-src'] = dataSrc;
+
     var obj = {
-      tag: node.tagName,
+      tag: tag,
       id: node.id || '',
       classes: Array.from(node.classList),
+      attrs: Object.keys(attrs).length > 0 ? attrs : undefined,
       boundingRect: {
         x: Math.round(rect.x),
         y: Math.round(rect.y),
