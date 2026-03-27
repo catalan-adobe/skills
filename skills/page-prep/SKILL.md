@@ -170,9 +170,9 @@ cannot.
 2. Visually analyze the screenshot: are there visible overlays, banners,
    modals, or backdrop dimming still present?
 3. If the page is clean: verification complete.
-4. If overlays remain: attempt to dismiss them (click close buttons or
-   remove elements via `document.querySelector('<selector>')?.remove()`),
-   then take another viewport screenshot. Maximum 2 retries.
+4. If overlays remain: attempt to dismiss them using the Agent Fallback
+   sequence (see below), then take another viewport screenshot. Maximum
+   2 retries.
 5. After retries exhausted: report remaining overlays to the caller but
    do not block — the page is as clean as achievable.
 
