@@ -114,9 +114,10 @@ Edit `README.md`:
 ./scripts/sync-skills.sh
 ```
 
-Copies SKILL.md to `~/.claude/commands/<name>.md` and scripts to
-`~/.local/bin/`. The skill becomes available as `/<name>` in new
-Claude Code sessions.
+Copies the full skill directory to `~/.claude/skills/<name>/` (the
+native personal skills path). Claude Code discovers skills there
+automatically, sets `CLAUDE_SKILL_DIR`, and makes them available as
+`/<name>` in all projects.
 
 ## 9. Commit
 

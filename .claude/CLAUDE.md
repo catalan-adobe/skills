@@ -31,7 +31,7 @@ Claude Code does NOT follow symlinks in `~/.claude/commands/`. Use `scripts/sync
 ./scripts/sync-skills.sh
 ```
 
-This copies `skills/<name>/SKILL.md` → `~/.claude/commands/<name>.md` and helper scripts → `~/.local/bin/`. Run after editing any skill to make changes available in new Claude sessions. Auto-discovers all skills — no manual steps when adding a new skill.
+This copies each skill's full directory to `~/.claude/skills/<name>/` (the native personal skills path). Claude Code discovers skills there automatically and sets `CLAUDE_SKILL_DIR` when loading them. Run after editing any skill to make changes available in new Claude sessions.
 
 ## Creating New Skills
 
