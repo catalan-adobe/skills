@@ -20,8 +20,8 @@ to converge on pixel-accurate fidelity.
 ## Pipeline Overview
 
 ```
-URL --> PARSE --> VALIDATE --> WORKTREE --> OVERLAY --> SNAPSHOT --> EXTRACT --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT
-        (args)    (EDS?)    (git branch)   (LLM)     (pw-cli)   (scripts)    (LLM)      (files)   (aem+loop)    (score)
+URL --> PARSE --> VALIDATE --> WORKTREE --> OVERLAY --> SNAPSHOT --> EXTRACT --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
+        (args)    (EDS?)    (git branch)   (LLM)     (pw-cli)   (scripts)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
 ```
 
 ## Scripts
@@ -467,6 +467,92 @@ iteration count (kept vs reverted).
 4. Clean up the worktree:
    git worktree remove <WORKTREE_PATH>
    git branch -D <BRANCH>
+```
+
+### Stage 11: Retrospective
+
+After reporting results, analyze the full migration run to extract
+learnings that could improve the skill for future header migrations.
+
+**Read all data sources:**
+
+1. `$WORKTREE_PATH/results.tsv` — iteration scores and keep/revert decisions
+2. `$WORKTREE_PATH/autoresearch/results/latest-evaluation.json` — detailed score breakdown
+3. `$WORKTREE_PATH/autoresearch/extraction/layout.json` — extracted layout structure
+4. `$WORKTREE_PATH/autoresearch/extraction/branding.json` — extracted branding values
+5. `$WORKTREE_PATH/autoresearch/overlay-recipe.json` — overlays detected
+6. Source screenshots in `$WORKTREE_PATH/autoresearch/source/` — visual reference
+7. `git log --oneline` in the worktree — changes made during polish
+
+**Analyze these dimensions:**
+
+| Dimension | Evidence | What it reveals |
+|-----------|----------|-----------------|
+| Extraction accuracy | Compare branding.json values against final CSS custom properties in header.css | Whether extraction scripts need calibration |
+| Scaffold quality | First iteration score in results.tsv | How good the initial code generation was |
+| Convergence pattern | Score trajectory and revert rate across iterations | Whether the polish loop guidance is effective |
+| Breakpoint fidelity | Desktop vs tablet vs mobile scores in evaluation | Which viewport needs better scaffold defaults |
+| Nav completeness | Nav score in evaluation vs layout.json navItems count | Whether content mapping missed items |
+| Overlay handling | Overlay recipe contents vs capture quality | Whether overlay detection was sufficient |
+
+**Generate the retrospective:**
+
+Save to `$WORKTREE_PATH/autoresearch/results/retrospective.md` using
+this structure:
+
+```markdown
+# Migration Retrospective: <domain>
+
+## Summary
+- Source: <URL>
+- Final composite: <score>% | Desktop: <d>% | Tablet: <t>% | Mobile: <m>%
+- Iterations: <kept>/<total> kept (<revert_rate>% revert rate)
+- Header type: <single-row|multi-row|mega-menu|etc.>
+
+## What Worked (Reinforcements)
+<!-- Concrete patterns the pipeline handled well. Include evidence:
+     "Brand color extraction (#1a2b3c) matched source exactly — zero
+     iterations spent fixing colors." -->
+
+- <finding with evidence>
+
+## What Struggled (Improvement Opportunities)
+<!-- Areas where the pipeline underperformed. Include evidence:
+     "Mobile hamburger menu took 8 iterations to converge, 4 reverted
+     — the scaffold default for slide-in mode didn't match the source
+     fullscreen overlay pattern." -->
+
+- <finding with evidence>
+
+## Pattern Notes
+<!-- Header-type observations useful for future migrations of similar
+     headers. E.g., "Mega menu with icon grid: extraction captured
+     grid dimensions but not icon placement — needed manual column
+     template in polish loop." -->
+
+- <observation>
+
+## Recommendations for Skill Improvement
+<!-- Actionable suggestions: script changes, new reference patterns,
+     CSS defaults, extraction improvements. Be specific enough that
+     someone could file an issue or write a patch. -->
+
+- <suggestion>
+```
+
+**Report to user** after the Stage 10 results, appending:
+
+```
+### Retrospective
+
+Learnings from this migration saved to:
+<WORKTREE_PATH>/autoresearch/results/retrospective.md
+
+**Reinforcements:** <1-2 sentence summary of what worked>
+**Improvements:** <1-2 sentence summary of what struggled>
+
+Review the full retrospective for detailed findings and skill
+improvement recommendations.
 ```
 
 ## Error Handling
