@@ -78,3 +78,4 @@ All skills lint clean. All published to tessl registry. Run `tessl skill lint sk
 | `news-digest` | Google News RSS digests with full article extraction via playwright-cli |
 | `kite-teleport` | Teleport Kite task sessions to local Claude Code |
 | `spectrum-2-web` | Design and build web UIs with Spectrum 2 + Spectrum Web Components |
+| `domain-mask` | Mask URLs behind custom domains for screencasts and demos |

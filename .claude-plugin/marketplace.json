@@ -1,6 +1,6 @@
 {
   "name": "catalan-adobe-skills",
-  "description": "Claude Code skills by @catalan-adobe — memory triage, demo narration, AI fluency assessment, news digest, screencast, cmux-setup, cmux-demo, page-prep, browser-universal, cdp-connect, cdp-ext-pilot, slack-cdp, kite-teleport, spectrum-2-web, and more.",
+  "description": "Claude Code skills by @catalan-adobe — memory triage, demo narration, AI fluency assessment, news digest, screencast, cmux-setup, cmux-demo, page-prep, browser-universal, cdp-connect, cdp-ext-pilot, slack-cdp, kite-teleport, spectrum-2-web, domain-mask, and more.",
   "owner": {
     "name": "catalan-adobe"
   },
@@ -12,7 +12,7 @@
     {
       "name": "catalan-skills",
       "source": "./",
-      "description": "Memory triage, demo narration, AI fluency, news digest, cmux-setup, cmux-demo, browser-universal, cdp-ext-pilot, slack-cdp, kite-teleport, spectrum-2-web, and workflow skills for Claude Code",
+      "description": "Memory triage, demo narration, AI fluency, news digest, cmux-setup, cmux-demo, browser-universal, cdp-ext-pilot, slack-cdp, kite-teleport, spectrum-2-web, domain-mask, and workflow skills for Claude Code",
       "version": "1.0.0",
       "author": {
         "name": "catalan-adobe"

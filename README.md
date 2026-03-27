@@ -222,6 +222,14 @@ complexity.
 
 See [SKILL.md](skills/spectrum-2-web/SKILL.md) for details.
 
+### domain-mask
+
+Mask a URL behind a custom domain for screencasts and demos. Runs a trusted
+HTTPS reverse proxy so the browser shows a clean display domain with a green
+padlock. Handles `/etc/hosts`, mkcert certificates, and cleanup automatically.
+
+**Dependencies:** Node 22+, mkcert, sudo
+
 ## License
 
 MIT
