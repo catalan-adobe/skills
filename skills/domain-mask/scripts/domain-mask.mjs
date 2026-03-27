@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-"use strict";
 
 import { createServer as createHttpsServer } from "node:https";
 import { request as httpsRequest } from "node:https";
@@ -16,6 +15,16 @@ if (!displayDomain || !targetUrl) {
     "Usage: domain-mask.mjs <display-domain> <target-url>\n" +
       "Example: domain-mask.mjs wknd.adventures https://gabrielwalt.github.io",
   );
+  process.exit(1);
+}
+
+if (!/^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/.test(displayDomain)) {
+  console.error(`Error: invalid domain name: ${displayDomain}`);
+  process.exit(1);
+}
+
+if (process.getuid() !== 0) {
+  console.error("Error: this script must be run with sudo.");
   process.exit(1);
 }
 
@@ -37,7 +46,13 @@ try {
 
 // --- Parse target ---
 
-const target = new URL(targetUrl);
+let target;
+try {
+  target = new URL(targetUrl);
+} catch {
+  console.error(`Error: invalid target URL: ${targetUrl}`);
+  process.exit(1);
+}
 const doRequest = target.protocol === "https:" ? httpsRequest : httpRequest;
 
 // --- Hosts entry ---
@@ -110,30 +125,36 @@ function proxy(req, res) {
 
 // --- Lifecycle ---
 
-addHostsEntry();
+try {
+  addHostsEntry();
 
-const server = createHttpsServer(
-  { key: readFileSync(keyPath), cert: readFileSync(certPath) },
-  proxy,
-);
+  const server = createHttpsServer(
+    { key: readFileSync(keyPath), cert: readFileSync(certPath) },
+    proxy,
+  );
 
-function cleanup() {
-  console.log("\nShutting down...");
-  server.close();
-  removeHostsEntry();
-  try {
-    rmSync(tmpDir, { recursive: true });
-  } catch {
-    // temp dir cleanup is best-effort
+  function cleanup() {
+    console.log("\nShutting down...");
+    server.close();
+    removeHostsEntry();
+    try {
+      rmSync(tmpDir, { recursive: true });
+    } catch {
+      // temp dir cleanup is best-effort
+    }
+    console.log("Done.");
+    process.exit(0);
   }
-  console.log("Done.");
-  process.exit(0);
+
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
+
+  server.listen(PORT, () => {
+    console.log(`\nhttps://${displayDomain} -> ${target.origin}`);
+    console.log("Press Ctrl+C to stop and clean up.\n");
+  });
+} catch (err) {
+  removeHostsEntry();
+  console.error(`Startup failed: ${err.message}`);
+  process.exit(1);
 }
-
-process.on("SIGINT", cleanup);
-process.on("SIGTERM", cleanup);
-
-server.listen(PORT, () => {
-  console.log(`\nhttps://${displayDomain} -> ${target.origin}`);
-  console.log("Press Ctrl+C to stop and clean up.\n");
-});
