@@ -7,8 +7,9 @@ const navItemsRaw = snapshot.navItems || [];
 const headerHeight = header.boundingRect?.height || 0;
 const rows = identifyRows(header);
 const navItems = classifyNavItems(navItemsRaw, rows);
+const logo = extractLogo(header);
 
-console.log(JSON.stringify({ headerHeight, rows, navItems }, null, 2));
+console.log(JSON.stringify({ headerHeight, rows, navItems, logo }, null, 2));
 
 function identifyRows(headerNode) {
   const directChildren = (headerNode.children || []).filter(
@@ -404,4 +405,61 @@ function walkTree(node, fn, depth = 0) {
   for (const child of node.children || []) {
     walkTree(child, fn, depth + 1);
   }
+}
+
+function extractLogo(headerNode) {
+  const headerTop = headerNode.boundingRect?.y || 0;
+  const headerBottom = headerTop + (headerNode.boundingRect?.height || 200);
+  let logoImg = null;
+  let logoLink = null;
+
+  walkTree(headerNode, (n) => {
+    if (logoImg) return;
+
+    if (isLogoElement(n)) {
+      walkTree(n, (inner) => {
+        if (logoImg) return;
+        if (inner.tag === 'IMG' && inner.attrs?.src) {
+          logoImg = {
+            src: inner.attrs.src,
+            alt: inner.attrs.alt || '',
+            width: inner.boundingRect?.width || 0,
+            height: inner.boundingRect?.height || 0,
+          };
+        }
+      });
+      if (n.tag === 'A' && n.attrs?.href) {
+        logoLink = n.attrs.href;
+      } else {
+        walkTree(n, (inner) => {
+          if (logoLink) return;
+          if (inner.tag === 'A' && inner.attrs?.href) {
+            logoLink = inner.attrs.href;
+          }
+        });
+      }
+    }
+  });
+
+  if (!logoImg) {
+    walkTree(headerNode, (n) => {
+      if (logoImg) return;
+      if (
+        n.tag === 'IMG' &&
+        n.attrs?.src &&
+        n.boundingRect?.x < 300 &&
+        n.boundingRect?.y < headerBottom
+      ) {
+        logoImg = {
+          src: n.attrs.src,
+          alt: n.attrs.alt || '',
+          width: n.boundingRect?.width || 0,
+          height: n.boundingRect?.height || 0,
+        };
+      }
+    });
+  }
+
+  if (!logoImg) return null;
+  return { ...logoImg, href: logoLink || '/' };
 }

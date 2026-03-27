@@ -348,6 +348,23 @@ guide patterns. Use the extraction data:
 - layout.navItems.primary are the main nav links
 - layout.navItems.secondary are secondary/utility links
 - layout.rows[].elements tells you what each section contains
+- layout.logo has the logo image data (src, alt, width, height, href)
+- branding.logo also has the logo image data (src, alt, width, height)
+
+### Logo Handling
+
+If layout.logo or branding.logo has a src URL:
+
+Use `layout.logo` as the primary source (it includes `href`).
+Fall back to `branding.logo` only if `layout.logo` is null;
+use `href="/"` in that case since `branding.logo` has no link.
+
+1. Download the logo image to <WORKTREE_PATH>/images/logo.png (or
+   matching extension). Use curl or fetch.
+2. In nav.plain.html, use the local path:
+   `<p><a href="<logo.href>"><img src="./images/logo.png" alt="<logo.alt>"></a></p>`
+
+If no logo URL is available, use text: `<p><a href="/">Company Name</a></p>`
 
 Each section needs a section-metadata block with Style property.
 See content-mapping.md for exact HTML patterns per section type.
@@ -362,7 +379,7 @@ each with their own section-metadata.
 
 Stage and commit:
   cd <WORKTREE_PATH>
-  git add blocks/header/header.css nav.plain.html
+  git add blocks/header/header.css nav.plain.html images/
   git commit -m "scaffold: customize header CSS and generate nav content"
 ```
 
