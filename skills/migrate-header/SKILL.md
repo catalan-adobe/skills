@@ -216,13 +216,16 @@ fi
 
 ```bash
 node "$PAGE_PREP_DIR/overlay-db.js" refresh
-BUNDLE="$(node "$PAGE_PREP_DIR/overlay-db.js" bundle)"
+BUNDLE_FILE="/tmp/overlay-bundle-$$.js"
+node "$PAGE_PREP_DIR/overlay-db.js" bundle > "$BUNDLE_FILE"
 ```
 
 **Inject via headless playwright-cli:**
 
 Open the URL, inject the page-prep detection bundle, and capture the
-detection report. playwright-cli runs headless by default.
+detection report. The bundle is written to a temp file and passed to
+playwright-cli via a Node wrapper to avoid shell escaping issues with
+the large patterns JSON.
 
 ```bash
 if [[ -n "$BROWSER_RECIPE" && -f "$BROWSER_RECIPE" ]]; then
@@ -249,8 +252,18 @@ else
   playwright-cli -s=overlay-detect open "$URL"
 fi
 
-REPORT_RAW=$(playwright-cli -s=overlay-detect eval "$BUNDLE")
+# Inject bundle via Node wrapper — avoids shell escaping of large JSON
+REPORT_RAW=$(node -e "
+  const { execFileSync } = require('child_process');
+  const { readFileSync } = require('fs');
+  const bundle = readFileSync('$BUNDLE_FILE', 'utf-8');
+  const out = execFileSync('playwright-cli',
+    ['-s=overlay-detect', 'eval', bundle],
+    { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+  process.stdout.write(out);
+")
 playwright-cli -s=overlay-detect close
+rm -f "$BUNDLE_FILE"
 ```
 
 **Convert detection report to overlay recipe:**
