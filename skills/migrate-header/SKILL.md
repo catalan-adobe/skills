@@ -22,8 +22,8 @@ to converge on pixel-accurate fidelity.
 ## Pipeline Overview
 
 ```
-URL --> PARSE --> VALIDATE --> OVERLAY --> SNAPSHOT --> EXTRACT --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
-        (args)    (EDS?)      (LLM)     (pw-cli)   (scripts)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
+URL --> PARSE --> VALIDATE --> PROBE --> PREPARE --> OVERLAY --> SNAPSHOT --> EXTRACT --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
+        (args)    (EDS?)      (CDN)    (mkdir)      (LLM)     (pw-cli)   (scripts)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
 ```
 
 ## Scripts
@@ -36,7 +36,7 @@ SKILL_HOME="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/migrate-header}"
 ```
 
 Scripts:
-- `node $SKILL_HOME/scripts/capture-snapshot.js <url> <output-dir> [--header-selector=header] [--overlay-recipe=path]`
+- `node $SKILL_HOME/scripts/capture-snapshot.js <url> <output-dir> [--header-selector=header] [--overlay-recipe=path] [--browser-recipe=path]`
 - `node $SKILL_HOME/scripts/extract-layout.js <snapshot.json>` (stdout JSON)
 - `node $SKILL_HOME/scripts/extract-branding.js <snapshot.json>` (stdout JSON)
 - `node $SKILL_HOME/scripts/setup-polish-loop.js --layout=... --branding=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
@@ -54,6 +54,7 @@ stage completes. Use them in error handling to know what to clean up.
 ```
 PROJECT_ROOT="$(git rev-parse --show-toplevel)"
 AEM_PID=""
+BROWSER_RECIPE=""
 ```
 
 ### Stage 1: Parse Arguments
@@ -110,6 +111,68 @@ fi
 echo "EDS repository validated."
 ```
 
+### Stage 2b: Browser Probe
+
+Detect CDN bot protection before any browser interaction. If the site
+blocks headless Chrome, all downstream captures will fail. Probe once,
+share the recipe with all consumers.
+
+**Locate browser-probe scripts** (sibling skill):
+
+```bash
+if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
+  BROWSER_PROBE_DIR="$(dirname "$CLAUDE_SKILL_DIR")/browser-probe/scripts"
+else
+  BROWSER_PROBE_DIR="$(dirname "$(find ~/.claude \
+    -path "*/browser-probe/scripts/browser-probe.js" \
+    -type f 2>/dev/null | head -1)" 2>/dev/null)"
+fi
+```
+
+If browser-probe scripts are not found, skip probing:
+
+```bash
+if [[ -z "$BROWSER_PROBE_DIR" || ! -f "$BROWSER_PROBE_DIR/browser-probe.js" ]]; then
+  echo "Warning: browser-probe skill not found. Skipping CDN probe."
+  echo "Install: sync browser-probe skill to ~/.claude/skills/"
+fi
+```
+
+**Run the probe:**
+
+```bash
+node "$BROWSER_PROBE_DIR/browser-probe.js" "$URL" "$PROJECT_ROOT/autoresearch"
+```
+
+**Read `probe-report.json` and generate recipe:**
+
+Read `$PROJECT_ROOT/autoresearch/probe-report.json`. Check `firstSuccess`:
+
+- If `firstSuccess` is `"default"`: no bot protection detected. Set
+  `BROWSER_RECIPE=""` and continue. Log: "No bot protection detected."
+- If `firstSuccess` is non-null and not `"default"`: bot protection
+  detected. Follow browser-probe Steps 3-4 to interpret
+  `detectedSignals` and generate `browser-recipe.json`. Read
+  [stealth-config.md](references/stealth-config.md) from the
+  browser-probe skill for the stealth init script and provider
+  signature table. Save to
+  `$PROJECT_ROOT/autoresearch/browser-recipe.json` and set
+  `BROWSER_RECIPE="$PROJECT_ROOT/autoresearch/browser-recipe.json"`.
+  Log: "Bot protection detected (<signals>). Recipe saved."
+- If `firstSuccess` is null: all configurations failed. Report error
+  and stop the pipeline:
+
+```
+ERROR: All browser configurations failed for $URL.
+  The site may require authentication, VPN, or manual interaction.
+  Detected signals: <detectedSignals from report>
+
+  Options:
+  1. Provide a --browser-recipe manually
+  2. Use a VPN or check URL accessibility
+  3. Provide pre-captured snapshots in autoresearch/source/
+```
+
 ### Stage 3: Prepare Working Directory
 
 All file operations happen in the current project root. Create the
@@ -162,7 +225,30 @@ Open the URL, inject the page-prep detection bundle, and capture the
 detection report. playwright-cli runs headless by default.
 
 ```bash
-playwright-cli -s=overlay-detect open "$URL"
+if [[ -n "$BROWSER_RECIPE" && -f "$BROWSER_RECIPE" ]]; then
+  # Write cliConfig to temp file for playwright-cli --config
+  PROBE_CONFIG="/tmp/overlay-probe-config.json"
+  node -e "
+    const fs = require('fs');
+    const r = JSON.parse(fs.readFileSync('$BROWSER_RECIPE','utf-8'));
+    fs.writeFileSync('$PROBE_CONFIG', JSON.stringify(r.cliConfig, null, 2));
+  "
+  STEALTH=$(node -e "
+    const fs = require('fs');
+    const r = JSON.parse(fs.readFileSync('$BROWSER_RECIPE','utf-8'));
+    console.log(r.stealthInitScript || '');
+  ")
+
+  # Open blank page, inject stealth, then navigate
+  playwright-cli -s=overlay-detect open --config="$PROBE_CONFIG"
+  if [[ -n "$STEALTH" ]]; then
+    playwright-cli -s=overlay-detect eval "$STEALTH"
+  fi
+  playwright-cli -s=overlay-detect goto "$URL"
+else
+  playwright-cli -s=overlay-detect open "$URL"
+fi
+
 REPORT_RAW=$(playwright-cli -s=overlay-detect eval "$BUNDLE")
 playwright-cli -s=overlay-detect close
 ```
@@ -207,11 +293,17 @@ fi
 Run the capture script via Bash:
 
 ```bash
+RECIPE_FLAG=""
+if [[ -n "$BROWSER_RECIPE" ]]; then
+  RECIPE_FLAG="--browser-recipe=$BROWSER_RECIPE"
+fi
+
 node "$SKILL_HOME/scripts/capture-snapshot.js" \
   "$URL" \
   "$PROJECT_ROOT/autoresearch/source" \
   "--header-selector=$HEADER_SELECTOR" \
-  "--overlay-recipe=$PROJECT_ROOT/autoresearch/overlay-recipe.json"
+  "--overlay-recipe=$PROJECT_ROOT/autoresearch/overlay-recipe.json" \
+  $RECIPE_FLAG
 ```
 
 Verify output files exist:
@@ -258,7 +350,7 @@ Extract and classify icons from the source header using page-collect:
 ```bash
 # Find the page-collect script
 if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
-  PAGE_COLLECT="$(dirname "$CLAUDE_SKILL_DIR")/../page-collect/scripts/page-collect.js"
+  PAGE_COLLECT="$(dirname "$CLAUDE_SKILL_DIR")/page-collect/scripts/page-collect.js"
 else
   PAGE_COLLECT="$(find ~/.claude -path "*/page-collect/scripts/page-collect.js" -type f 2>/dev/null | head -1)"
 fi
@@ -268,7 +360,11 @@ if [[ -z "$PAGE_COLLECT" || ! -f "$PAGE_COLLECT" ]]; then
   echo "Install: sync page-collect skill to ~/.claude/skills/"
 else
   ICON_OUTPUT="$PROJECT_ROOT/autoresearch/extraction/icons"
-  node "$PAGE_COLLECT" icons "$SOURCE_URL" --output "$ICON_OUTPUT"
+  RECIPE_ARGS=""
+  if [[ -n "$BROWSER_RECIPE" ]]; then
+    RECIPE_ARGS="--browser-recipe $BROWSER_RECIPE"
+  fi
+  node "$PAGE_COLLECT" icons "$SOURCE_URL" --output "$ICON_OUTPUT" $RECIPE_ARGS
 
   if [[ -f "$ICON_OUTPUT/icons.json" ]]; then
     ICON_COUNT=$(node -e "import {readFileSync} from 'fs'; const d=JSON.parse(readFileSync('$ICON_OUTPUT/icons.json','utf-8')); console.log(d.icons.length)")
@@ -561,6 +657,7 @@ learnings that could improve the skill for future header migrations.
 | Breakpoint fidelity | Desktop vs tablet vs mobile scores in evaluation | Which viewport needs better scaffold defaults |
 | Nav completeness | Nav score in evaluation vs layout.json navItems count | Whether content mapping missed items |
 | Overlay handling | Overlay recipe contents vs capture quality | Whether overlay detection was sufficient |
+| Bot protection | probe-report.json vs firstSuccess config | Whether probe correctly identified protection and recipe worked |
 
 **Generate the retrospective:**
 
@@ -648,6 +745,7 @@ Example failure report:
 **Completed stages:**
 - [x] Stage 1: Arguments parsed (URL: https://example.com)
 - [x] Stage 2: EDS repository validated
+- [x] Stage 2b: Browser probe (no bot protection / stealth config)
 - [x] Stage 3: Working directory prepared
 - [x] Stage 4: Overlay detection (2 overlays found)
 - [ ] Stage 5: Snapshot capture -- FAILED
