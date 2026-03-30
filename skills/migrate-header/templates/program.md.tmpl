@@ -46,7 +46,7 @@ If results.tsv shows repeated reverts for similar approaches (e.g., multiple "he
 ## How the Evaluator Scores You
 
 After you exit, an immutable evaluator runs. It produces a composite score (0-100):
-- **70% weight**: Visual similarity via pixelmatch (desktop 60%, tablet 20%, mobile 20%)
+- **70% weight**: Visual similarity via pixelmatch (desktop only)
 - **30% weight**: Nav completeness (are all {{NAV_ITEM_COUNT}} source nav items present in the rendered HTML?)
 
 **Important**: The evaluator pads images to equal dimensions before comparing. If your rendered header is shorter than the source, the missing rows count as full-row pixel mismatches. **Matching the source header height (~{{HEADER_HEIGHT}}px) is essential for a good visual score.**
@@ -56,8 +56,6 @@ The outer loop keeps your changes if the score improves, reverts if it doesn't.
 ## Source Reference
 
 - `autoresearch/source/desktop.png` — Screenshot of source header at 1440px
-- `autoresearch/source/tablet.png` — Screenshot at 768px
-- `autoresearch/source/mobile.png` — Screenshot at 375px
 - `autoresearch/source/nav-structure.json` — Extracted nav items ({{NAV_ITEM_COUNT}} items)
 
 ## Available Icons

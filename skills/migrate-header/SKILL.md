@@ -309,7 +309,7 @@ node "$SKILL_HOME/scripts/capture-snapshot.js" \
 Verify output files exist:
 
 ```bash
-for f in snapshot.json desktop.png tablet.png mobile.png; do
+for f in snapshot.json desktop.png; do
   if [[ ! -f "$PROJECT_ROOT/autoresearch/source/$f" ]]; then
     echo "ERROR: Snapshot capture failed -- missing $f"
     exit 1
@@ -604,7 +604,7 @@ fi
 
 **Read results** from `$PROJECT_ROOT/results.tsv`
 and `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json`.
-Extract: composite score, desktop/tablet/mobile scores, nav completeness,
+Extract: composite score, desktop score, nav completeness,
 iteration count (kept vs reverted).
 
 **Report to user** with this format:
@@ -619,8 +619,6 @@ iteration count (kept vs reverted).
 ### Final Score
 - Composite: <score>%
 - Desktop:   <desktop>%
-- Tablet:    <tablet>%
-- Mobile:    <mobile>%
 - Nav completeness: <nav>%
 
 ### Iterations
@@ -654,7 +652,7 @@ learnings that could improve the skill for future header migrations.
 | Extraction accuracy | Compare branding.json values against final CSS custom properties in header.css | Whether extraction scripts need calibration |
 | Scaffold quality | First iteration score in results.tsv | How good the initial code generation was |
 | Convergence pattern | Score trajectory and revert rate across iterations | Whether the polish loop guidance is effective |
-| Breakpoint fidelity | Desktop vs tablet vs mobile scores in evaluation | Which viewport needs better scaffold defaults |
+| Desktop fidelity | Desktop visual score in evaluation | Whether scaffold and polish loop guidance are effective |
 | Nav completeness | Nav score in evaluation vs layout.json navItems count | Whether content mapping missed items |
 | Overlay handling | Overlay recipe contents vs capture quality | Whether overlay detection was sufficient |
 | Bot protection | probe-report.json vs firstSuccess config | Whether probe correctly identified protection and recipe worked |
@@ -669,7 +667,7 @@ this structure:
 
 ## Summary
 - Source: <URL>
-- Final composite: <score>% | Desktop: <d>% | Tablet: <t>% | Mobile: <m>%
+- Final composite: <score>% | Desktop: <d>%
 - Iterations: <kept>/<total> kept (<revert_rate>% revert rate)
 - Header type: <single-row|multi-row|mega-menu|etc.>
 

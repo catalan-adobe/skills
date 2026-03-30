@@ -267,7 +267,7 @@ function main() {
   log('  Wrote program.md');
 
   // Copy source screenshots
-  for (const file of ['desktop.png', 'tablet.png', 'mobile.png']) {
+  for (const file of ['desktop.png']) {
     copySourceFile(args.sourceDir, sourceOutDir, file);
     log(`  Copied source/${file}`);
   }
