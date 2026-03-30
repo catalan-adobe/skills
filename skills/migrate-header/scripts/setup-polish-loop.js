@@ -55,6 +55,7 @@ function parseArgs(argv) {
     targetDir: resolve(named['target-dir']),
     explicitPort: named['port'] || null,
     maxIterations: named['max-iterations'] || '30',
+    skillHome: named['skill-home'] || '',
   };
 }
 
@@ -223,6 +224,7 @@ function main() {
     '{{NAV_ITEM_COUNT}}': String(navItemCount),
     '{{URL}}': sourceUrl,
     '{{ICON_GUIDANCE}}': buildIconGuidance(args.targetDir),
+    '{{SKILL_HOME}}': args.skillHome,
   };
 
   // Load templates

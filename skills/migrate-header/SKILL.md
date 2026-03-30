@@ -438,11 +438,10 @@ Read these for accurate styling information:
   Prefer these values over branding.json when they conflict.
 
 For deeper CSS lookups, open a query session:
-```
-  node $SKILL_HOME/scripts/css-query.js open "$URL"
-  node $SKILL_HOME/scripts/css-query.js query "nav > a:first-child" font-size,color,font-weight
-  node $SKILL_HOME/scripts/css-query.js close
-```
+
+    node $SKILL_HOME/scripts/css-query.js open "$URL"
+    node $SKILL_HOME/scripts/css-query.js query "nav > a:first-child" font-size,color,font-weight
+    node $SKILL_HOME/scripts/css-query.js close
 
 ## Reference Docs
 
@@ -462,13 +461,12 @@ source site's styles.
 1. css-overview.json — authored font stacks, color palette, spacing
 2. branding.json — fallback if css-overview is missing
 3. css-query.js — for any value not in the overview, query the source:
-   ```
-   node $SKILL_HOME/scripts/css-query.js open "$URL"
-   node $SKILL_HOME/scripts/css-query.js query "nav" background-color,padding
-   node $SKILL_HOME/scripts/css-query.js query "nav a" font-size,font-weight,color,letter-spacing
-   node $SKILL_HOME/scripts/css-query.js query "nav .cta, nav [class*=btn]" background-color,color,border-radius
-   node $SKILL_HOME/scripts/css-query.js close
-   ```
+
+       node $SKILL_HOME/scripts/css-query.js open "$URL"
+       node $SKILL_HOME/scripts/css-query.js query "nav" background-color,padding
+       node $SKILL_HOME/scripts/css-query.js query "nav a" font-size,font-weight,color,letter-spacing
+       node $SKILL_HOME/scripts/css-query.js query "nav .cta, nav [class*=btn]" background-color,color,border-radius
+       node $SKILL_HOME/scripts/css-query.js close
 
 **Properties to set:**
 - --header-background: from css-overview colorPalette.backgrounds or query nav background-color
@@ -570,7 +568,8 @@ node "$SKILL_HOME/scripts/setup-polish-loop.js" \
   "--source-dir=$PROJECT_ROOT/autoresearch/source" \
   "--target-dir=$PROJECT_ROOT" \
   "--port=3000" \
-  "--max-iterations=$MAX_ITERATIONS"
+  "--max-iterations=$MAX_ITERATIONS" \
+  "--skill-home=$SKILL_HOME"
 ```
 
 Verify the generated files exist:
