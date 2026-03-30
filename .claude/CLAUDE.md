@@ -79,3 +79,4 @@ All skills lint clean. All published to tessl registry. Run `tessl skill lint sk
 | `kite-teleport` | Teleport Kite task sessions to local Claude Code |
 | `spectrum-2-web` | Design and build web UIs with Spectrum 2 + Spectrum Web Components |
 | `domain-mask` | Mask URLs behind custom domains for screencasts and demos |
+| `page-collect` | Extract structured resources (icons, metadata, text, forms, videos, socials) from any webpage |
