@@ -222,48 +222,48 @@ node "$PAGE_PREP_DIR/overlay-db.js" bundle > "$BUNDLE_FILE"
 
 **Inject via headless playwright-cli:**
 
-Open the URL, inject the page-prep detection bundle, and capture the
-detection report. The bundle is written to a temp file and passed to
-playwright-cli via a Node wrapper to avoid shell escaping issues with
-the large patterns JSON.
+Open the URL with the overlay bundle as an `initScript` so it runs
+before any page JS. Build a playwright-cli config file that includes
+the bundle path and any browser-recipe settings.
 
 ```bash
-if [[ -n "$BROWSER_RECIPE" && -f "$BROWSER_RECIPE" ]]; then
-  # Write cliConfig to temp file for playwright-cli --config
-  PROBE_CONFIG="/tmp/overlay-probe-config.json"
-  node -e "
-    const fs = require('fs');
-    const r = JSON.parse(fs.readFileSync('$BROWSER_RECIPE','utf-8'));
-    fs.writeFileSync('$PROBE_CONFIG', JSON.stringify(r.cliConfig, null, 2));
-  "
-  STEALTH=$(node -e "
-    const fs = require('fs');
-    const r = JSON.parse(fs.readFileSync('$BROWSER_RECIPE','utf-8'));
-    console.log(r.stealthInitScript || '');
-  ")
+# Build playwright-cli config with initScript for the bundle
+OVERLAY_CONFIG="/tmp/overlay-detect-config-$$.json"
+node -e "
+  const fs = require('fs');
+  const config = { browser: { initScript: ['$BUNDLE_FILE'] } };
+  const recipePath = '$BROWSER_RECIPE';
+  if (recipePath && fs.existsSync(recipePath)) {
+    const recipe = JSON.parse(fs.readFileSync(recipePath, 'utf-8'));
+    const cli = recipe.cliConfig || {};
+    Object.assign(config.browser, cli.browser || {});
+    if (recipe.stealthInitScript) {
+      const stealthFile = '/tmp/overlay-stealth-$$.js';
+      fs.writeFileSync(stealthFile, recipe.stealthInitScript);
+      config.browser.initScript.unshift(stealthFile);
+    }
+  }
+  fs.writeFileSync('$OVERLAY_CONFIG', JSON.stringify(config, null, 2));
+"
 
-  # Open blank page, inject stealth, then navigate
-  playwright-cli -s=overlay-detect open --config="$PROBE_CONFIG"
-  if [[ -n "$STEALTH" ]]; then
-    playwright-cli -s=overlay-detect eval "$STEALTH"
-  fi
-  playwright-cli -s=overlay-detect goto "$URL"
-else
-  playwright-cli -s=overlay-detect open "$URL"
-fi
+playwright-cli -s=overlay-detect --config="$OVERLAY_CONFIG" open "$URL"
 
-# Inject bundle via Node wrapper — avoids shell escaping of large JSON
-REPORT_RAW=$(node -e "
-  const { execFileSync } = require('child_process');
-  const { readFileSync } = require('fs');
-  const bundle = readFileSync('$BUNDLE_FILE', 'utf-8');
-  const out = execFileSync('playwright-cli',
-    ['-s=overlay-detect', 'eval', bundle],
-    { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
-  process.stdout.write(out);
-")
+# The bundle ran via initScript on page load. Now extract the report
+# by reading the global result the bundle sets.
+REPORT_RAW=$(playwright-cli -s=overlay-detect eval "JSON.stringify(window.__overlayReport || {})")
 playwright-cli -s=overlay-detect close
-rm -f "$BUNDLE_FILE"
+rm -f "$OVERLAY_CONFIG" "/tmp/overlay-stealth-$$.js"
+```
+
+If the overlay bundle does not set `window.__overlayReport`, use
+`run-code` to evaluate the bundle file directly:
+
+```bash
+REPORT_RAW=$(playwright-cli -s=overlay-detect run-code "async page => {
+  const fs = require('fs');
+  const bundle = fs.readFileSync('$BUNDLE_FILE', 'utf-8');
+  return await page.evaluate(bundle);
+}")
 ```
 
 **Convert detection report to overlay recipe:**

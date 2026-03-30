@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
@@ -35,16 +35,16 @@ describe('parseArgs', () => {
 });
 
 describe('buildRecipeArgs', () => {
-  it('returns empty args and null stealth when no recipe', () => {
+  it('returns empty args when no recipe', () => {
     const result = buildRecipeArgs(null);
     expect(result).toEqual({
       extraArgs: [],
-      stealthScript: null,
       configPath: null,
+      tempFiles: [],
     });
   });
 
-  it('returns config path and stealth script from recipe', () => {
+  it('writes config with initScript for stealth', () => {
     const recipe = {
       cliConfig: {
         browser: {
@@ -61,10 +61,39 @@ describe('buildRecipeArgs', () => {
 
     const result = buildRecipeArgs(recipePath);
     expect(result.extraArgs).toContain(`--config=${result.configPath}`);
-    expect(result.stealthScript).toBe('(function(){ /* stealth */ })()');
+    expect(result.tempFiles.length).toBe(2);
 
     const written = JSON.parse(readFileSync(result.configPath, 'utf-8'));
     expect(written.browser.launchOptions.channel).toBe('chrome');
+    expect(written.browser.initScript).toHaveLength(1);
+
+    // Stealth script written to temp file referenced by initScript
+    const stealthPath = written.browser.initScript[0];
+    expect(existsSync(stealthPath)).toBe(true);
+    expect(readFileSync(stealthPath, 'utf-8')).toBe(
+      '(function(){ /* stealth */ })()'
+    );
+  });
+
+  it('skips initScript when no stealth script', () => {
+    const recipe = {
+      cliConfig: {
+        browser: {
+          browserName: 'chromium',
+          launchOptions: { channel: 'chrome' },
+        },
+      },
+      stealthInitScript: null,
+    };
+    const dir = join(tmpdir(), `test-recipe-no-stealth-${Date.now()}`);
+    mkdirSync(dir, { recursive: true });
+    const recipePath = join(dir, 'browser-recipe.json');
+    writeFileSync(recipePath, JSON.stringify(recipe));
+
+    const result = buildRecipeArgs(recipePath);
+    const written = JSON.parse(readFileSync(result.configPath, 'utf-8'));
+    expect(written.browser.initScript).toBeUndefined();
+    expect(result.tempFiles.length).toBe(1);
   });
 
   it('adds --persistent flag when recipe has persistent: true', () => {

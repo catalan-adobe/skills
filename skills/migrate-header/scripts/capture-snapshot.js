@@ -77,7 +77,7 @@ export function parseArgs(argv) {
 
 export function buildRecipeArgs(recipePath) {
   if (!recipePath) {
-    return { extraArgs: [], stealthScript: null, configPath: null };
+    return { extraArgs: [], configPath: null, tempFiles: [] };
   }
 
   let recipe;
@@ -89,22 +89,35 @@ export function buildRecipeArgs(recipePath) {
     );
     process.exit(1);
   }
+
+  const tempFiles = [];
+  const config = { ...recipe.cliConfig };
+
+  // Write stealth script to a temp file and add as initScript
+  if (recipe.stealthInitScript) {
+    const stealthPath = join(
+      tmpdir(),
+      `header-capture-stealth-${Date.now()}.js`
+    );
+    writeFileSync(stealthPath, recipe.stealthInitScript);
+    tempFiles.push(stealthPath);
+    if (!config.browser) config.browser = {};
+    config.browser.initScript = [stealthPath];
+  }
+
   const configPath = join(
     tmpdir(),
     `header-capture-config-${Date.now()}.json`
   );
-  writeFileSync(configPath, JSON.stringify(recipe.cliConfig, null, 2));
+  writeFileSync(configPath, JSON.stringify(config, null, 2));
+  tempFiles.push(configPath);
 
   const extraArgs = [`--config=${configPath}`];
   if (recipe.persistent) {
     extraArgs.push('--persistent');
   }
 
-  return {
-    extraArgs,
-    stealthScript: recipe.stealthInitScript || null,
-    configPath,
-  };
+  return { extraArgs, configPath, tempFiles };
 }
 
 function cli(...args) {
@@ -146,10 +159,6 @@ function verifyInstalled() {
 function openPage(url, recipeArgs) {
   log(`Opening ${url}...`);
   cli('open', url, ...recipeArgs.extraArgs);
-  if (recipeArgs.stealthScript) {
-    log('  Injecting stealth script...');
-    cliEval(recipeArgs.stealthScript);
-  }
 }
 
 function waitForStable() {
@@ -442,8 +451,8 @@ function main() {
     log(`Wrote snapshot to ${snapshotPath}`);
   } finally {
     closeSession();
-    if (recipeArgs.configPath) {
-      try { unlinkSync(recipeArgs.configPath); } catch { /* temp */ }
+    for (const f of recipeArgs.tempFiles) {
+      try { unlinkSync(f); } catch { /* temp file cleanup */ }
     }
   }
 }
