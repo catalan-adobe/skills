@@ -284,8 +284,8 @@ function optimizeSvg(svgString, classification) {
     }
   }
 
-  svg = svg.replace(/\s*\bwidth=["'][^"']*["']/g, '');
-  svg = svg.replace(/\s*\bheight=["'][^"']*["']/g, '');
+  svg = svg.replace(/\s*(?<![\w-])width=["'][^"']*["']/g, '');
+  svg = svg.replace(/\s*(?<![\w-])height=["'][^"']*["']/g, '');
 
   if (classification === 'icon') {
     svg = svg.replace(
