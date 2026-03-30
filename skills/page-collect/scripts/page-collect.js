@@ -85,7 +85,15 @@ export function applyBrowserRecipe(recipePath) {
     };
   }
 
-  const recipe = JSON.parse(readFileSync(recipePath, 'utf-8'));
+  let recipe;
+  try {
+    recipe = JSON.parse(readFileSync(recipePath, 'utf-8'));
+  } catch (err) {
+    console.error(
+      `Failed to load browser recipe from ${recipePath}: ${err.message}`
+    );
+    process.exit(1);
+  }
   const launchOpts = recipe.cliConfig?.browser?.launchOptions || {};
 
   const launchOptions = { headless: true };

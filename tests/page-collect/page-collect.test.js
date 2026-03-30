@@ -2,12 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  parseArgs,
+  applyBrowserRecipe,
+} from '../../skills/page-collect/scripts/page-collect.js';
 
 describe('parseArgs', () => {
-  it('parses --browser-recipe flag', async () => {
-    const { parseArgs } = await import(
-      '../../skills/page-collect/scripts/page-collect.js'
-    );
+  it('parses --browser-recipe flag', () => {
     const result = parseArgs([
       '', '',
       'icons', 'https://example.com',
@@ -16,10 +17,7 @@ describe('parseArgs', () => {
     expect(result.browserRecipe).toBe('/tmp/recipe.json');
   });
 
-  it('defaults browserRecipe to null', async () => {
-    const { parseArgs } = await import(
-      '../../skills/page-collect/scripts/page-collect.js'
-    );
+  it('defaults browserRecipe to null', () => {
     const result = parseArgs([
       '', '',
       'icons', 'https://example.com',
@@ -29,20 +27,14 @@ describe('parseArgs', () => {
 });
 
 describe('applyBrowserRecipe', () => {
-  it('returns default options when no recipe path', async () => {
-    const { applyBrowserRecipe } = await import(
-      '../../skills/page-collect/scripts/page-collect.js'
-    );
+  it('returns default options when no recipe path', () => {
     const result = applyBrowserRecipe(null);
     expect(result.launchOptions).toEqual({ headless: true });
     expect(result.userAgent).toBeNull();
     expect(result.stealthScript).toBeNull();
   });
 
-  it('extracts channel from recipe', async () => {
-    const { applyBrowserRecipe } = await import(
-      '../../skills/page-collect/scripts/page-collect.js'
-    );
+  it('extracts channel from recipe', () => {
     const recipe = {
       cliConfig: {
         browser: {
