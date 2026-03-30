@@ -1,0 +1,149 @@
+---
+name: browser-probe
+description: >-
+  Probe a URL with escalating headless browser configurations to detect CDN bot
+  protection (Akamai, Cloudflare, DataDome, AWS WAF) and produce a
+  browser-recipe.json that downstream playwright-cli consumers use to bypass
+  blocking. Runs an automated escalation ladder: default headless → stealth
+  script injection → system Chrome (TLS fingerprint fix) → persistent profile.
+  Use BEFORE any playwright-cli interaction with an untrusted domain. Triggers
+  on: browser probe, site blocked, headless blocked, CDN blocking, bot
+  detection, browser recipe, can't load page, 403 error page, access denied.
+---
+
+# Browser Probe
+
+Detect CDN bot protection blocking headless Chrome and produce a browser recipe
+for downstream `playwright-cli` consumers. Node 22+ required. No npm
+dependencies.
+
+## When to Use
+
+Run this skill **before** any `playwright-cli` interaction with a domain you
+haven't tested, or when a downstream script reports a blocked page. Common
+triggers:
+
+- First interaction with a new domain
+- `capture-snapshot.js` produces empty/error snapshots
+- Page title contains "error", "denied", "blocked", "captcha"
+- HTTP 403 responses from headless browser
+
+## Script Location
+
+```bash
+if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
+  PROBE_DIR="${CLAUDE_SKILL_DIR}/scripts"
+else
+  PROBE_DIR="$(dirname "$(command -v browser-probe.js 2>/dev/null || \
+    find ~/.claude -path "*/browser-probe/scripts/browser-probe.js" \
+    -type f 2>/dev/null | head -1)")"
+fi
+```
+
+## Workflow
+
+### Step 1 — Run the probe
+
+```bash
+node "$PROBE_DIR/browser-probe.js" "$URL" "$OUTPUT_DIR"
+```
+
+The script tries up to 4 browser configurations, stopping at the first success:
+
+1. **default** — headless Chromium (baseline)
+2. **stealth** — headless Chromium + stealth init script (patches `navigator.webdriver`, plugins, languages)
+3. **chrome** — system Chrome (`--browser=chrome`) + stealth (fixes TLS fingerprint detection)
+4. **persistent** — system Chrome + stealth + persistent profile (cookie/session challenges)
+
+Output: `$OUTPUT_DIR/probe-report.json`
+
+### Step 2 — Read the report
+
+Load `probe-report.json`. Check `firstSuccess`:
+- If non-null: a configuration worked. Proceed to Step 3.
+- If null: all configurations failed. Skip to Step 5.
+
+### Step 3 — Interpret results
+
+Load [stealth-config.md](references/stealth-config.md) and match the
+`detectedSignals` array against the Provider Signature Table.
+
+Key interpretation rules:
+- `akamai-server` or `akamai-bot-manager` → TLS fingerprint blocking.
+  System Chrome is the fix. Stealth script alone is insufficient.
+- `cloudflare-ray` without `cloudflare-challenge` → Cloudflare present
+  but not actively blocking. Default config may work.
+- `cloudflare-challenge` → Active JS challenge. System Chrome + stealth
+  usually resolves it.
+- `datadome` → Aggressive detection. System Chrome + stealth required.
+- `aws-waf` → Usually UA-based. Stealth script often sufficient.
+- No signals + blocked → Unknown protection. Persistent profile is last
+  resort.
+
+### Step 4 — Generate recipe
+
+Write `browser-recipe.json` to `$OUTPUT_DIR`:
+
+```json
+{
+  "url": "<probed URL>",
+  "generated": "<ISO timestamp>",
+  "cliConfig": {
+    "browser": {
+      "browserName": "chromium",
+      "launchOptions": { "channel": "<from firstSuccess step>" }
+    }
+  },
+  "stealthInitScript": "<full script from stealth-config.md if stealth was needed>",
+  "notes": "<1-2 sentence explanation of what was detected and why this config>"
+}
+```
+
+**Config mapping from `firstSuccess`:**
+
+| firstSuccess | cliConfig.launchOptions | stealthInitScript |
+|---|---|---|
+| `default` | `{}` (no channel) | `null` (not needed) |
+| `stealth` | `{}` (no channel) | Full stealth script from reference |
+| `chrome` | `{ "channel": "chrome" }` | Full stealth script from reference |
+| `persistent` | `{ "channel": "chrome" }` | Full stealth script from reference |
+
+If `firstSuccess` is `persistent`, add a `"persistent": true` field to the
+recipe so consumers know to use `--persistent`.
+
+### Step 5 — Report results
+
+**If a configuration worked:**
+```
+Browser probe complete for <url>.
+  Working config: <firstSuccess>
+  Detected: <detectedSignals or "no bot protection detected">
+  Recipe: <path to browser-recipe.json>
+```
+
+**If all configurations failed:**
+```
+Browser probe failed for <url>. No headless configuration could load the page.
+  Tried: default, stealth, chrome, persistent
+  Detected signals: <detectedSignals>
+
+  Options:
+  1. Use --headed flag for manual browser interaction
+  2. Provide pre-captured data (DOM snapshot, screenshots) manually
+  3. Check if the URL requires authentication or VPN access
+```
+
+Do NOT produce a recipe when all steps fail. Do NOT silently continue
+with a broken configuration.
+
+## How Consumers Use the Recipe
+
+Any script using `playwright-cli` can consume `browser-recipe.json`:
+
+1. Write `cliConfig` to a temp file (e.g., `/tmp/probe-cli-config.json`)
+2. Pass `--config=/tmp/probe-cli-config.json` to `playwright-cli open`
+3. After `open` (before `goto`), inject `stealthInitScript` via
+   `playwright-cli eval "<script>"`
+4. Proceed with normal `goto <url>` and workflow
+
+If recipe has `"persistent": true`, also pass `--persistent` to `open`.
