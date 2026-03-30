@@ -125,6 +125,33 @@ function buildNavStructure(layout) {
   return { topNav };
 }
 
+function buildIconGuidance(targetDir) {
+  const manifestPath = join(
+    targetDir, 'autoresearch', 'extraction', 'icons', 'icons.json'
+  );
+  if (!existsSync(manifestPath)) {
+    return 'No pre-extracted icons available. Create icons as needed using inline SVGs or CSS.';
+  }
+
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+  if (!manifest.icons || manifest.icons.length === 0) {
+    return 'No pre-extracted icons available. Create icons as needed using inline SVGs or CSS.';
+  }
+
+  const iconList = manifest.icons
+    .map((i) => `- \`:${i.name}:\` (${i.class}) — ${i.context}`)
+    .join('\n');
+
+  return `Pre-extracted SVG icons are in \`/icons/\`. These are referenced via
+\`:iconname:\` notation in nav.plain.html and rendered by decorateIcons().
+Do NOT recreate these as inline SVGs or CSS. Adjust size via CSS
+\`width\`/\`height\` on \`.icon-{name} img\`, color is inherited via
+the SVG's currentColor fill.
+
+Available icons:
+${iconList}`;
+}
+
 function copySourceFile(sourceDir, targetDir, filename) {
   const src = join(sourceDir, filename);
   if (!existsSync(src)) {
@@ -195,6 +222,7 @@ function main() {
     '{{HEADER_HEIGHT}}': String(headerHeight),
     '{{NAV_ITEM_COUNT}}': String(navItemCount),
     '{{URL}}': sourceUrl,
+    '{{ICON_GUIDANCE}}': buildIconGuidance(args.targetDir),
   };
 
   // Load templates

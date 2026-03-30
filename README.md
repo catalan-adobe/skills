@@ -230,6 +230,17 @@ padlock. Handles `/etc/hosts`, mkcert certificates, and cleanup automatically.
 
 **Dependencies:** Node 22+, mkcert, sudo
 
+### page-collect
+
+Extract structured resources (icons, metadata, text, forms, videos, social links)
+from any webpage using Playwright. Supports individual collectors via subcommands
+or all at once. The icon collector classifies SVGs as icon/logo/image, optimizes
+them, and outputs to `/icons/` for use with the EDS `decorateIcons()` system.
+
+**Dependencies:** Node 22+, Playwright
+
+[View SKILL.md](skills/page-collect/SKILL.md)
+
 ## License
 
 MIT
