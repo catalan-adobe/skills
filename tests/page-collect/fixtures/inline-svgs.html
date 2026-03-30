@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Inline SVG Test</title></head>
+<body>
+<header>
+  <a href="/" class="logo">
+    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 40'%3E%3Crect fill='%23e00' width='120' height='40'/%3E%3Ctext x='10' y='28' fill='white' font-size='20'%3ELogo%3C/text%3E%3C/svg%3E" alt="Company Logo" width="120" height="40">
+  </a>
+  <nav>
+    <a href="/products">Products</a>
+    <a href="/solutions">Solutions</a>
+  </nav>
+  <div class="tools">
+    <button class="search-icon" aria-label="Search">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20">
+        <circle cx="10" cy="10" r="7" fill="none" stroke="#333" stroke-width="2"/>
+        <line x1="15" y1="15" x2="21" y2="21" stroke="#333" stroke-width="2"/>
+      </svg>
+    </button>
+    <a href="/cart" class="cart-icon" aria-label="Cart">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20">
+        <path d="M7 18c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zM7.2 14.8l.1-.2 1.1-2h7.5c.7 0 1.4-.4 1.7-1l3.9-7-1.7-1H5.2l-.9-2H1v2h2l3.6 7.6L5.2 14c-.1.3-.2.6-.2 1 0 1.1.9 2 2 2h12v-2H7.4c-.1 0-.2-.1-.2-.2z" fill="#333"/>
+      </svg>
+    </a>
+  </div>
+  <!-- Large decorative SVG — should be classified as image, not icon -->
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
+    <rect fill="#f0f0f0" width="800" height="200"/>
+    <text x="400" y="100" text-anchor="middle" fill="#999" font-size="40">Hero Banner</text>
+  </svg>
+</header>
+</body>
+</html>

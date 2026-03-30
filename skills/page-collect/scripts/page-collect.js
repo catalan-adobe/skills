@@ -38,7 +38,9 @@ const COLLECTORS = {
 function parseArgs(argv) {
   const args = argv.slice(2);
   const subcommand = args[0];
-  const url = args.find((a) => a.startsWith('http'));
+  const url = args.find(
+    (a) => a.startsWith('http') || a.startsWith('file://')
+  );
   let output = './page-collect-output';
 
   const outputIdx = args.indexOf('--output');
