@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -37,17 +38,21 @@ function log(msg) {
   console.error(msg);
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = argv.slice(2);
   const positional = [];
   let headerSelector = 'header';
   let overlayRecipe = null;
+  let browserRecipe = null;
 
   for (const arg of args) {
     if (arg.startsWith('--header-selector=')) {
       headerSelector = arg.split('=')[1];
     } else if (arg.startsWith('--overlay-recipe=')) {
       overlayRecipe = arg.split('=')[1];
+    } else if (arg.startsWith('--browser-recipe=')) {
+      const val = arg.split('=')[1];
+      browserRecipe = val || null;
     } else if (!arg.startsWith('--')) {
       positional.push(arg);
     }
@@ -56,7 +61,9 @@ function parseArgs(argv) {
   if (positional.length < 2) {
     console.error(
       'Usage: node capture-snapshot.js <url> <output-dir>'
-      + ' [--header-selector=header] [--overlay-recipe=path/to/recipe.json]'
+      + ' [--header-selector=header]'
+      + ' [--overlay-recipe=path/to/recipe.json]'
+      + ' [--browser-recipe=path/to/recipe.json]'
     );
     process.exit(1);
   }
@@ -66,6 +73,39 @@ function parseArgs(argv) {
     outputDir: resolve(positional[1]),
     headerSelector,
     overlayRecipe,
+    browserRecipe,
+  };
+}
+
+export function buildRecipeArgs(recipePath) {
+  if (!recipePath) {
+    return { extraArgs: [], stealthScript: null, configPath: null };
+  }
+
+  let recipe;
+  try {
+    recipe = JSON.parse(readFileSync(recipePath, 'utf-8'));
+  } catch (err) {
+    console.error(
+      `Failed to load browser recipe from ${recipePath}: ${err.message}`
+    );
+    process.exit(1);
+  }
+  const configPath = join(
+    tmpdir(),
+    `header-capture-config-${Date.now()}.json`
+  );
+  writeFileSync(configPath, JSON.stringify(recipe.cliConfig, null, 2));
+
+  const extraArgs = [`--config=${configPath}`];
+  if (recipe.persistent) {
+    extraArgs.push('--persistent');
+  }
+
+  return {
+    extraArgs,
+    stealthScript: recipe.stealthInitScript || null,
+    configPath,
   };
 }
 
@@ -105,9 +145,13 @@ function verifyInstalled() {
   }
 }
 
-function openPage(url) {
+function openPage(url, recipeArgs) {
   log(`Opening ${url}...`);
-  cli('open', url);
+  cli('open', url, ...recipeArgs.extraArgs);
+  if (recipeArgs.stealthScript) {
+    log('  Injecting stealth script...');
+    cliEval(recipeArgs.stealthScript);
+  }
 }
 
 function waitForStable() {
@@ -352,14 +396,16 @@ function closeSession() {
 
 function main() {
   const {
-    url, outputDir, headerSelector, overlayRecipe,
+    url, outputDir, headerSelector, overlayRecipe, browserRecipe,
   } = parseArgs(process.argv);
 
   verifyInstalled();
   mkdirSync(outputDir, { recursive: true });
 
+  const recipeArgs = buildRecipeArgs(browserRecipe);
+
   try {
-    openPage(url);
+    openPage(url, recipeArgs);
     waitForStable();
 
     if (overlayRecipe) {
@@ -398,7 +444,14 @@ function main() {
     log(`Wrote snapshot to ${snapshotPath}`);
   } finally {
     closeSession();
+    if (recipeArgs.configPath) {
+      try { unlinkSync(recipeArgs.configPath); } catch { /* temp */ }
+    }
   }
 }
 
-main();
+const isDirectRun = process.argv[1]
+  && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectRun) {
+  main();
+}

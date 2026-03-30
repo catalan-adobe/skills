@@ -4,7 +4,7 @@
  * page-collect — Extract structured resources from a webpage.
  *
  * Usage:
- *   node page-collect.js <subcommand> <url> [--output <dir>]
+ *   node page-collect.js <subcommand> <url> [--output <dir>] [--browser-recipe <path>]
  *
  * Subcommands:
  *   all       Run all collectors
@@ -17,7 +17,9 @@
  */
 
 import { mkdir, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { collectIcons } from './collect-icons.js';
 import { collectMetadata } from './collect-metadata.js';
@@ -35,7 +37,7 @@ const COLLECTORS = {
   socials: collectSocials,
 };
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = argv.slice(2);
   const subcommand = args[0];
   const url = args.find(
@@ -48,9 +50,15 @@ function parseArgs(argv) {
     output = args[outputIdx + 1];
   }
 
+  const recipeIdx = args.indexOf('--browser-recipe');
+  const browserRecipe = (recipeIdx !== -1 && args[recipeIdx + 1])
+    ? args[recipeIdx + 1]
+    : null;
+
   if (!subcommand || !url) {
     console.error(
-      'Usage: node page-collect.js <subcommand> <url> [--output <dir>]'
+      'Usage: node page-collect.js <subcommand> <url>'
+        + ' [--output <dir>] [--browser-recipe <path>]'
     );
     console.error(
       'Subcommands: all, icons, metadata, text, forms, videos, socials'
@@ -66,7 +74,46 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
-  return { subcommand, url, output: resolve(output) };
+  return { subcommand, url, output: resolve(output), browserRecipe };
+}
+
+export function applyBrowserRecipe(recipePath) {
+  if (!recipePath) {
+    return {
+      launchOptions: { headless: true },
+      userAgent: null,
+      stealthScript: null,
+    };
+  }
+
+  let recipe;
+  try {
+    recipe = JSON.parse(readFileSync(recipePath, 'utf-8'));
+  } catch (err) {
+    console.error(
+      `Failed to load browser recipe from ${recipePath}: ${err.message}`
+    );
+    process.exit(1);
+  }
+  const launchOpts = recipe.cliConfig?.browser?.launchOptions || {};
+
+  const launchOptions = { headless: true };
+  if (launchOpts.channel) {
+    launchOptions.channel = launchOpts.channel;
+  }
+
+  let userAgent = null;
+  const uaArg = (launchOpts.args || [])
+    .find((a) => a.startsWith('--user-agent='));
+  if (uaArg) {
+    userAgent = uaArg.split('=').slice(1).join('=');
+  }
+
+  return {
+    launchOptions,
+    userAgent,
+    stealthScript: recipe.stealthInitScript || null,
+  };
 }
 
 function detectPlaywright() {
@@ -80,19 +127,23 @@ function detectPlaywright() {
   }
 }
 
-async function launchBrowser(url) {
+async function launchBrowser(url, recipeOpts) {
   detectPlaywright();
 
   const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch(recipeOpts.launchOptions);
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
-    userAgent:
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-      + 'AppleWebKit/537.36 (KHTML, like Gecko) '
-      + 'Chrome/120.0.0.0 Safari/537.36',
+    userAgent: recipeOpts.userAgent
+      || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+        + 'AppleWebKit/537.36 (KHTML, like Gecko) '
+        + 'Chrome/120.0.0.0 Safari/537.36',
   });
   const page = await context.newPage();
+
+  if (recipeOpts.stealthScript) {
+    await page.addInitScript(recipeOpts.stealthScript);
+  }
 
   console.error(`Navigating to ${url}...`);
   await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
@@ -113,10 +164,11 @@ async function takeScreenshot(page, outputDir) {
 }
 
 async function main() {
-  const { subcommand, url, output } = parseArgs(process.argv);
+  const { subcommand, url, output, browserRecipe } = parseArgs(process.argv);
   await mkdir(output, { recursive: true });
 
-  const { browser, page } = await launchBrowser(url);
+  const recipeOpts = applyBrowserRecipe(browserRecipe);
+  const { browser, page } = await launchBrowser(url, recipeOpts);
 
   try {
     if (subcommand === 'all') {
@@ -156,4 +208,6 @@ async function main() {
   }
 }
 
-main();
+const isMain = process.argv[1]
+  && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) main();
