@@ -80,3 +80,4 @@ All skills lint clean. All published to tessl registry. Run `tessl skill lint sk
 | `spectrum-2-web` | Design and build web UIs with Spectrum 2 + Spectrum Web Components |
 | `domain-mask` | Mask URLs behind custom domains for screencasts and demos |
 | `page-collect` | Extract structured resources (icons, metadata, text, forms, videos, socials) from any webpage |
+| `browser-probe` | Detect CDN bot protection and produce browser recipes for playwright-cli |
