@@ -456,21 +456,32 @@ Read ALL of these for patterns and mapping guidance:
 
 Open <PROJECT_ROOT>/blocks/header/header.css and update ONLY the CSS
 custom properties block at the top (.header.block { ... }) to match the
-extracted branding:
+source site's styles.
 
-- --header-background: use branding.colors.main-bar-bg
-- --header-nav-gap: use branding.spacing.nav-gap
-- --header-nav-font-size: use branding.fonts.nav-size
-- --header-nav-font-weight: use branding.fonts.nav-weight
-- --header-section-padding: use branding.spacing.header-padding-x
-- Add font-family from branding.fonts.family
-- Add --header-text-color from branding.colors.text-primary
-- For multi-row headers: add section-specific background colors
-  (e.g., .header-brand { background: <brand-bar-bg> })
-- For CTA buttons: add .header-tools-inline a:last-child styles with
-  branding.colors.cta-bg, cta-text, and decorations.cta-border-radius
+**Data sources (in priority order):**
+1. css-overview.json — authored font stacks, color palette, spacing
+2. branding.json — fallback if css-overview is missing
+3. css-query.js — for any value not in the overview, query the source:
+   ```
+   node $SKILL_HOME/scripts/css-query.js open "$URL"
+   node $SKILL_HOME/scripts/css-query.js query "nav" background-color,padding
+   node $SKILL_HOME/scripts/css-query.js query "nav a" font-size,font-weight,color,letter-spacing
+   node $SKILL_HOME/scripts/css-query.js query "nav .cta, nav [class*=btn]" background-color,color,border-radius
+   node $SKILL_HOME/scripts/css-query.js close
+   ```
 
-Do NOT modify the structural CSS (layout, mobile, dropdowns, etc.).
+**Properties to set:**
+- --header-background: from css-overview colorPalette.backgrounds or query nav background-color
+- --header-nav-gap: from css-overview keySpacing.navGap or query nav gap
+- --header-nav-font-size: query nav a font-size
+- --header-nav-font-weight: query nav a font-weight
+- font-family: from css-overview fontStacks[0]
+- --header-text-color: from css-overview colorPalette.text[0]
+- --header-section-padding: from css-overview keySpacing.headerPaddingX
+- For multi-row headers: query each row's background-color directly
+- For CTA buttons: query the CTA element's background-color, color, border-radius
+
+Do NOT modify the structural CSS (layout, dropdowns, etc.).
 
 ## Task 2: Generate nav.plain.html
 
