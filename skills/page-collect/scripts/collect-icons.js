@@ -19,16 +19,13 @@ import { join } from 'node:path';
 
 const ICON_MAX_SIZE = 48;
 
-async function extractRawSvgs(page) {
+async function extractInlineSvgs(page) {
   return page.evaluate(() => {
     const results = [];
-
     for (const svg of document.querySelectorAll('svg')) {
       const rect = svg.getBoundingClientRect();
       const parent = svg.closest('a, button');
-      const container = svg.closest(
-        'header, nav, [class*="brand"]'
-      );
+      const container = svg.closest('header, nav, [class*="brand"]');
       results.push({
         source: 'inline-svg',
         svg: svg.outerHTML,
@@ -36,8 +33,7 @@ async function extractRawSvgs(page) {
         height: rect.height,
         parentTag: parent?.tagName || null,
         parentClass: parent?.className || '',
-        parentAriaLabel:
-          parent?.getAttribute('aria-label') || '',
+        parentAriaLabel: parent?.getAttribute('aria-label') || '',
         parentHref: parent?.getAttribute('href') || '',
         containerTag: container?.tagName || null,
         containerClass: container?.className || '',
@@ -45,19 +41,19 @@ async function extractRawSvgs(page) {
         svgClass: svg.getAttribute('class') || '',
       });
     }
+    return results;
+  });
+}
 
+async function extractImgSvgs(page) {
+  return page.evaluate(() => {
+    const results = [];
     for (const img of document.querySelectorAll('img')) {
       const src = img.getAttribute('src') || '';
-      const isSvg =
-        src.includes('.svg') ||
-        src.includes('image/svg+xml');
-      if (!isSvg) continue;
-
+      if (!src.includes('.svg') && !src.includes('image/svg+xml')) continue;
       const rect = img.getBoundingClientRect();
       const parent = img.closest('a, button');
-      const container = img.closest(
-        'header, nav, [class*="brand"]'
-      );
+      const container = img.closest('header, nav, [class*="brand"]');
       results.push({
         source: 'img-svg',
         src,
@@ -66,27 +62,26 @@ async function extractRawSvgs(page) {
         height: rect.height,
         parentTag: parent?.tagName || null,
         parentClass: parent?.className || '',
-        parentAriaLabel:
-          parent?.getAttribute('aria-label') || '',
+        parentAriaLabel: parent?.getAttribute('aria-label') || '',
         parentHref: parent?.getAttribute('href') || '',
         containerTag: container?.tagName || null,
         containerClass: container?.className || '',
         imgClass: img.className || '',
       });
     }
+    return results;
+  });
+}
 
-    const allElements = document.querySelectorAll('*');
-    for (const el of allElements) {
+async function extractCssBgSvgs(page) {
+  return page.evaluate(() => {
+    const results = [];
+    for (const el of document.querySelectorAll('*')) {
       const bg = getComputedStyle(el).backgroundImage;
       if (!bg || bg === 'none') continue;
-      const hasSvgBg =
-        bg.includes('image/svg+xml') ||
-        bg.includes('.svg');
-      if (!hasSvgBg) continue;
-
+      if (!bg.includes('image/svg+xml') && !bg.includes('.svg')) continue;
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) continue;
-
       results.push({
         source: 'css-bg-svg',
         backgroundImage: bg,
@@ -97,27 +92,23 @@ async function extractRawSvgs(page) {
         id: el.id || '',
       });
     }
+    return results;
+  });
+}
 
+async function extractSvgSprites(page) {
+  return page.evaluate(() => {
+    const results = [];
     for (const use of document.querySelectorAll('use')) {
-      const href =
-        use.getAttribute('href') ||
-        use.getAttribute('xlink:href') ||
-        '';
+      const href = use.getAttribute('href')
+        || use.getAttribute('xlink:href') || '';
       if (!href) continue;
-
       const svg = use.closest('svg');
       if (!svg) continue;
-
       const rect = svg.getBoundingClientRect();
       const parent = svg.closest('a, button');
-
-      const symbolId = href.startsWith('#')
-        ? href.slice(1)
-        : '';
-      const symbol = symbolId
-        ? document.getElementById(symbolId)
-        : null;
-
+      const symbolId = href.startsWith('#') ? href.slice(1) : '';
+      const symbol = symbolId ? document.getElementById(symbolId) : null;
       results.push({
         source: 'svg-sprite',
         href,
@@ -127,13 +118,21 @@ async function extractRawSvgs(page) {
         height: rect.height,
         parentTag: parent?.tagName || null,
         parentClass: parent?.className || '',
-        parentAriaLabel:
-          parent?.getAttribute('aria-label') || '',
+        parentAriaLabel: parent?.getAttribute('aria-label') || '',
       });
     }
-
     return results;
   });
+}
+
+async function extractRawSvgs(page) {
+  const [inline, img, cssBg, sprites] = await Promise.all([
+    extractInlineSvgs(page),
+    extractImgSvgs(page),
+    extractCssBgSvgs(page),
+    extractSvgSprites(page),
+  ]);
+  return [...inline, ...img, ...cssBg, ...sprites];
 }
 
 async function resolveImgSvg(page, src) {
@@ -316,6 +315,7 @@ export async function collectIcons(page, outputDir) {
 
   let unnamedIndex = 1;
   const usedNames = new Set();
+  const nameCollisionCounts = new Map();
 
   for (const entry of rawEntries) {
     const classification = classify(entry);
@@ -351,7 +351,9 @@ export async function collectIcons(page, outputDir) {
     );
     let name = rawName;
     if (usedNames.has(name)) {
-      name = `${name}-${unnamedIndex}`;
+      const count = (nameCollisionCounts.get(rawName) || 1) + 1;
+      nameCollisionCounts.set(rawName, count);
+      name = `${rawName}-${count}`;
     }
     if (confidence === 'low') unnamedIndex++;
     usedNames.add(name);

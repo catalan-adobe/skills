@@ -72,7 +72,6 @@ function parseArgs(argv) {
 function detectPlaywright() {
   try {
     execSync('npx playwright --version', { stdio: 'pipe' });
-    return 'npx';
   } catch {
     console.error(
       'Playwright not found. Install with: npx playwright install chromium'

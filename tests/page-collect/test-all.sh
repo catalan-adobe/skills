@@ -12,23 +12,31 @@ FAIL=0
 cleanup() { rm -rf "$OUTPUT"; }
 trap cleanup EXIT
 
-assert() {
-  local desc="$1" cond="$2"
-  if eval "$cond"; then
+assert_file_exists() {
+  if [[ -f "$1" ]]; then
     ((++PASS))
   else
-    echo "FAIL: $desc"
+    echo "FAIL: expected file $1"
+    ((++FAIL))
+  fi
+}
+
+assert_dir_exists() {
+  if [[ -d "$1" ]]; then
+    ((++PASS))
+  else
+    echo "FAIL: expected directory $1"
     ((++FAIL))
   fi
 }
 
 echo "=== Test: all subcommand against mixed-icons fixture ==="
-node "$COLLECT" all "file://$FIXTURES/mixed-icons.html" --output "$OUTPUT"
+node "$COLLECT" all "file://$FIXTURES/mixed-icons.html" --output "$OUTPUT" 2>/dev/null
 
-assert "collection.json exists" "[[ -f '$OUTPUT/collection.json' ]]"
-assert "screenshot.jpg exists" "[[ -f '$OUTPUT/screenshot.jpg' ]]"
-assert "icons directory exists" "[[ -d '$OUTPUT/icons' ]]"
-assert "icons.json exists" "[[ -f '$OUTPUT/icons.json' ]]"
+assert_file_exists "$OUTPUT/collection.json"
+assert_file_exists "$OUTPUT/screenshot.jpg"
+assert_dir_exists "$OUTPUT/icons"
+assert_file_exists "$OUTPUT/icons.json"
 
 node -e "
   import {readFileSync} from 'fs';
