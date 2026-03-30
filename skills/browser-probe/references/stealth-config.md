@@ -27,6 +27,28 @@ This patches browser fingerprints that headless detection relies on.
 })()
 ```
 
+## User-Agent Override
+
+Chromium's headless mode injects `HeadlessChrome` into the HTTP User-Agent
+header. Many WAFs (especially CloudFront) use simple string matching on this
+token as a first-pass bot filter. This is an HTTP-level signal — JS stealth
+patches cannot change it.
+
+Fix: pass a realistic UA via Chrome launch arg in a `playwright-cli` config file:
+
+```json
+{
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": {
+      "args": ["--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"]
+    }
+  }
+}
+```
+
+Usage: `playwright-cli -s=<session> open --config=<path-to-config>`
+
 ## Stealth HTTP Headers
 
 These headers mimic a real Chrome session. Currently not injectable via
@@ -58,6 +80,7 @@ page content) to CDN bot detection providers and typical remedies.
 | `server: AkamaiGHost` or `server: AkamaiNetStorage` | Akamai | medium | System Chrome (`--browser=chrome`) — TLS fingerprint |
 | `bm_sz` cookie in `set-cookie` | Akamai Bot Manager | high | System Chrome — TLS fingerprint |
 | `_abck` cookie in `set-cookie` | Akamai Bot Manager | high | System Chrome — TLS fingerprint |
+| `stealth` blocked + `stealth-ua` succeeds (no provider headers) | CloudFront UA filter | high | UA override (`--user-agent` launch arg) |
 | `cf-ray` header present | Cloudflare | medium | Stealth script often sufficient |
 | Page title contains "Just a moment" or "Checking your browser" | Cloudflare Challenge | high | System Chrome + stealth |
 | `x-datadome` header present | DataDome | high | System Chrome + stealth |

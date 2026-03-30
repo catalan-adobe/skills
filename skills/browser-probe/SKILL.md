@@ -48,12 +48,13 @@ fi
 node "$PROBE_DIR/browser-probe.js" "$URL" "$OUTPUT_DIR"
 ```
 
-The script tries up to 4 browser configurations, stopping at the first success:
+The script tries up to 5 browser configurations, stopping at the first success:
 
 1. **default** — headless Chromium (baseline)
-2. **stealth** — headless Chromium + stealth init script (patches `navigator.webdriver`, plugins, languages)
-3. **chrome** — system Chrome (`--browser=chrome`) + stealth (fixes TLS fingerprint detection)
-4. **persistent** — system Chrome + stealth + persistent profile (cookie/session challenges)
+2. **stealth** — headless Chromium + JS stealth init script (patches `navigator.webdriver`, plugins, languages)
+3. **stealth-ua** — headless Chromium + JS stealth + User-Agent override (removes `HeadlessChrome` from HTTP UA header via `--user-agent` launch arg)
+4. **chrome** — system Chrome (`--browser=chrome`) + JS stealth + UA override (fixes TLS fingerprint detection)
+5. **persistent** — system Chrome + JS stealth + UA override + persistent profile (cookie/session challenges)
 
 Output: `$OUTPUT_DIR/probe-report.json`
 
@@ -69,14 +70,17 @@ Load [stealth-config.md](references/stealth-config.md) and match the
 `detectedSignals` array against the Provider Signature Table.
 
 Key interpretation rules:
+- `stealth` fails but `stealth-ua` succeeds → UA-based blocking (e.g.,
+  CloudFront WAF matching `HeadlessChrome` in User-Agent). Common on
+  pharma/enterprise sites. Simple fix, no TLS concerns.
 - `akamai-server` or `akamai-bot-manager` → TLS fingerprint blocking.
-  System Chrome is the fix. Stealth script alone is insufficient.
+  System Chrome is the fix. Stealth + UA alone is insufficient.
 - `cloudflare-ray` without `cloudflare-challenge` → Cloudflare present
   but not actively blocking. Default config may work.
 - `cloudflare-challenge` → Active JS challenge. System Chrome + stealth
-  usually resolves it.
-- `datadome` → Aggressive detection. System Chrome + stealth required.
-- `aws-waf` → Usually UA-based. Stealth script often sufficient.
+  + UA usually resolves it.
+- `datadome` → Aggressive detection. System Chrome + stealth + UA required.
+- `aws-waf` → Usually UA-based. Stealth + UA often sufficient.
 - No signals + blocked → Unknown protection. Persistent profile is last
   resort.
 
@@ -103,10 +107,11 @@ Write `browser-recipe.json` to `$OUTPUT_DIR`:
 
 | firstSuccess | cliConfig.launchOptions | stealthInitScript |
 |---|---|---|
-| `default` | `{}` (no channel) | `null` (not needed) |
-| `stealth` | `{}` (no channel) | Full stealth script from reference |
-| `chrome` | `{ "channel": "chrome" }` | Full stealth script from reference |
-| `persistent` | `{ "channel": "chrome" }` | Full stealth script from reference |
+| `default` | `{}` (no channel, no args) | `null` (not needed) |
+| `stealth` | `{}` (no channel, no args) | Full stealth script from reference |
+| `stealth-ua` | `{ "args": ["--user-agent=<realistic UA>"] }` | Full stealth script from reference |
+| `chrome` | `{ "channel": "chrome", "args": ["--user-agent=<realistic UA>"] }` | Full stealth script from reference |
+| `persistent` | `{ "channel": "chrome", "args": ["--user-agent=<realistic UA>"] }` | Full stealth script from reference |
 
 If `firstSuccess` is `persistent`, add a `"persistent": true` field to the
 recipe so consumers know to use `--persistent`.
@@ -124,7 +129,7 @@ Browser probe complete for <url>.
 **If all configurations failed:**
 ```
 Browser probe failed for <url>. No headless configuration could load the page.
-  Tried: default, stealth, chrome, persistent
+  Tried: default, stealth, stealth-ua, chrome, persistent
   Detected signals: <detectedSignals>
 
   Options:

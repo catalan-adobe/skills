@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const EXEC_OPTS = {
   encoding: 'utf-8',
@@ -137,6 +138,23 @@ const STEALTH_INIT_SCRIPT = `(function() {
   window.chrome = { runtime: {} };
 })()`;
 
+const REALISTIC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
+  + ' AppleWebKit/537.36 (KHTML, like Gecko)'
+  + ' Chrome/120.0.0.0 Safari/537.36';
+
+function writeConfigFile(stepName, channel) {
+  const config = { browser: { browserName: 'chromium', launchOptions: {} } };
+  if (channel) config.browser.launchOptions.channel = channel;
+  config.browser.launchOptions.args = [`--user-agent=${REALISTIC_UA}`];
+  const path = join(tmpdir(), `probe-${stepName}-config.json`);
+  writeFileSync(path, JSON.stringify(config));
+  return path;
+}
+
+function cleanupConfigFile(path) {
+  try { unlinkSync(path); } catch { /* already removed */ }
+}
+
 function waitForStable(session) {
   for (let i = 0; i < 10; ++i) {
     const state = cliEval(session, 'document.readyState');
@@ -156,12 +174,20 @@ function getNetworkLines(session) {
 function runStep(url, stepDef) {
   const session = `probe-${stepDef.name}`;
   const start = Date.now();
+  let configPath = null;
 
   try {
+    if (stepDef.uaOverride) {
+      const channel = stepDef.browser !== 'chromium'
+        ? stepDef.browser : undefined;
+      configPath = writeConfigFile(stepDef.name, channel);
+    }
+
     if (stepDef.stealth) {
-      // Open browser without URL, inject stealth, then navigate
       const openArgs = ['open'];
-      if (stepDef.browser !== 'chromium') {
+      if (configPath) {
+        openArgs.push(`--config=${configPath}`);
+      } else if (stepDef.browser !== 'chromium') {
         openArgs.push(`--browser=${stepDef.browser}`);
       }
       if (stepDef.persistent) openArgs.push('--persistent');
@@ -169,7 +195,6 @@ function runStep(url, stepDef) {
       cliEval(session, STEALTH_INIT_SCRIPT);
       cli(session, 'goto', url);
     } else {
-      // Open directly with URL
       const openArgs = ['open', url];
       if (stepDef.browser !== 'chromium') {
         openArgs.push(`--browser=${stepDef.browser}`);
@@ -203,29 +228,35 @@ function runStep(url, stepDef) {
     };
   } finally {
     closeSession(session);
+    if (configPath) cleanupConfigFile(configPath);
   }
 }
 
 const STEPS = [
   {
     name: 'default',
-    browser: 'chromium', stealth: false, persistent: false,
-    config: { browser: 'chromium', stealth: false, persistent: false },
+    browser: 'chromium', stealth: false, uaOverride: false, persistent: false,
+    config: { browser: 'chromium', stealth: false, uaOverride: false },
   },
   {
     name: 'stealth',
-    browser: 'chromium', stealth: true, persistent: false,
-    config: { browser: 'chromium', stealth: true, persistent: false },
+    browser: 'chromium', stealth: true, uaOverride: false, persistent: false,
+    config: { browser: 'chromium', stealth: true, uaOverride: false },
+  },
+  {
+    name: 'stealth-ua',
+    browser: 'chromium', stealth: true, uaOverride: true, persistent: false,
+    config: { browser: 'chromium', stealth: true, uaOverride: true },
   },
   {
     name: 'chrome',
-    browser: 'chrome', stealth: true, persistent: false,
-    config: { browser: 'chrome', stealth: true, persistent: false },
+    browser: 'chrome', stealth: true, uaOverride: true, persistent: false,
+    config: { browser: 'chrome', stealth: true, uaOverride: true },
   },
   {
     name: 'persistent',
-    browser: 'chrome', stealth: true, persistent: true,
-    config: { browser: 'chrome', stealth: true, persistent: true },
+    browser: 'chrome', stealth: true, uaOverride: true, persistent: true,
+    config: { browser: 'chrome', stealth: true, uaOverride: true },
   },
 ];
 
