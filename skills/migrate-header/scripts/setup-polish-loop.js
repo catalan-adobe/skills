@@ -53,7 +53,7 @@ function parseArgs(argv) {
     brandingPath: resolve(named['branding']),
     sourceDir: resolve(named['source-dir']),
     targetDir: resolve(named['target-dir']),
-    port: named['port'] || '3000',
+    explicitPort: named['port'] || null,
     maxIterations: named['max-iterations'] || '30',
   };
 }
@@ -108,10 +108,20 @@ function countNavItems(layout) {
 function buildNavStructure(layout) {
   const primary = layout.navItems?.primary || [];
   const secondary = layout.navItems?.secondary || [];
-  const topNav = [...primary, ...secondary].map((text) => ({
-    text,
-    href: '#',
+  const topNav = [...primary, ...secondary].map((item) => ({
+    text: typeof item === 'string' ? item : item.text,
+    href: typeof item === 'string' ? '#' : (item.href || '#'),
   }));
+
+  for (const entry of topNav) {
+    if (typeof entry.text !== 'string') {
+      throw new Error(
+        `nav-structure: expected .text to be a string, got ${typeof entry.text}`
+        + ` — check layout.json navItems format`
+      );
+    }
+  }
+
   return { topNav };
 }
 
@@ -122,6 +132,31 @@ function copySourceFile(sourceDir, targetDir, filename) {
     return;
   }
   copyFileSync(src, join(targetDir, filename));
+}
+
+function isLinkedWorktree(dir) {
+  try {
+    const gitDir = execSync('git rev-parse --git-dir', {
+      cwd: dir,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    // Linked worktrees have .git files pointing to main repo's
+    // .git/worktrees/<name>, so --git-dir returns an absolute path
+    // containing "/worktrees/". The main working tree returns ".git".
+    return gitDir !== '.git' && gitDir.includes('/worktrees/');
+  } catch {
+    return false;
+  }
+}
+
+function detectPort(targetDir, explicitPort) {
+  if (explicitPort) return explicitPort;
+  if (isLinkedWorktree(targetDir)) {
+    log('  Detected git worktree — using port 3050 (AEM CLI worktree default)');
+    return '3050';
+  }
+  return '3000';
 }
 
 function log(msg) {
@@ -148,9 +183,10 @@ function main() {
   const headerDescription = buildHeaderDescription(layout, branding);
   const navItemCount = countNavItems(layout);
   const headerHeight = Math.round(layout.headerHeight || 0);
+  const port = detectPort(args.targetDir, args.explicitPort);
 
   const replacements = {
-    '{{PORT}}': args.port,
+    '{{PORT}}': port,
     '{{PAGE_PATH}}': '/',
     '{{MAX_ITERATIONS}}': args.maxIterations,
     '{{MAX_CONSECUTIVE_REVERTS}}': '5',
