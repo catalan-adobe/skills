@@ -153,8 +153,8 @@ Read `$PROJECT_ROOT/autoresearch/probe-report.json`. Check `firstSuccess`:
 - If `firstSuccess` is non-null and not `"default"`: bot protection
   detected. Follow browser-probe Steps 3-4 to interpret
   `detectedSignals` and generate `browser-recipe.json`. Read
-  [stealth-config.md](references/stealth-config.md) from the
-  browser-probe skill for the stealth init script and provider
+  `stealth-config.md` from the browser-probe skill's
+  `references/` directory for the stealth init script and provider
   signature table. Save to
   `$PROJECT_ROOT/autoresearch/browser-recipe.json` and set
   `BROWSER_RECIPE="$PROJECT_ROOT/autoresearch/browser-recipe.json"`.
