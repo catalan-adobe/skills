@@ -251,6 +251,38 @@ Extracted branding: font-family: <family>, primary-bg: <color>, primary-text: <c
 
 If either script fails, report the error and stop.
 
+### Stage 6b: Icon Collection
+
+Extract and classify icons from the source header using page-collect:
+
+```bash
+# Find the page-collect script
+if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
+  PAGE_COLLECT="$(dirname "$CLAUDE_SKILL_DIR")/../page-collect/scripts/page-collect.js"
+else
+  PAGE_COLLECT="$(find ~/.claude -path "*/page-collect/scripts/page-collect.js" -type f 2>/dev/null | head -1)"
+fi
+
+if [[ -z "$PAGE_COLLECT" || ! -f "$PAGE_COLLECT" ]]; then
+  echo "WARNING: page-collect skill not found. Skipping icon extraction."
+  echo "Install: sync page-collect skill to ~/.claude/skills/"
+else
+  ICON_OUTPUT="$PROJECT_ROOT/autoresearch/extraction/icons"
+  node "$PAGE_COLLECT" icons "$SOURCE_URL" --output "$ICON_OUTPUT"
+
+  if [[ -f "$ICON_OUTPUT/icons.json" ]]; then
+    ICON_COUNT=$(node -e "import {readFileSync} from 'fs'; const d=JSON.parse(readFileSync('$ICON_OUTPUT/icons.json','utf-8')); console.log(d.icons.length)")
+    echo "Extracted $ICON_COUNT icons to $ICON_OUTPUT/"
+  else
+    echo "WARNING: Icon extraction produced no output."
+  fi
+fi
+```
+
+If icon extraction succeeds, the scaffold stage will use the output.
+If it fails or page-collect is not installed, the migration continues
+without pre-extracted icons (the polish loop handles icons manually).
+
 ### Stage 7: Scaffold Generation
 
 This stage copies a battle-tested base header block and then dispatches
@@ -352,11 +384,31 @@ inline brand and tools.
 For multi-row headers: use separate sections (brand, main-nav, utility)
 each with their own section-metadata.
 
+## Task 3: Wire extracted icons into EDS
+
+If `<PROJECT_ROOT>/autoresearch/extraction/icons/icons.json` exists:
+
+1. Read the icon manifest
+2. Copy all SVG files from `<PROJECT_ROOT>/autoresearch/extraction/icons/icons/`
+   to `<PROJECT_ROOT>/icons/`
+3. In nav.plain.html, use `:iconname:` notation for icons that appear
+   in the tools/utility section. For example, if the manifest has a
+   "search" icon, use `:search:` where a search button appears.
+4. For the logo, if the manifest has a "logo" class icon, use `:logo:`
+   in the brand section instead of an `<img>` tag.
+
+The EDS `decorateIcons()` function in `aem.js` automatically converts
+`:iconname:` to `<span class="icon icon-{name}"><img src="/icons/{name}.svg">`
+at runtime. Do NOT create inline SVGs for icons in the manifest.
+
+If the icon manifest does not exist, skip this task — icons will be
+handled by the polish loop instead.
+
 ## After Generating
 
 Stage and commit:
   cd <PROJECT_ROOT>
-  git add blocks/header/header.css nav.plain.html images/
+  git add blocks/header/header.css nav.plain.html images/ icons/
   git commit -m "scaffold: customize header CSS and generate nav content"
 ```
 
