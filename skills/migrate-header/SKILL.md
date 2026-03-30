@@ -217,7 +217,13 @@ fi
 ```bash
 node "$PAGE_PREP_DIR/overlay-db.js" refresh
 BUNDLE_FILE="/tmp/overlay-bundle-$$.js"
-node "$PAGE_PREP_DIR/overlay-db.js" bundle > "$BUNDLE_FILE"
+# Wrap the bundle IIFE so initScript stores the result in a global
+node -e "
+  const fs = require('fs');
+  const { execSync } = require('child_process');
+  const bundle = execSync('node $PAGE_PREP_DIR/overlay-db.js bundle', { encoding: 'utf-8' });
+  fs.writeFileSync('$BUNDLE_FILE', 'window.__overlayReport = ' + bundle + ';');
+"
 ```
 
 **Inject via headless playwright-cli:**
@@ -252,18 +258,7 @@ playwright-cli -s=overlay-detect --config="$OVERLAY_CONFIG" open "$URL"
 # by reading the global result the bundle sets.
 REPORT_RAW=$(playwright-cli -s=overlay-detect eval "JSON.stringify(window.__overlayReport || {})")
 playwright-cli -s=overlay-detect close
-rm -f "$OVERLAY_CONFIG" "/tmp/overlay-stealth-$$.js"
-```
-
-If the overlay bundle does not set `window.__overlayReport`, use
-`run-code` to evaluate the bundle file directly:
-
-```bash
-REPORT_RAW=$(playwright-cli -s=overlay-detect run-code "async page => {
-  const fs = require('fs');
-  const bundle = fs.readFileSync('$BUNDLE_FILE', 'utf-8');
-  return await page.evaluate(bundle);
-}")
+rm -f "$OVERLAY_CONFIG" "/tmp/overlay-stealth-$$.js" "$BUNDLE_FILE"
 ```
 
 **Convert detection report to overlay recipe:**
