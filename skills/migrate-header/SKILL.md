@@ -40,6 +40,11 @@ Scripts:
 - `node $SKILL_HOME/scripts/extract-layout.js <snapshot.json>` (stdout JSON)
 - `node $SKILL_HOME/scripts/extract-branding.js <snapshot.json>` (stdout JSON)
 - `node $SKILL_HOME/scripts/setup-polish-loop.js --layout=... --branding=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
+- `node $SKILL_HOME/scripts/css-query.js open <url> [--browser-recipe=path] [--session=name]`
+- `node $SKILL_HOME/scripts/css-query.js query <selector|node:N> <properties>`
+- `node $SKILL_HOME/scripts/css-query.js cascade <selector|node:N>`
+- `node $SKILL_HOME/scripts/css-query.js vars`
+- `node $SKILL_HOME/scripts/css-query.js close`
 
 Block-files: `$SKILL_HOME/block-files/header.{js,css}`
 Reference docs: `$SKILL_HOME/references/*.md`
@@ -423,6 +428,21 @@ header.js is already in place and must NOT be modified. You will:
 Read these files:
 - Layout: <PROJECT_ROOT>/autoresearch/extraction/layout.json
 - Branding: <PROJECT_ROOT>/autoresearch/extraction/branding.json
+
+## CSS Data
+
+Read these for accurate styling information:
+- CSS Overview: <PROJECT_ROOT>/autoresearch/source/css-overview.json
+  Contains authored custom properties, font stacks, categorized color
+  palette, and key spacing — extracted via Chrome DevTools Protocol.
+  Prefer these values over branding.json when they conflict.
+
+For deeper CSS lookups, open a query session:
+```
+  node $SKILL_HOME/scripts/css-query.js open "$URL"
+  node $SKILL_HOME/scripts/css-query.js query "nav > a:first-child" font-size,color,font-weight
+  node $SKILL_HOME/scripts/css-query.js close
+```
 
 ## Reference Docs
 

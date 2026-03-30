@@ -58,6 +58,49 @@ The outer loop keeps your changes if the score improves, reverts if it doesn't.
 - `autoresearch/source/desktop.png` — Screenshot of source header at 1440px
 - `autoresearch/source/nav-structure.json` — Extracted nav items ({{NAV_ITEM_COUNT}} items)
 
+## CSS Query Tool
+
+You have access to an on-demand CSS inspector that queries the source
+page's actual stylesheets via Chrome DevTools Protocol. Use it to get
+exact property values instead of guessing.
+
+### How to Use
+
+```bash
+# Open session on source URL (do this once at start of iteration)
+node "$SKILL_HOME/scripts/css-query.js" open "{{URL}}" --session=css-src
+
+# Query specific properties for an element
+node "$SKILL_HOME/scripts/css-query.js" query "nav > a:first-child" font-size,color,font-weight --session=css-src
+
+# Get all matched CSS rules for an element (full cascade)
+node "$SKILL_HOME/scripts/css-query.js" cascade ".header-brand" --session=css-src
+
+# List CSS custom properties defined in the source
+node "$SKILL_HOME/scripts/css-query.js" vars --session=css-src
+
+# Close when done (before committing)
+node "$SKILL_HOME/scripts/css-query.js" close --session=css-src
+```
+
+### When to Use
+
+- When the diff image shows a color mismatch: query the source element's
+  `background-color` or `color` to get the exact hex value
+- When font rendering differs: query `font-family`, `font-size`, `font-weight`
+  to see the authored font stack
+- When spacing is off: query `padding`, `margin`, `gap` values
+- When you need the source's CSS custom properties to map to EDS properties
+
+### Output
+
+Each query returns JSON with the value, which CSS rule set it, the source
+file, and whether it's inherited:
+
+```json
+{"font-size": {"value": "14px", "source": "author", "rule": ".nav-link", "inherited": false}}
+```
+
 ## Available Icons
 
 {{ICON_GUIDANCE}}
