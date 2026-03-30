@@ -113,3 +113,28 @@ describe('detectSignals', () => {
     expect(signals).toEqual([]);
   });
 });
+
+describe('buildStepResult', () => {
+  it('builds a well-formed step result', async () => {
+    // Dynamic import — buildStepResult not in the static import yet
+    const { buildStepResult } = await import(
+      '../../skills/browser-probe/scripts/browser-probe.js'
+    );
+    const result = buildStepResult('default', {
+      browser: 'chromium', stealth: false, persistent: false,
+    }, 'blocked', {
+      title: 'ERROR', url: 'https://x.com/', bodyLength: 10,
+      status: 403, hasMainContent: false,
+    }, 1234);
+    expect(result).toEqual({
+      name: 'default',
+      config: { browser: 'chromium', stealth: false, persistent: false },
+      result: 'blocked',
+      health: {
+        title: 'ERROR', url: 'https://x.com/', bodyLength: 10,
+        status: 403, hasMainContent: false,
+      },
+      durationMs: 1234,
+    });
+  });
+});
