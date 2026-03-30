@@ -19,6 +19,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { collectIcons } from './collect-icons.js';
 import { collectMetadata } from './collect-metadata.js';
@@ -208,7 +209,5 @@ async function main() {
 }
 
 const isMain = process.argv[1]
-  && resolve(process.argv[1]) === resolve(
-    new URL(import.meta.url).pathname,
-  );
+  && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) main();

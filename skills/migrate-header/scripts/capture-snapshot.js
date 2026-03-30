@@ -82,7 +82,15 @@ export function buildRecipeArgs(recipePath) {
     return { extraArgs: [], stealthScript: null, configPath: null };
   }
 
-  const recipe = JSON.parse(readFileSync(recipePath, 'utf-8'));
+  let recipe;
+  try {
+    recipe = JSON.parse(readFileSync(recipePath, 'utf-8'));
+  } catch (err) {
+    console.error(
+      `Failed to load browser recipe from ${recipePath}: ${err.message}`
+    );
+    process.exit(1);
+  }
   const configPath = join(
     tmpdir(),
     `header-capture-config-${Date.now()}.json`
