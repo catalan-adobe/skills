@@ -66,6 +66,28 @@ describe('checkHealth', () => {
     expect(checkHealth(health)).toBe('blocked');
   });
 
+  it('returns blocked for chrome-error URL', () => {
+    const health = {
+      title: 'www.adobe.com',
+      url: 'chrome-error://chromewebdata/',
+      bodyLength: 172,
+      status: 0,
+      hasMainContent: true,
+    };
+    expect(checkHealth(health)).toBe('blocked');
+  });
+
+  it('returns blocked for status 0 (network error)', () => {
+    const health = {
+      title: 'Example',
+      url: 'https://example.com/',
+      bodyLength: 500,
+      status: 0,
+      hasMainContent: true,
+    };
+    expect(checkHealth(health)).toBe('blocked');
+  });
+
   it('returns success for short body if main content exists', () => {
     const health = {
       title: 'Minimal Site',

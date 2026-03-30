@@ -31,6 +31,8 @@ export function parseEvalOutput(raw) {
 }
 
 export function checkHealth(health) {
+  if (health.url && health.url.startsWith('chrome-error://')) return 'blocked';
+  if (health.status === 0) return 'blocked';
   if (health.status >= 400) return 'blocked';
   if (ERROR_TITLE_PATTERN.test(health.title)) return 'blocked';
   if (health.bodyLength < MIN_BODY_LENGTH && !health.hasMainContent) {
@@ -92,6 +94,13 @@ function closeSession(session) {
     );
   } catch {
     // Session may already be closed
+  }
+  try {
+    execFileSync(
+      'playwright-cli', [`-s=${session}`, 'delete-data'], EXEC_OPTS,
+    );
+  } catch {
+    // Data may already be deleted or session never persisted
   }
 }
 
