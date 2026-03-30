@@ -272,6 +272,7 @@ function optimizeSvg(svgString, classification) {
     ''
   );
   svg = svg.replace(/\s*data-name="[^"]*"/g, '');
+  svg = svg.replace(/\s*(?:class|aria-hidden|focusable|display|style)="[^"]*"/g, '');
 
   if (!svg.includes('viewBox')) {
     const wMatch = svg.match(/\bwidth=["'](\d+(?:\.\d+)?)["']/);
