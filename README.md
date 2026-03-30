@@ -241,6 +241,18 @@ them, and outputs to `/icons/` for use with the EDS `decorateIcons()` system.
 
 [View SKILL.md](skills/page-collect/SKILL.md)
 
+### browser-probe
+
+Detect CDN bot protection on a URL and produce a ready-to-use browser recipe
+for playwright-cli. Runs an escalation ladder of headless browser configurations
+to find the lightest mode that passes bot checks, then emits a portable JSON
+recipe. Use when playwright-cli hits CloudFront, Akamai, Cloudflare, or
+similar WAF/CDN blocks.
+
+**Dependencies:** Node 22+ (no npm deps)
+
+See [SKILL.md](skills/browser-probe/SKILL.md) for details.
+
 ## License
 
 MIT
