@@ -669,7 +669,7 @@ learnings that could improve the skill for future header migrations.
 1. `$PROJECT_ROOT/results.tsv` — iteration scores and keep/revert decisions
 2. `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json` — detailed score breakdown
 3. `$PROJECT_ROOT/autoresearch/extraction/layout.json` — extracted layout structure
-4. `$PROJECT_ROOT/autoresearch/extraction/branding.json` — extracted branding values
+4. `$PROJECT_ROOT/autoresearch/extraction/styles.json` — CDP-extracted CSS values
 5. `$PROJECT_ROOT/autoresearch/overlay-recipe.json` — overlays detected
 6. Source screenshots in `$PROJECT_ROOT/autoresearch/source/` — visual reference
 7. `git log --oneline` — changes made during polish
@@ -678,7 +678,7 @@ learnings that could improve the skill for future header migrations.
 
 | Dimension | Evidence | What it reveals |
 |-----------|----------|-----------------|
-| Extraction accuracy | Compare branding.json values against final CSS custom properties in header.css | Whether extraction scripts need calibration |
+| Extraction accuracy | Compare styles.json values against final CSS custom properties in header.css | Whether extraction scripts need calibration |
 | Scaffold quality | First iteration score in results.tsv | How good the initial code generation was |
 | Convergence pattern | Score trajectory and revert rate across iterations | Whether the polish loop guidance is effective |
 | Desktop fidelity | Desktop visual score in evaluation | Whether scaffold and polish loop guidance are effective |

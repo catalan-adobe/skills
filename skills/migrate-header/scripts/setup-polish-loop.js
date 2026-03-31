@@ -8,7 +8,7 @@
  * Usage:
  *   node setup-polish-loop.js \
  *     --layout=path/to/layout.json \
- *     --branding=path/to/branding.json \
+ *     --styles=path/to/styles.json \
  *     --source-dir=path/to/source/ \
  *     --target-dir=path/to/worktree/ \
  *     --port=3000 \
