@@ -38,8 +38,8 @@ SKILL_HOME="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/migrate-header}"
 Scripts:
 - `node $SKILL_HOME/scripts/capture-snapshot.js <url> <output-dir> [--header-selector=header] [--overlay-recipe=path] [--browser-recipe=path]`
 - `node $SKILL_HOME/scripts/extract-layout.js <snapshot.json>` (stdout JSON)
-- `node $SKILL_HOME/scripts/extract-branding.js <snapshot.json>` (stdout JSON)
-- `node $SKILL_HOME/scripts/setup-polish-loop.js --layout=... --branding=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
+- `node $SKILL_HOME/scripts/extract-styles.js <snapshot.json> <url> [--browser-recipe=path]` (stdout JSON)
+- `node $SKILL_HOME/scripts/setup-polish-loop.js --layout=... --styles=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
 - `node $SKILL_HOME/scripts/css-query.js open <url> [--browser-recipe=path] [--session=name]`
 - `node $SKILL_HOME/scripts/css-query.js query <selector|node:N> <properties>`
 - `node $SKILL_HOME/scripts/css-query.js cascade <selector|node:N>`
@@ -335,23 +335,34 @@ If capture fails, suggest: different `--header-selector`, manual `--overlay-reci
 
 ### Stage 6: Extraction
 
-Run both extraction scripts via Bash:
+Run layout extraction (from snapshot, no browser needed):
 
 ```bash
 node "$SKILL_HOME/scripts/extract-layout.js" \
   "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
   > "$PROJECT_ROOT/autoresearch/extraction/layout.json"
+```
 
-node "$SKILL_HOME/scripts/extract-branding.js" \
+Run style extraction (opens a css-query session on the source URL):
+
+```bash
+RECIPE_FLAG=""
+if [[ -n "$BROWSER_RECIPE" ]]; then
+  RECIPE_FLAG="--browser-recipe=$BROWSER_RECIPE"
+fi
+
+node "$SKILL_HOME/scripts/extract-styles.js" \
   "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
-  > "$PROJECT_ROOT/autoresearch/extraction/branding.json"
+  "$URL" \
+  $RECIPE_FLAG \
+  > "$PROJECT_ROOT/autoresearch/extraction/styles.json"
 ```
 
 After extraction, read both JSON files and log a summary:
 
 ```
 Extracted layout: <N> rows, <height>px total header height, <N> nav items
-Extracted branding: font-family: <family>, primary-bg: <color>, primary-text: <color>
+Extracted styles: font-family: <family>, nav color: <color>, <N> custom properties
 ```
 
 If either script fails, report the error and stop.
@@ -427,21 +438,11 @@ header.js is already in place and must NOT be modified. You will:
 
 Read these files:
 - Layout: <PROJECT_ROOT>/autoresearch/extraction/layout.json
-- Branding: <PROJECT_ROOT>/autoresearch/extraction/branding.json
+- Styles: <PROJECT_ROOT>/autoresearch/extraction/styles.json
 
-## CSS Data
-
-Read these for accurate styling information:
-- CSS Overview: <PROJECT_ROOT>/autoresearch/source/css-overview.json
-  Contains authored custom properties, font stacks, categorized color
-  palette, and key spacing — extracted via Chrome DevTools Protocol.
-  Prefer these values over branding.json when they conflict.
-
-For deeper CSS lookups, open a query session:
-
-    node $SKILL_HOME/scripts/css-query.js open "$URL"
-    node $SKILL_HOME/scripts/css-query.js query "nav > a:first-child" font-size,color,font-weight
-    node $SKILL_HOME/scripts/css-query.js close
+styles.json contains CDP-queried CSS values with provenance (which
+rule, which file, whether inherited). Use these directly — they are
+the source of truth for all styling decisions.
 
 ## Reference Docs
 
@@ -455,29 +456,19 @@ Read ALL of these for patterns and mapping guidance:
 
 Open <PROJECT_ROOT>/blocks/header/header.css and update ONLY the CSS
 custom properties block at the top (.header.block { ... }) to match the
-source site's styles.
+source site's styles from styles.json.
 
-**Data sources (in priority order):**
-1. css-overview.json — authored font stacks, color palette, spacing
-2. branding.json — fallback if css-overview is missing
-3. css-query.js — for any value not in the overview, query the source:
-
-       node $SKILL_HOME/scripts/css-query.js open "$URL"
-       node $SKILL_HOME/scripts/css-query.js query "nav" background-color,padding
-       node $SKILL_HOME/scripts/css-query.js query "nav a" font-size,font-weight,color,letter-spacing
-       node $SKILL_HOME/scripts/css-query.js query "nav .cta, nav [class*=btn]" background-color,color,border-radius
-       node $SKILL_HOME/scripts/css-query.js close
-
-**Properties to set:**
-- --header-background: from css-overview colorPalette.backgrounds or query nav background-color
-- --header-nav-gap: from css-overview keySpacing.navGap or query nav gap
-- --header-nav-font-size: query nav a font-size
-- --header-nav-font-weight: query nav a font-weight
-- font-family: from css-overview fontStacks[0]
-- --header-text-color: from css-overview colorPalette.text[0]
-- --header-section-padding: from css-overview keySpacing.headerPaddingX
-- For multi-row headers: query each row's background-color directly
-- For CTA buttons: query the CTA element's background-color, color, border-radius
+**Properties to set (all from styles.json):**
+- --header-background: from styles.header["background-color"].value
+- --header-nav-gap: from styles.navSpacing.value (spatially measured)
+- --header-nav-font-size: from styles.navLinks["font-size"].value
+- --header-nav-font-weight: from styles.navLinks["font-weight"].value
+- font-family: from styles.navLinks["font-family"].value
+- --header-text-color: from styles.navLinks.color.value
+- --header-section-padding: from styles.header.padding.value
+- For multi-row headers: styles.rows[N]["background-color"].value
+- For CTA buttons: styles.cta (background-color, color, border-radius)
+- Accent/hover color: styles.navLinksHover.color.value
 
 Do NOT modify the structural CSS (layout, dropdowns, etc.).
 
@@ -564,7 +555,7 @@ Run the setup script to generate the polish loop infrastructure:
 ```bash
 node "$SKILL_HOME/scripts/setup-polish-loop.js" \
   "--layout=$PROJECT_ROOT/autoresearch/extraction/layout.json" \
-  "--branding=$PROJECT_ROOT/autoresearch/extraction/branding.json" \
+  "--styles=$PROJECT_ROOT/autoresearch/extraction/styles.json" \
   "--source-dir=$PROJECT_ROOT/autoresearch/source" \
   "--target-dir=$PROJECT_ROOT" \
   "--port=3000" \

@@ -18,15 +18,9 @@ const EXEC_OPTS = {
   maxBuffer: 10 * 1024 * 1024,
 };
 
-const STYLE_PROPS = [
-  'backgroundColor', 'color', 'fontSize', 'fontFamily', 'fontWeight',
-  'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-  'margin', 'display', 'position', 'gap', 'borderRadius', 'background',
-  'height', 'width', 'maxWidth', 'justifyContent', 'alignItems',
-  'flexDirection', 'gridTemplateColumns', 'textDecoration', 'lineHeight',
-  'letterSpacing', 'border', 'borderBottom', 'boxShadow', 'opacity',
-  'overflow', 'zIndex',
-];
+// Minimal computed styles kept for extract-layout.js row classification.
+// Full CSS extraction is handled by extract-styles.js via CDP.
+const STYLE_PROPS = ['backgroundColor', 'borderRadius'];
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
@@ -194,6 +188,7 @@ function captureHeaderDOM(headerSelector) {
   var header = document.querySelector('${selectorEscaped}');
   if (!header) return JSON.stringify(null);
 
+  var nextNodeId = 0;
   function traverse(node, depth) {
     if (depth > 10) return null;
     if (node.nodeType !== Node.ELEMENT_NODE) return null;
@@ -234,6 +229,7 @@ function captureHeaderDOM(headerSelector) {
     if (dataSrc) attrs['data-src'] = dataSrc;
 
     var obj = {
+      nodeId: nextNodeId++,
       tag: tag,
       id: node.id || '',
       classes: Array.from(node.classList),

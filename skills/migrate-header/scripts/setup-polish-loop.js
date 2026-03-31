@@ -33,7 +33,7 @@ function parseArgs(argv) {
     if (m) named[m[1]] = m[2];
   }
 
-  const required = ['layout', 'branding', 'source-dir', 'target-dir'];
+  const required = ['layout', 'source-dir', 'target-dir'];
   const missing = required.filter((k) => !named[k]);
   if (missing.length > 0) {
     console.error(
@@ -50,7 +50,7 @@ function parseArgs(argv) {
 
   return {
     layoutPath: resolve(named['layout']),
-    brandingPath: resolve(named['branding']),
+    stylesPath: named['styles'] ? resolve(named['styles']) : null,
     sourceDir: resolve(named['source-dir']),
     targetDir: resolve(named['target-dir']),
     explicitPort: named['port'] || null,
@@ -81,15 +81,15 @@ function loadTemplate(name) {
   return readFileSync(path, 'utf-8');
 }
 
-function buildHeaderDescription(layout, branding) {
-  const colors = branding.colors || {};
+function buildHeaderDescription(layout, styles) {
+  const rows = styles?.rows || [];
   const lines = [];
 
-  for (const row of layout.rows) {
+  for (let i = 0; i < layout.rows.length; i++) {
+    const row = layout.rows[i];
     const heightStr = `~${Math.round(row.height)}px`;
     const elements = row.elements.join(', ') || 'unknown';
-    const bgKey = `${row.role}-bg`;
-    const bgColor = colors[bgKey];
+    const bgColor = rows[i]?.['background-color']?.value;
     const bgStr = bgColor ? `, ${bgColor} background` : '';
     lines.push(
       `${lines.length + 1}. **${row.role}** (${heightStr}): `
@@ -196,7 +196,9 @@ function main() {
 
   // Load extraction data
   const layout = loadJSON(args.layoutPath, 'layout.json');
-  const branding = loadJSON(args.brandingPath, 'branding.json');
+  const styles = args.stylesPath
+    ? loadJSON(args.stylesPath, 'styles.json')
+    : {};
 
   // Load snapshot.json to get URL
   const snapshotPath = join(args.sourceDir, 'snapshot.json');
@@ -208,7 +210,7 @@ function main() {
   }
 
   // Build template values
-  const headerDescription = buildHeaderDescription(layout, branding);
+  const headerDescription = buildHeaderDescription(layout, styles);
   const navItemCount = countNavItems(layout);
   const headerHeight = Math.round(layout.headerHeight || 0);
   const port = detectPort(args.targetDir, args.explicitPort);
