@@ -38,8 +38,13 @@ SKILL_HOME="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/migrate-header}"
 Scripts:
 - `node $SKILL_HOME/scripts/capture-snapshot.js <url> <output-dir> [--header-selector=header] [--overlay-recipe=path] [--browser-recipe=path]`
 - `node $SKILL_HOME/scripts/extract-layout.js <snapshot.json>` (stdout JSON)
-- `node $SKILL_HOME/scripts/extract-branding.js <snapshot.json>` (stdout JSON)
-- `node $SKILL_HOME/scripts/setup-polish-loop.js --layout=... --branding=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
+- `node $SKILL_HOME/scripts/extract-styles.js <snapshot.json> <url> [--browser-recipe=path]` (stdout JSON)
+- `node $SKILL_HOME/scripts/setup-polish-loop.js --layout=... --styles=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
+- `node $SKILL_HOME/scripts/css-query.js open <url> [--browser-recipe=path] [--session=name]`
+- `node $SKILL_HOME/scripts/css-query.js query <selector|node:N> <properties>`
+- `node $SKILL_HOME/scripts/css-query.js cascade <selector|node:N>`
+- `node $SKILL_HOME/scripts/css-query.js vars`
+- `node $SKILL_HOME/scripts/css-query.js close`
 
 Block-files: `$SKILL_HOME/block-files/header.{js,css}`
 Reference docs: `$SKILL_HOME/references/*.md`
@@ -216,41 +221,49 @@ fi
 
 ```bash
 node "$PAGE_PREP_DIR/overlay-db.js" refresh
-BUNDLE="$(node "$PAGE_PREP_DIR/overlay-db.js" bundle)"
+BUNDLE_FILE="/tmp/overlay-bundle-$$.js"
+# Wrap the bundle IIFE so initScript stores the result in a global
+node -e "
+  const fs = require('fs');
+  const { execSync } = require('child_process');
+  const bundle = execSync('node $PAGE_PREP_DIR/overlay-db.js bundle', { encoding: 'utf-8' });
+  fs.writeFileSync('$BUNDLE_FILE', 'window.__overlayReport = ' + bundle + ';');
+"
 ```
 
 **Inject via headless playwright-cli:**
 
-Open the URL, inject the page-prep detection bundle, and capture the
-detection report. playwright-cli runs headless by default.
+Open the URL with the overlay bundle as an `initScript` so it runs
+before any page JS. Build a playwright-cli config file that includes
+the bundle path and any browser-recipe settings.
 
 ```bash
-if [[ -n "$BROWSER_RECIPE" && -f "$BROWSER_RECIPE" ]]; then
-  # Write cliConfig to temp file for playwright-cli --config
-  PROBE_CONFIG="/tmp/overlay-probe-config.json"
-  node -e "
-    const fs = require('fs');
-    const r = JSON.parse(fs.readFileSync('$BROWSER_RECIPE','utf-8'));
-    fs.writeFileSync('$PROBE_CONFIG', JSON.stringify(r.cliConfig, null, 2));
-  "
-  STEALTH=$(node -e "
-    const fs = require('fs');
-    const r = JSON.parse(fs.readFileSync('$BROWSER_RECIPE','utf-8'));
-    console.log(r.stealthInitScript || '');
-  ")
+# Build playwright-cli config with initScript for the bundle
+OVERLAY_CONFIG="/tmp/overlay-detect-config-$$.json"
+node -e "
+  const fs = require('fs');
+  const config = { browser: { initScript: ['$BUNDLE_FILE'] } };
+  const recipePath = '$BROWSER_RECIPE';
+  if (recipePath && fs.existsSync(recipePath)) {
+    const recipe = JSON.parse(fs.readFileSync(recipePath, 'utf-8'));
+    const cli = recipe.cliConfig || {};
+    Object.assign(config.browser, cli.browser || {});
+    if (recipe.stealthInitScript) {
+      const stealthFile = '/tmp/overlay-stealth-$$.js';
+      fs.writeFileSync(stealthFile, recipe.stealthInitScript);
+      config.browser.initScript.unshift(stealthFile);
+    }
+  }
+  fs.writeFileSync('$OVERLAY_CONFIG', JSON.stringify(config, null, 2));
+"
 
-  # Open blank page, inject stealth, then navigate
-  playwright-cli -s=overlay-detect open --config="$PROBE_CONFIG"
-  if [[ -n "$STEALTH" ]]; then
-    playwright-cli -s=overlay-detect eval "$STEALTH"
-  fi
-  playwright-cli -s=overlay-detect goto "$URL"
-else
-  playwright-cli -s=overlay-detect open "$URL"
-fi
+playwright-cli -s=overlay-detect --config="$OVERLAY_CONFIG" open "$URL"
 
-REPORT_RAW=$(playwright-cli -s=overlay-detect eval "$BUNDLE")
+# The bundle ran via initScript on page load. Now extract the report
+# by reading the global result the bundle sets.
+REPORT_RAW=$(playwright-cli -s=overlay-detect eval "JSON.stringify(window.__overlayReport || {})")
 playwright-cli -s=overlay-detect close
+rm -f "$OVERLAY_CONFIG" "/tmp/overlay-stealth-$$.js" "$BUNDLE_FILE"
 ```
 
 **Convert detection report to overlay recipe:**
@@ -309,7 +322,7 @@ node "$SKILL_HOME/scripts/capture-snapshot.js" \
 Verify output files exist:
 
 ```bash
-for f in snapshot.json desktop.png tablet.png mobile.png; do
+for f in snapshot.json desktop.png; do
   if [[ ! -f "$PROJECT_ROOT/autoresearch/source/$f" ]]; then
     echo "ERROR: Snapshot capture failed -- missing $f"
     exit 1
@@ -322,23 +335,34 @@ If capture fails, suggest: different `--header-selector`, manual `--overlay-reci
 
 ### Stage 6: Extraction
 
-Run both extraction scripts via Bash:
+Run layout extraction (from snapshot, no browser needed):
 
 ```bash
 node "$SKILL_HOME/scripts/extract-layout.js" \
   "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
   > "$PROJECT_ROOT/autoresearch/extraction/layout.json"
+```
 
-node "$SKILL_HOME/scripts/extract-branding.js" \
+Run style extraction (opens a css-query session on the source URL):
+
+```bash
+RECIPE_FLAG=""
+if [[ -n "$BROWSER_RECIPE" ]]; then
+  RECIPE_FLAG="--browser-recipe=$BROWSER_RECIPE"
+fi
+
+node "$SKILL_HOME/scripts/extract-styles.js" \
   "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
-  > "$PROJECT_ROOT/autoresearch/extraction/branding.json"
+  "$URL" \
+  $RECIPE_FLAG \
+  > "$PROJECT_ROOT/autoresearch/extraction/styles.json"
 ```
 
 After extraction, read both JSON files and log a summary:
 
 ```
 Extracted layout: <N> rows, <height>px total header height, <N> nav items
-Extracted branding: font-family: <family>, primary-bg: <color>, primary-text: <color>
+Extracted styles: font-family: <family>, nav color: <color>, <N> custom properties
 ```
 
 If either script fails, report the error and stop.
@@ -414,7 +438,11 @@ header.js is already in place and must NOT be modified. You will:
 
 Read these files:
 - Layout: <PROJECT_ROOT>/autoresearch/extraction/layout.json
-- Branding: <PROJECT_ROOT>/autoresearch/extraction/branding.json
+- Styles: <PROJECT_ROOT>/autoresearch/extraction/styles.json
+
+styles.json contains CDP-queried CSS values with provenance (which
+rule, which file, whether inherited). Use these directly — they are
+the source of truth for all styling decisions.
 
 ## Reference Docs
 
@@ -428,21 +456,21 @@ Read ALL of these for patterns and mapping guidance:
 
 Open <PROJECT_ROOT>/blocks/header/header.css and update ONLY the CSS
 custom properties block at the top (.header.block { ... }) to match the
-extracted branding:
+source site's styles from styles.json.
 
-- --header-background: use branding.colors.main-bar-bg
-- --header-nav-gap: use branding.spacing.nav-gap
-- --header-nav-font-size: use branding.fonts.nav-size
-- --header-nav-font-weight: use branding.fonts.nav-weight
-- --header-section-padding: use branding.spacing.header-padding-x
-- Add font-family from branding.fonts.family
-- Add --header-text-color from branding.colors.text-primary
-- For multi-row headers: add section-specific background colors
-  (e.g., .header-brand { background: <brand-bar-bg> })
-- For CTA buttons: add .header-tools-inline a:last-child styles with
-  branding.colors.cta-bg, cta-text, and decorations.cta-border-radius
+**Properties to set (all from styles.json):**
+- --header-background: from styles.header["background-color"].value
+- --header-nav-gap: from styles.navSpacing.value (spatially measured)
+- --header-nav-font-size: from styles.navLinks["font-size"].value
+- --header-nav-font-weight: from styles.navLinks["font-weight"].value
+- font-family: from styles.navLinks["font-family"].value
+- --header-text-color: from styles.navLinks.color.value
+- --header-section-padding: from styles.header.padding.value
+- For multi-row headers: styles.rows[N]["background-color"].value
+- For CTA buttons: styles.cta (background-color, color, border-radius)
+- Accent/hover color: styles.navLinksHover.color.value
 
-Do NOT modify the structural CSS (layout, mobile, dropdowns, etc.).
+Do NOT modify the structural CSS (layout, dropdowns, etc.).
 
 ## Task 2: Generate nav.plain.html
 
@@ -527,11 +555,12 @@ Run the setup script to generate the polish loop infrastructure:
 ```bash
 node "$SKILL_HOME/scripts/setup-polish-loop.js" \
   "--layout=$PROJECT_ROOT/autoresearch/extraction/layout.json" \
-  "--branding=$PROJECT_ROOT/autoresearch/extraction/branding.json" \
+  "--styles=$PROJECT_ROOT/autoresearch/extraction/styles.json" \
   "--source-dir=$PROJECT_ROOT/autoresearch/source" \
   "--target-dir=$PROJECT_ROOT" \
   "--port=3000" \
-  "--max-iterations=$MAX_ITERATIONS"
+  "--max-iterations=$MAX_ITERATIONS" \
+  "--skill-home=$SKILL_HOME"
 ```
 
 Verify the generated files exist:
@@ -604,7 +633,7 @@ fi
 
 **Read results** from `$PROJECT_ROOT/results.tsv`
 and `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json`.
-Extract: composite score, desktop/tablet/mobile scores, nav completeness,
+Extract: composite score, desktop score, nav completeness,
 iteration count (kept vs reverted).
 
 **Report to user** with this format:
@@ -619,8 +648,6 @@ iteration count (kept vs reverted).
 ### Final Score
 - Composite: <score>%
 - Desktop:   <desktop>%
-- Tablet:    <tablet>%
-- Mobile:    <mobile>%
 - Nav completeness: <nav>%
 
 ### Iterations
@@ -642,7 +669,7 @@ learnings that could improve the skill for future header migrations.
 1. `$PROJECT_ROOT/results.tsv` — iteration scores and keep/revert decisions
 2. `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json` — detailed score breakdown
 3. `$PROJECT_ROOT/autoresearch/extraction/layout.json` — extracted layout structure
-4. `$PROJECT_ROOT/autoresearch/extraction/branding.json` — extracted branding values
+4. `$PROJECT_ROOT/autoresearch/extraction/styles.json` — CDP-extracted CSS values
 5. `$PROJECT_ROOT/autoresearch/overlay-recipe.json` — overlays detected
 6. Source screenshots in `$PROJECT_ROOT/autoresearch/source/` — visual reference
 7. `git log --oneline` — changes made during polish
@@ -651,10 +678,10 @@ learnings that could improve the skill for future header migrations.
 
 | Dimension | Evidence | What it reveals |
 |-----------|----------|-----------------|
-| Extraction accuracy | Compare branding.json values against final CSS custom properties in header.css | Whether extraction scripts need calibration |
+| Extraction accuracy | Compare styles.json values against final CSS custom properties in header.css | Whether extraction scripts need calibration |
 | Scaffold quality | First iteration score in results.tsv | How good the initial code generation was |
 | Convergence pattern | Score trajectory and revert rate across iterations | Whether the polish loop guidance is effective |
-| Breakpoint fidelity | Desktop vs tablet vs mobile scores in evaluation | Which viewport needs better scaffold defaults |
+| Desktop fidelity | Desktop visual score in evaluation | Whether scaffold and polish loop guidance are effective |
 | Nav completeness | Nav score in evaluation vs layout.json navItems count | Whether content mapping missed items |
 | Overlay handling | Overlay recipe contents vs capture quality | Whether overlay detection was sufficient |
 | Bot protection | probe-report.json vs firstSuccess config | Whether probe correctly identified protection and recipe worked |
@@ -669,7 +696,7 @@ this structure:
 
 ## Summary
 - Source: <URL>
-- Final composite: <score>% | Desktop: <d>% | Tablet: <t>% | Mobile: <m>%
+- Final composite: <score>% | Desktop: <d>%
 - Iterations: <kept>/<total> kept (<revert_rate>% revert rate)
 - Header type: <single-row|multi-row|mega-menu|etc.>
 

@@ -43,7 +43,7 @@ trap cleanup SIGINT SIGTERM
 
 # Initialize results file
 if [[ ! -f "${RESULTS_FILE}" ]]; then
-  printf "iteration\tcommit\tscore\tvisual_desktop\tvisual_tablet\tvisual_mobile\tnav_completeness\tstatus\tdescription\n" \
+  printf "iteration\tcommit\tscore\tvisual_desktop\tnav_completeness\tstatus\tdescription\n" \
     > "${RESULTS_FILE}"
 fi
 
@@ -85,12 +85,10 @@ run_evaluation() {
     const fields = [
       d.compositeScore||0,
       d.viewports?.desktop?.similarity||0,
-      d.viewports?.tablet?.similarity||0,
-      d.viewports?.mobile?.similarity||0,
       d.navCompleteness?.score||0,
     ];
     console.log(fields.join('|'));
-  " 2>/dev/null || echo "0|0|0|0|0"
+  " 2>/dev/null || echo "0|0|0"
 }
 
 # Main loop
@@ -152,19 +150,19 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
   # Run immutable evaluator
   log "Running evaluation..."
   eval_result=$(run_evaluation)
-  IFS='|' read -r score desktop tablet mobile nav_score <<< "${eval_result}"
+  IFS='|' read -r score desktop nav_score <<< "${eval_result}"
 
   # Compare with best — strict improvement required
   keep=$(node -e "console.log(${score} > ${BEST_SCORE} ? 'yes' : 'no')" \
     2>/dev/null || echo "no")
 
   if [[ "${keep}" == "yes" ]]; then
-    ok "IMPROVED: ${BEST_SCORE} -> ${score} (desktop=${desktop}, tablet=${tablet}, mobile=${mobile}, nav=${nav_score})"
+    ok "IMPROVED: ${BEST_SCORE} -> ${score} (desktop=${desktop}, nav=${nav_score})"
     BEST_SCORE="${score}"
     CONSECUTIVE_REVERTS=0
-    printf "%d\t%s\t%s\t%s\t%s\t%s\t%s\timproved\t%s [%s]\n" \
+    printf "%d\t%s\t%s\t%s\t%s\timproved\t%s [%s]\n" \
       "${ITERATION}" "${local_commit}" "${score}" \
-      "${desktop}" "${tablet}" "${mobile}" "${nav_score}" \
+      "${desktop}" "${nav_score}" \
       "${commit_msg}" "${changed_files}" \
       >> "${RESULTS_FILE}"
   else
@@ -175,9 +173,9 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
       2>/dev/null || true
     git -C "${PROJECT_DIR}" reset --hard "${head_before}" 2>/dev/null || true
     CONSECUTIVE_REVERTS=$((CONSECUTIVE_REVERTS + 1))
-    printf "%d\t%s\t%s\t%s\t%s\t%s\t%s\treverted\t%s [%s]\n" \
+    printf "%d\t%s\t%s\t%s\t%s\treverted\t%s [%s]\n" \
       "${ITERATION}" "${local_commit}" "${score}" \
-      "${desktop}" "${tablet}" "${mobile}" "${nav_score}" \
+      "${desktop}" "${nav_score}" \
       "${commit_msg}" "${changed_files}" \
       >> "${RESULTS_FILE}"
 

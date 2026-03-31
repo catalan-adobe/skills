@@ -46,7 +46,7 @@ If results.tsv shows repeated reverts for similar approaches (e.g., multiple "he
 ## How the Evaluator Scores You
 
 After you exit, an immutable evaluator runs. It produces a composite score (0-100):
-- **70% weight**: Visual similarity via pixelmatch (desktop 60%, tablet 20%, mobile 20%)
+- **70% weight**: Visual similarity via pixelmatch (desktop only)
 - **30% weight**: Nav completeness (are all {{NAV_ITEM_COUNT}} source nav items present in the rendered HTML?)
 
 **Important**: The evaluator pads images to equal dimensions before comparing. If your rendered header is shorter than the source, the missing rows count as full-row pixel mismatches. **Matching the source header height (~{{HEADER_HEIGHT}}px) is essential for a good visual score.**
@@ -56,9 +56,50 @@ The outer loop keeps your changes if the score improves, reverts if it doesn't.
 ## Source Reference
 
 - `autoresearch/source/desktop.png` — Screenshot of source header at 1440px
-- `autoresearch/source/tablet.png` — Screenshot at 768px
-- `autoresearch/source/mobile.png` — Screenshot at 375px
 - `autoresearch/source/nav-structure.json` — Extracted nav items ({{NAV_ITEM_COUNT}} items)
+
+## CSS Query Tool
+
+You have access to an on-demand CSS inspector that queries the source
+page's actual stylesheets via Chrome DevTools Protocol. Use it to get
+exact property values instead of guessing.
+
+### How to Use
+
+```bash
+# Open session on source URL (do this once at start of iteration)
+node "{{SKILL_HOME}}/scripts/css-query.js" open "{{URL}}" --session=css-src
+
+# Query specific properties for an element
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav > a:first-child" font-size,color,font-weight --session=css-src
+
+# Get all matched CSS rules for an element (full cascade)
+node "{{SKILL_HOME}}/scripts/css-query.js" cascade ".header-brand" --session=css-src
+
+# List CSS custom properties defined in the source
+node "{{SKILL_HOME}}/scripts/css-query.js" vars --session=css-src
+
+# Close when done (before committing)
+node "{{SKILL_HOME}}/scripts/css-query.js" close --session=css-src
+```
+
+### When to Use
+
+- When the diff image shows a color mismatch: query the source element's
+  `background-color` or `color` to get the exact hex value
+- When font rendering differs: query `font-family`, `font-size`, `font-weight`
+  to see the authored font stack
+- When spacing is off: query `padding`, `margin`, `gap` values
+- When you need the source's CSS custom properties to map to EDS properties
+
+### Output
+
+Each query returns JSON with the value, which CSS rule set it, the source
+file, and whether it's inherited:
+
+```json
+{"font-size": {"value": "14px", "source": "author", "selector": ".nav-link", "file": "styles.css", "inherited": false}}
+```
 
 ## Available Icons
 
@@ -87,24 +128,46 @@ You may restructure the JS and CSS completely. The only contract is:
 
 ## Strategy
 
+**At the start of every iteration**, open a CSS query session on the
+source URL if not already open:
+```bash
+node "{{SKILL_HOME}}/scripts/css-query.js" open "{{URL}}" --session=css-src
+```
+Use it to get exact values before making changes. Close before committing.
+
 ### Phase 1: Structure (score < 30)
 Get all navigation items rendering in the DOM. Restructure nav.plain.html and header.js to display all rows described in the goal.
 
 ### Phase 2: Dimensions (score 30-50)
-Match the source header height (~{{HEADER_HEIGHT}}px desktop). Set correct row heights for each bar. Override the EDS default --nav-height: 64px. The evaluator pads to equal dimensions, so height mismatches count as full-row pixel mismatches.
+Match the source header height (~{{HEADER_HEIGHT}}px desktop). Query the source to get exact heights:
+```bash
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav" height,padding-top,padding-bottom --session=css-src
+```
+Set correct row heights for each bar. Override the EDS default --nav-height: 64px.
 
 ### Phase 3: Colors and layout (score 50-70)
-Match background colors for each row. Match the horizontal layout: logo placement, element alignment, spacing. Add any decorative elements (borders, gradients, separators).
+Query the source for exact colors — don't guess from the screenshot:
+```bash
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav" background-color --session=css-src
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav a" color --session=css-src
+```
+Match the horizontal layout: logo placement, element alignment, spacing.
+Query gap, padding, margin values for precise spacing.
 
 ### Phase 4: Visual polish (score > 70)
-Typography (font families, sizes, weights), exact spacing, icon styling, CTA button styling, search bar or input styling, hover states.
+Query specific properties for pixel-accurate matching:
+```bash
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav a" font-size,font-weight,letter-spacing,text-transform --session=css-src
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav .logo, nav [class*=brand]" width,height --session=css-src
+```
+Use the diff image to identify mismatch areas, then query those
+specific source elements to find the exact target values.
 
 ### If stuck (3+ reverts in a row on similar approaches)
-Try a fundamentally different approach:
-- Completely rewrite header.js with a different DOM structure
-- Change the nav.plain.html section model
-- Look at the diff image to find the largest red areas and target those specifically
-- Read the source screenshot to re-examine what you're trying to match
+- Use `css-query.js cascade` to see ALL CSS rules affecting the problem element
+- Look at the diff image to find the largest red areas
+- Query the exact source values for that area and compare against your CSS
+- Try a fundamentally different DOM structure if CSS adjustments plateau
 
 ## NEVER STOP
 

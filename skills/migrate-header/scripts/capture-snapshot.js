@@ -18,20 +18,12 @@ const EXEC_OPTS = {
   maxBuffer: 10 * 1024 * 1024,
 };
 
-const STYLE_PROPS = [
-  'backgroundColor', 'color', 'fontSize', 'fontFamily', 'fontWeight',
-  'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-  'margin', 'display', 'position', 'gap', 'borderRadius', 'background',
-  'height', 'width', 'maxWidth', 'justifyContent', 'alignItems',
-  'flexDirection', 'gridTemplateColumns', 'textDecoration', 'lineHeight',
-  'letterSpacing', 'border', 'borderBottom', 'boxShadow', 'opacity',
-  'overflow', 'zIndex',
-];
+// Minimal computed styles kept for extract-layout.js row classification.
+// Full CSS extraction is handled by extract-styles.js via CDP.
+const STYLE_PROPS = ['backgroundColor', 'borderRadius'];
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
-  { name: 'tablet', width: 768, height: 1024 },
-  { name: 'mobile', width: 375, height: 812 },
 ];
 
 function log(msg) {
@@ -79,7 +71,7 @@ export function parseArgs(argv) {
 
 export function buildRecipeArgs(recipePath) {
   if (!recipePath) {
-    return { extraArgs: [], stealthScript: null, configPath: null };
+    return { extraArgs: [], configPath: null, tempFiles: [] };
   }
 
   let recipe;
@@ -91,22 +83,35 @@ export function buildRecipeArgs(recipePath) {
     );
     process.exit(1);
   }
+
+  const tempFiles = [];
+  const config = { ...recipe.cliConfig };
+
+  // Write stealth script to a temp file and add as initScript
+  if (recipe.stealthInitScript) {
+    const stealthPath = join(
+      tmpdir(),
+      `header-capture-stealth-${Date.now()}.js`
+    );
+    writeFileSync(stealthPath, recipe.stealthInitScript);
+    tempFiles.push(stealthPath);
+    if (!config.browser) config.browser = {};
+    config.browser.initScript = [stealthPath];
+  }
+
   const configPath = join(
     tmpdir(),
     `header-capture-config-${Date.now()}.json`
   );
-  writeFileSync(configPath, JSON.stringify(recipe.cliConfig, null, 2));
+  writeFileSync(configPath, JSON.stringify(config, null, 2));
+  tempFiles.push(configPath);
 
   const extraArgs = [`--config=${configPath}`];
   if (recipe.persistent) {
     extraArgs.push('--persistent');
   }
 
-  return {
-    extraArgs,
-    stealthScript: recipe.stealthInitScript || null,
-    configPath,
-  };
+  return { extraArgs, configPath, tempFiles };
 }
 
 function cli(...args) {
@@ -148,10 +153,6 @@ function verifyInstalled() {
 function openPage(url, recipeArgs) {
   log(`Opening ${url}...`);
   cli('open', url, ...recipeArgs.extraArgs);
-  if (recipeArgs.stealthScript) {
-    log('  Injecting stealth script...');
-    cliEval(recipeArgs.stealthScript);
-  }
 }
 
 function waitForStable() {
@@ -187,6 +188,7 @@ function captureHeaderDOM(headerSelector) {
   var header = document.querySelector('${selectorEscaped}');
   if (!header) return JSON.stringify(null);
 
+  var nextNodeId = 0;
   function traverse(node, depth) {
     if (depth > 10) return null;
     if (node.nodeType !== Node.ELEMENT_NODE) return null;
@@ -227,6 +229,7 @@ function captureHeaderDOM(headerSelector) {
     if (dataSrc) attrs['data-src'] = dataSrc;
 
     var obj = {
+      nodeId: nextNodeId++,
       tag: tag,
       id: node.id || '',
       classes: Array.from(node.classList),
@@ -444,8 +447,8 @@ function main() {
     log(`Wrote snapshot to ${snapshotPath}`);
   } finally {
     closeSession();
-    if (recipeArgs.configPath) {
-      try { unlinkSync(recipeArgs.configPath); } catch { /* temp */ }
+    for (const f of recipeArgs.tempFiles) {
+      try { unlinkSync(f); } catch { /* temp file cleanup */ }
     }
   }
 }

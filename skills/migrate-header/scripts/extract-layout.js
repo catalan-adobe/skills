@@ -314,28 +314,49 @@ function hasNavLinkList(n, tag) {
 }
 
 function classifyNavItems(rawItems, rows) {
-  const level1 = rawItems.filter((n) => n.level === 1);
+  // Deduplicate level-1 items by normalized text
   const seen = new Map();
-  const unique = [];
-  for (const item of level1) {
+  const uniqueL1 = [];
+  for (const item of rawItems.filter((n) => n.level === 1)) {
     const text = cleanNavText(item.text);
     if (!text) continue;
     const key = normalizeForDedup(text);
     if (seen.has(key)) {
-      const existingIdx = seen.get(key);
-      if (text.length > unique[existingIdx].text.length) {
-        unique[existingIdx] = { ...item, text };
+      const idx = seen.get(key);
+      if (text.length > uniqueL1[idx].text.length) {
+        uniqueL1[idx] = { ...item, text };
       }
       continue;
     }
-    seen.set(key, unique.length);
-    unique.push({ ...item, text });
+    seen.set(key, uniqueL1.length);
+    uniqueL1.push({ ...item, text });
   }
 
+  // Build tree: attach level-2/3 items as children of their parent
+  const childItems = rawItems.filter((n) => n.level > 1);
+  const parentMap = new Map();
+  for (const item of uniqueL1) {
+    parentMap.set(normalizeForDedup(item.text), []);
+  }
+  for (const child of childItems) {
+    const text = cleanNavText(child.text);
+    if (!text) continue;
+    const parentKey = child.parent
+      ? normalizeForDedup(cleanNavText(child.parent))
+      : null;
+    if (parentKey && parentMap.has(parentKey)) {
+      parentMap.get(parentKey).push({
+        text,
+        href: child.href || '#',
+      });
+    }
+  }
+
+  // Filter out CTA/utility items
   const ctaPattern =
     /^(shop|buy|book|sign up|log in|login|open app|explore|get started|try|download|docs)\b/i;
   const utilityPattern = /^(find a |find |explore more)/i;
-  const filtered = unique.filter(
+  const filtered = uniqueL1.filter(
     (item) =>
       !ctaPattern.test(item.text) &&
       !utilityPattern.test(item.text) &&
@@ -343,11 +364,11 @@ function classifyNavItems(rawItems, rows) {
       item.href !== '#',
   );
 
+  // Classify into primary vs secondary
   const hasBrandBar = rows.some((r) => r.role === 'brand-bar');
   const navBarHasHelpLink = rows.some(
     (r) => r.role === 'nav-bar' && r.elements.includes('help-link'),
   );
-
   const secondaryPattern =
     /^(our company|about|investors|careers|contact|press|media|legal|privacy)/i;
   const helpPattern = /help|support/i;
@@ -356,12 +377,20 @@ function classifyNavItems(rawItems, rows) {
   const primary = [];
 
   for (const item of filtered) {
+    const entry = {
+      text: item.text,
+      href: item.href || '#',
+    };
+    const children = parentMap.get(normalizeForDedup(item.text));
+    if (children && children.length > 0) {
+      entry.children = children;
+    }
     if (hasBrandBar && secondaryPattern.test(item.text)) {
-      secondary.push(item.text);
+      secondary.push(entry);
     } else if (navBarHasHelpLink && helpPattern.test(item.text)) {
-      secondary.push(item.text);
+      secondary.push(entry);
     } else {
-      primary.push(item.text);
+      primary.push(entry);
     }
   }
 
