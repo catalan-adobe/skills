@@ -22,8 +22,8 @@ to converge on pixel-accurate fidelity.
 ## Pipeline Overview
 
 ```
-URL --> PARSE --> VALIDATE --> PROBE --> PREPARE --> OVERLAY --> SNAPSHOT --> EXTRACT --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
-        (args)    (EDS?)      (CDN)    (mkdir)      (LLM)     (pw-cli)   (scripts)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
+URL --> PARSE --> VALIDATE --> PROBE --> PREPARE --> OVERLAY --> SNAPSHOT --> EXTRACT --> ICONS --> FONTS --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
+        (args)    (EDS?)      (CDN)    (mkdir)      (LLM)     (pw-cli)   (scripts)   (collect) (brand)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
 ```
 
 ## Scripts
@@ -388,10 +388,10 @@ else
   if [[ -n "$BROWSER_RECIPE" ]]; then
     RECIPE_ARGS="--browser-recipe $BROWSER_RECIPE"
   fi
-  node "$PAGE_COLLECT" icons "$SOURCE_URL" --output "$ICON_OUTPUT" $RECIPE_ARGS
+  node "$PAGE_COLLECT" icons "$URL" --output "$ICON_OUTPUT" $RECIPE_ARGS
 
   if [[ -f "$ICON_OUTPUT/icons.json" ]]; then
-    ICON_COUNT=$(node -e "import {readFileSync} from 'fs'; const d=JSON.parse(readFileSync('$ICON_OUTPUT/icons.json','utf-8')); console.log(d.icons.length)")
+    ICON_COUNT=$(node --input-type=module -e "import {readFileSync} from 'fs'; const d=JSON.parse(readFileSync('$ICON_OUTPUT/icons.json','utf-8')); console.log(d.icons.length)")
     echo "Extracted $ICON_COUNT icons to $ICON_OUTPUT/"
   else
     echo "WARNING: Icon extraction produced no output."
@@ -402,6 +402,96 @@ fi
 If icon extraction succeeds, the scaffold stage will use the output.
 If it fails or page-collect is not installed, the migration continues
 without pre-extracted icons (the polish loop handles icons manually).
+
+### Stage 6c: Brand Font Detection & Installation
+
+Detect fonts used on the source page and install them in the EDS
+project so the AEM dev server renders correct fonts from iteration 1.
+
+**Locate brand-setup scripts** (sibling skill):
+
+```bash
+if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
+  BRAND_DIR="$(dirname "$CLAUDE_SKILL_DIR")/brand-setup/scripts"
+else
+  BRAND_DIR="$(dirname "$(find ~/.claude \
+    -path "*/brand-setup/scripts/font-detect.js" \
+    -type f 2>/dev/null | head -1)" 2>/dev/null)"
+fi
+```
+
+If brand-setup scripts are not found, skip this stage:
+
+```bash
+if [[ -z "$BRAND_DIR" || ! -f "$BRAND_DIR/font-detect.js" ]]; then
+  echo "Warning: brand-setup skill not found. Skipping font installation."
+  echo "Install: sync brand-setup skill to ~/.claude/skills/"
+fi
+```
+
+**Step 1 — Open a css-query session** (reuse the extract-styles session
+or open a new one):
+
+```bash
+node "$SKILL_HOME/scripts/css-query.js" open "$URL" \
+  --session=brand-fonts $RECIPE_FLAG
+```
+
+**Step 2 — Detect fonts:**
+
+```bash
+node "$BRAND_DIR/font-detect.js" --session=brand-fonts \
+  --output="$PROJECT_ROOT/autoresearch/extraction/fonts-detected.json"
+```
+
+**Step 3 — Install fonts in head.html:**
+
+```bash
+FONT_KIT_FLAG=""
+DETECTED="$PROJECT_ROOT/autoresearch/extraction/fonts-detected.json"
+if [[ -f "$DETECTED" ]]; then
+  # Use the Typekit kit detected from the source page
+  KIT_ID=$(node --input-type=module -e "import {readFileSync} from 'fs'; \
+    const d=JSON.parse(readFileSync('$DETECTED','utf-8')); \
+    console.log(d.sources?.typekit?.kitId || 'cwm0xxe')")
+  node "$BRAND_DIR/font-install.js" \
+    --detected="$DETECTED" \
+    --kit="$KIT_ID" \
+    --head-html="$PROJECT_ROOT/head.html"
+fi
+```
+
+**Step 4 — Close session:**
+
+```bash
+node "$SKILL_HOME/scripts/css-query.js" close --session=brand-fonts
+```
+
+**Step 5 — Commit font installation:**
+
+Font links in `head.html` must be committed before the scaffold
+subagent runs, otherwise a `git checkout .` or revert in the polish
+loop silently discards them.
+
+```bash
+cd "$PROJECT_ROOT"
+git add head.html
+git diff --cached --quiet head.html 2>/dev/null || \
+  git commit -m "scaffold: install brand fonts in head.html"
+```
+
+This is a no-op if `head.html` wasn't changed (no fonts to install).
+
+After this stage:
+- `head.html` has Typekit or Google Fonts `<link>` tags (committed)
+- The AEM dev server renders pages with correct fonts
+- The scaffold subagent's CSS `font-family` values match rendered fonts
+- The polish loop's pixelmatch comparison is font-accurate from
+  iteration 1 — and reverts can't drop the font links
+
+If font detection or installation fails, the migration continues
+without installed fonts — the polish loop can still converge, just
+with more iterations spent on font-related differences.
 
 ### Stage 7: Scaffold Generation
 
@@ -439,10 +529,16 @@ header.js is already in place and must NOT be modified. You will:
 Read these files:
 - Layout: <PROJECT_ROOT>/autoresearch/extraction/layout.json
 - Styles: <PROJECT_ROOT>/autoresearch/extraction/styles.json
+- Fonts (if exists): <PROJECT_ROOT>/autoresearch/extraction/fonts-detected.json
 
 styles.json contains CDP-queried CSS values with provenance (which
 rule, which file, whether inherited). Use these directly — they are
 the source of truth for all styling decisions.
+
+If fonts-detected.json exists, use its `fonts.heading.stack` and
+`fonts.body.stack` values for `font-family` in header.css. These
+are the actual rendered fonts detected from the source page, and
+the corresponding font files are already installed in head.html.
 
 ## Reference Docs
 

@@ -86,7 +86,7 @@ function runCDP(session, code) {
 }
 
 function buildRecipeConfig(browserRecipe) {
-  if (!browserRecipe) return [];
+  if (!browserRecipe) return { extraArgs: [], tempFiles: [] };
   let recipe;
   try {
     recipe = JSON.parse(readFileSync(browserRecipe, 'utf-8'));

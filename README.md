@@ -253,6 +253,19 @@ similar WAF/CDN blocks.
 
 See [SKILL.md](skills/browser-probe/SKILL.md) for details.
 
+### brand-setup
+
+Extract brand identity (fonts, colors, typography, spacing, favicons) from
+any URL and optionally configure an AEM Edge Delivery Services project with
+the extracted brand. Resolves font delivery through a cascade: source
+Typekit/Google Fonts, fallback Typekit kit, Google Fonts lookup, or system
+fallback. Produces a structured `brand.json` for downstream consumption by
+migrate-header and other migration skills.
+
+**Dependencies:** Node 22+, playwright-cli, css-query.js (from migrate-header)
+
+See [SKILL.md](skills/brand-setup/SKILL.md) for details.
+
 ## License
 
 MIT
