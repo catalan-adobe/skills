@@ -81,3 +81,4 @@ All skills lint clean. All published to tessl registry. Run `tessl skill lint sk
 | `domain-mask` | Mask URLs behind custom domains for screencasts and demos |
 | `page-collect` | Extract structured resources (icons, metadata, text, forms, videos, socials) from any webpage |
 | `browser-probe` | Detect CDN bot protection and produce browser recipes for playwright-cli |
+| `brand-setup` | Extract brand identity from a URL and configure EDS projects |

@@ -41,7 +41,7 @@ function parseArgs(argv) {
     );
     console.error(
       'Usage: node setup-polish-loop.js'
-      + ' --layout=<path> --branding=<path>'
+      + ' --layout=<path> --styles=<path>'
       + ' --source-dir=<path> --target-dir=<path>'
       + ' [--port=3000] [--max-iterations=30]'
     );

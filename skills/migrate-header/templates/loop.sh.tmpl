@@ -123,7 +123,7 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
   if [[ "${head_before}" == "${head_after}" ]] \
     && [[ "${has_uncommitted}" == "false" ]]; then
     warn "No changes detected, skipping evaluation"
-    printf "%d\t-\t%s\t-\t-\t-\t-\tno_changes\tAgent made no modifications\n" \
+    printf "%d\t-\t%s\t-\t-\tno_changes\tAgent made no modifications\n" \
       "${ITERATION}" "${BEST_SCORE}" >> "${RESULTS_FILE}"
     CONSECUTIVE_REVERTS=$((CONSECUTIVE_REVERTS + 1))
     if [[ ${CONSECUTIVE_REVERTS} -ge ${MAX_CONSECUTIVE_REVERTS} ]]; then

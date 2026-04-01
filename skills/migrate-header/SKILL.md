@@ -22,8 +22,8 @@ to converge on pixel-accurate fidelity.
 ## Pipeline Overview
 
 ```
-URL --> PARSE --> VALIDATE --> PROBE --> PREPARE --> OVERLAY --> SNAPSHOT --> EXTRACT --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
-        (args)    (EDS?)      (CDN)    (mkdir)      (LLM)     (pw-cli)   (scripts)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
+URL --> PARSE --> VALIDATE --> PROBE --> PREPARE --> OVERLAY --> SNAPSHOT --> EXTRACT --> ICONS --> FONTS --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
+        (args)    (EDS?)      (CDN)    (mkdir)      (LLM)     (pw-cli)   (scripts)   (collect) (brand)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
 ```
 
 ## Scripts
@@ -388,10 +388,10 @@ else
   if [[ -n "$BROWSER_RECIPE" ]]; then
     RECIPE_ARGS="--browser-recipe $BROWSER_RECIPE"
   fi
-  node "$PAGE_COLLECT" icons "$SOURCE_URL" --output "$ICON_OUTPUT" $RECIPE_ARGS
+  node "$PAGE_COLLECT" icons "$URL" --output "$ICON_OUTPUT" $RECIPE_ARGS
 
   if [[ -f "$ICON_OUTPUT/icons.json" ]]; then
-    ICON_COUNT=$(node -e "import {readFileSync} from 'fs'; const d=JSON.parse(readFileSync('$ICON_OUTPUT/icons.json','utf-8')); console.log(d.icons.length)")
+    ICON_COUNT=$(node --input-type=module -e "import {readFileSync} from 'fs'; const d=JSON.parse(readFileSync('$ICON_OUTPUT/icons.json','utf-8')); console.log(d.icons.length)")
     echo "Extracted $ICON_COUNT icons to $ICON_OUTPUT/"
   else
     echo "WARNING: Icon extraction produced no output."
@@ -402,6 +402,58 @@ fi
 If icon extraction succeeds, the scaffold stage will use the output.
 If it fails or page-collect is not installed, the migration continues
 without pre-extracted icons (the polish loop handles icons manually).
+
+### Stage 6c: Brand Font Detection & Installation
+
+Detect fonts used on the source page and install them in the EDS
+project so the AEM dev server renders correct fonts from iteration 1.
+
+**Invoke the brand-setup skill** with `--only=fonts` to detect and
+install fonts without running the full brand extraction:
+
+```
+/brand-setup $URL --only=fonts --session=brand-fonts \
+  --browser-recipe=$BROWSER_RECIPE
+```
+
+The brand-setup skill will:
+1. Open a browser session on the source URL
+2. Detect fonts via 4 browser API layers (document.fonts, CSS import
+   rules, Performance API, computed style voting)
+3. Resolve each font through the cascade (system → Typekit kit →
+   Adobe Fonts add-to-kit → Google Fonts → not-found)
+4. Update `head.html` with font `<link>` tags
+5. Close the session
+
+After brand-setup completes, copy `fonts-detected.json` to the
+extraction directory for the scaffold subagent:
+
+```bash
+if [[ -f "$PROJECT_ROOT/fonts-detected.json" ]]; then
+  cp "$PROJECT_ROOT/fonts-detected.json" \
+    "$PROJECT_ROOT/autoresearch/extraction/fonts-detected.json"
+fi
+```
+
+**Commit font installation** so font links survive polish loop reverts:
+
+```bash
+cd "$PROJECT_ROOT"
+git add head.html
+git diff --cached --quiet head.html 2>/dev/null || \
+  git commit -m "scaffold: install brand fonts in head.html"
+```
+
+After this stage:
+- `head.html` has Typekit or Google Fonts `<link>` tags (committed)
+- `fonts-detected.json` available for the scaffold subagent
+- The AEM dev server renders pages with correct fonts
+- The polish loop's pixelmatch comparison is font-accurate from
+  iteration 1 — and reverts can't drop the font links
+
+If brand-setup is not installed or fails, the migration continues
+without installed fonts — the polish loop can still converge, just
+with more iterations spent on font-related differences.
 
 ### Stage 7: Scaffold Generation
 
@@ -439,10 +491,16 @@ header.js is already in place and must NOT be modified. You will:
 Read these files:
 - Layout: <PROJECT_ROOT>/autoresearch/extraction/layout.json
 - Styles: <PROJECT_ROOT>/autoresearch/extraction/styles.json
+- Fonts (if exists): <PROJECT_ROOT>/autoresearch/extraction/fonts-detected.json
 
 styles.json contains CDP-queried CSS values with provenance (which
 rule, which file, whether inherited). Use these directly — they are
 the source of truth for all styling decisions.
+
+If fonts-detected.json exists, use its `fonts.heading.stack` and
+`fonts.body.stack` values for `font-family` in header.css. These
+are the actual rendered fonts detected from the source page, and
+the corresponding font files are already installed in head.html.
 
 ## Reference Docs
 
