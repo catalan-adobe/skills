@@ -408,70 +408,34 @@ without pre-extracted icons (the polish loop handles icons manually).
 Detect fonts used on the source page and install them in the EDS
 project so the AEM dev server renders correct fonts from iteration 1.
 
-**Locate brand-setup scripts** (sibling skill):
+**Invoke the brand-setup skill** with `--only=fonts` to detect and
+install fonts without running the full brand extraction:
+
+```
+/brand-setup $URL --only=fonts --session=brand-fonts \
+  --browser-recipe=$BROWSER_RECIPE
+```
+
+The brand-setup skill will:
+1. Open a browser session on the source URL
+2. Detect fonts via 4 browser API layers (document.fonts, CSS import
+   rules, Performance API, computed style voting)
+3. Resolve each font through the cascade (system → Typekit kit →
+   Adobe Fonts add-to-kit → Google Fonts → not-found)
+4. Update `head.html` with font `<link>` tags
+5. Close the session
+
+After brand-setup completes, copy `fonts-detected.json` to the
+extraction directory for the scaffold subagent:
 
 ```bash
-if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
-  BRAND_DIR="$(dirname "$CLAUDE_SKILL_DIR")/brand-setup/scripts"
-else
-  BRAND_DIR="$(dirname "$(find ~/.claude \
-    -path "*/brand-setup/scripts/font-detect.js" \
-    -type f 2>/dev/null | head -1)" 2>/dev/null)"
+if [[ -f "$PROJECT_ROOT/fonts-detected.json" ]]; then
+  cp "$PROJECT_ROOT/fonts-detected.json" \
+    "$PROJECT_ROOT/autoresearch/extraction/fonts-detected.json"
 fi
 ```
 
-If brand-setup scripts are not found, skip this stage:
-
-```bash
-if [[ -z "$BRAND_DIR" || ! -f "$BRAND_DIR/font-detect.js" ]]; then
-  echo "Warning: brand-setup skill not found. Skipping font installation."
-  echo "Install: sync brand-setup skill to ~/.claude/skills/"
-fi
-```
-
-**Step 1 — Open a css-query session** (reuse the extract-styles session
-or open a new one):
-
-```bash
-node "$SKILL_HOME/scripts/css-query.js" open "$URL" \
-  --session=brand-fonts $RECIPE_FLAG
-```
-
-**Step 2 — Detect fonts:**
-
-```bash
-node "$BRAND_DIR/font-detect.js" --session=brand-fonts \
-  --output="$PROJECT_ROOT/autoresearch/extraction/fonts-detected.json"
-```
-
-**Step 3 — Install fonts in head.html:**
-
-```bash
-FONT_KIT_FLAG=""
-DETECTED="$PROJECT_ROOT/autoresearch/extraction/fonts-detected.json"
-if [[ -f "$DETECTED" ]]; then
-  # Use the Typekit kit detected from the source page
-  KIT_ID=$(node --input-type=module -e "import {readFileSync} from 'fs'; \
-    const d=JSON.parse(readFileSync('$DETECTED','utf-8')); \
-    console.log(d.sources?.typekit?.kitId || 'cwm0xxe')")
-  node "$BRAND_DIR/font-install.js" \
-    --detected="$DETECTED" \
-    --kit="$KIT_ID" \
-    --head-html="$PROJECT_ROOT/head.html"
-fi
-```
-
-**Step 4 — Close session:**
-
-```bash
-node "$SKILL_HOME/scripts/css-query.js" close --session=brand-fonts
-```
-
-**Step 5 — Commit font installation:**
-
-Font links in `head.html` must be committed before the scaffold
-subagent runs, otherwise a `git checkout .` or revert in the polish
-loop silently discards them.
+**Commit font installation** so font links survive polish loop reverts:
 
 ```bash
 cd "$PROJECT_ROOT"
@@ -480,16 +444,14 @@ git diff --cached --quiet head.html 2>/dev/null || \
   git commit -m "scaffold: install brand fonts in head.html"
 ```
 
-This is a no-op if `head.html` wasn't changed (no fonts to install).
-
 After this stage:
 - `head.html` has Typekit or Google Fonts `<link>` tags (committed)
+- `fonts-detected.json` available for the scaffold subagent
 - The AEM dev server renders pages with correct fonts
-- The scaffold subagent's CSS `font-family` values match rendered fonts
 - The polish loop's pixelmatch comparison is font-accurate from
   iteration 1 — and reverts can't drop the font links
 
-If font detection or installation fails, the migration continues
+If brand-setup is not installed or fails, the migration continues
 without installed fonts — the polish loop can still converge, just
 with more iterations spent on font-related differences.
 
