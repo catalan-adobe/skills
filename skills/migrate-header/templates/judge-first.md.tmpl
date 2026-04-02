@@ -1,0 +1,34 @@
+You are evaluating the first iteration of a header migration by comparing screenshots.
+
+## Source Header (the target to match)
+
+Read this image: {{SOURCE_IMG}}
+
+This is the original website header we are trying to replicate in AEM Edge Delivery Services.
+
+## Current Render (iteration {{AFTER_ITERATION}})
+
+Read this image: {{AFTER_IMG}}
+
+This is the first attempt at rendering the migrated header.
+
+## Your Task
+
+Assess how closely this first render matches the Source header. Does it show structural resemblance — correct layout, element placement, and content?
+
+Consider these dimensions:
+- **Layout structure** — row arrangement, column alignment, element positioning
+- **Colors** — background colors, text colors, accent colors
+- **Typography** — font family feel, sizes, weights
+- **Spacing** — padding, gaps between elements, margins
+- **Logo** — placement, size, proportions
+- **Nav items** — arrangement, visibility, hover indicators
+
+**Respond with ONLY this JSON (no markdown fences, no other text):**
+
+{"improved": true, "confidence": "high", "diagnosis": ["first item to fix", "second item to fix"]}
+
+Rules for the JSON:
+- "improved": true if the header renders with recognizable structure, false if it is broken or empty
+- "confidence": "high", "medium", or "low"
+- "diagnosis": 3-5 specific actionable items describing what needs to change to match the Source. Be precise — reference positions (left/center/right), approximate colors, sizes, and spacing.

@@ -1,0 +1,42 @@
+You are evaluating a header migration iteration by comparing screenshots.
+
+## Source Header (the target to match)
+
+Read this image: {{SOURCE_IMG}}
+
+This is the original website header we are trying to replicate in AEM Edge Delivery Services.
+
+## Before (iteration {{BEFORE_ITERATION}})
+
+Read this image: {{BEFORE_IMG}}
+
+This is how the migrated header looked after the last successful iteration.
+
+## After (iteration {{AFTER_ITERATION}})
+
+Read this image: {{AFTER_IMG}}
+
+This is how the migrated header looks after the current iteration's changes.
+
+## Your Task
+
+Compare Before and After against the Source. Did the After iteration move closer to matching the Source header?
+
+Consider these dimensions:
+- **Layout structure** — row arrangement, column alignment, element positioning
+- **Colors** — background colors, text colors, accent colors
+- **Typography** — font family feel, sizes, weights
+- **Spacing** — padding, gaps between elements, margins
+- **Logo** — placement, size, proportions
+- **Nav items** — arrangement, visibility, hover indicators
+
+Ignore minor subpixel differences, antialiasing, and font rendering variations between browsers.
+
+**Respond with ONLY this JSON (no markdown fences, no other text):**
+
+{"improved": true, "confidence": "high", "diagnosis": ["first item to fix", "second item to fix"]}
+
+Rules for the JSON:
+- "improved": true if After is closer to Source than Before, false otherwise
+- "confidence": "high", "medium", or "low"
+- "diagnosis": 3-5 specific actionable items describing what After still gets wrong compared to Source. Be precise — reference positions (left/center/right), approximate colors, sizes, and spacing.
