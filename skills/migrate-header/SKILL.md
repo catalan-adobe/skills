@@ -22,8 +22,8 @@ to converge on pixel-accurate fidelity.
 ## Pipeline Overview
 
 ```
-URL --> PARSE --> VALIDATE --> PROBE --> PREPARE --> OVERLAY --> SNAPSHOT --> EXTRACT --> ICONS --> FONTS --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
-        (args)    (EDS?)      (CDN)    (mkdir)      (LLM)     (pw-cli)   (scripts)   (collect) (brand)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
+URL --> PARSE --> VALIDATE --> PROBE --> PREPARE --> VIS-TREE --> OVERLAY --> HEADER --> SNAPSHOT --> EXTRACT --> ICONS --> FONTS --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
+        (args)    (EDS?)      (CDN)    (mkdir)     (spatial)    (LLM)     (LLM)      (pw-cli)   (scripts)   (collect) (brand)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
 ```
 
 ## Scripts
@@ -81,9 +81,14 @@ Store these in shell variables for use in subsequent stages:
 ```bash
 URL="<extracted>"
 HEADER_SELECTOR="${header_selector:-header}"
+HEADER_SELECTOR_EXPLICIT="false"
 OVERLAY_RECIPE="${overlay_recipe:-}"
 MAX_ITERATIONS="${max_iterations:-30}"
 ```
+
+When `--header-selector` is found in the user's message, also set
+`HEADER_SELECTOR_EXPLICIT="true"`. Stage 6 uses this to skip
+LLM-based header detection.
 
 ### Stage 2: Validate EDS Repository
 
@@ -493,7 +498,82 @@ if [[ ! -f "$PROJECT_ROOT/autoresearch/overlay-recipe.json" ]]; then
 fi
 ```
 
-### Stage 5: Snapshot Capture
+### Stage 6: Header Element Detection
+
+If `--header-selector` was explicitly provided, use it directly and skip
+detection:
+
+```bash
+if [[ "$HEADER_SELECTOR_EXPLICIT" == "true" ]]; then
+  echo "Using explicit header selector: $HEADER_SELECTOR"
+fi
+```
+
+Otherwise, use visual-tree data to identify the header element.
+
+**If visual-tree capture succeeded** (Stage 4 produced
+`autoresearch/source/visual-tree.txt`):
+
+Present the visual-tree text format to the LLM. The LLM identifies the
+header node based on:
+- Position (near top of page, after any announcement bars)
+- Width (spans full or near-full viewport)
+- Height (relatively short — under ~200px vs hero/content sections)
+- Content (navigation text, grid layouts suggesting nav link rows)
+- ARIA roles (`[navigation]` role annotation)
+
+The LLM should exclude nodes already identified as overlays in Stage 5.
+
+After identifying the header node, extract its CSS selector from the
+nodeMap in `visual-tree.json`:
+
+```bash
+DETECTED_SELECTOR=$(node --input-type=module -e "
+  import { readFileSync } from 'fs';
+  const vt = JSON.parse(readFileSync(
+    '$PROJECT_ROOT/autoresearch/source/visual-tree.json', 'utf-8'));
+  const nodeId = '<LLM-identified node ID, e.g. rc2>';
+  console.log(vt.nodeMap[nodeId]?.selector || '');
+")
+```
+
+Save the detection result:
+
+```bash
+node --input-type=module -e "
+  import { writeFileSync } from 'fs';
+  writeFileSync('$PROJECT_ROOT/autoresearch/source/header-detection.json',
+    JSON.stringify({
+      selector: '$DETECTED_SELECTOR',
+      nodeId: '<identified node ID>',
+      bounds: { /* from visual-tree data */ }
+    }, null, 2));
+"
+```
+
+Update the header selector variable for downstream stages:
+
+```bash
+HEADER_SELECTOR="$DETECTED_SELECTOR"
+echo "Detected header element: $HEADER_SELECTOR"
+```
+
+**Close the visual-tree session** (no longer needed):
+
+```bash
+playwright-cli -s=visual-tree close
+```
+
+**If visual-tree capture failed** (no `visual-tree.txt`):
+
+Fall back to the default `header` selector (or `--header-selector` if
+it was provided). Log a warning:
+
+```bash
+echo "Warning: Visual tree not available. Using default selector: $HEADER_SELECTOR"
+```
+
+### Stage 7: Snapshot Capture
 
 Run the capture script via Bash:
 
@@ -525,7 +605,7 @@ echo "Snapshot capture complete."
 
 If capture fails, suggest: different `--header-selector`, manual `--overlay-recipe`, or retry.
 
-### Stage 6: Extraction
+### Stage 8: Extraction
 
 Run layout extraction (from snapshot, no browser needed):
 
@@ -559,7 +639,7 @@ Extracted styles: font-family: <family>, nav color: <color>, <N> custom properti
 
 If either script fails, report the error and stop.
 
-### Stage 6b: Icon Collection
+### Stage 8b: Icon Collection
 
 Extract and classify icons from the source header using page-collect:
 
@@ -595,7 +675,7 @@ If icon extraction succeeds, the scaffold stage will use the output.
 If it fails or page-collect is not installed, the migration continues
 without pre-extracted icons (the polish loop handles icons manually).
 
-### Stage 6c: Brand Font Detection & Installation
+### Stage 8c: Brand Font Detection & Installation
 
 Detect fonts used on the source page and install them in the EDS
 project so the AEM dev server renders correct fonts from iteration 1.
@@ -647,7 +727,7 @@ If brand-setup is not installed or fails, the migration continues
 without installed fonts — the polish loop can still converge, just
 with more iterations spent on font-related differences.
 
-### Stage 7: Scaffold Generation
+### Stage 9: Scaffold Generation
 
 This stage copies a battle-tested base header block and then dispatches
 a subagent to customize the CSS and generate nav.plain.html from the
@@ -798,7 +878,7 @@ done
 echo "Scaffold committed."
 ```
 
-### Stage 8: Polish Loop Setup
+### Stage 10: Polish Loop Setup
 
 Run the setup script to generate the polish loop infrastructure:
 
@@ -826,7 +906,7 @@ chmod +x "$PROJECT_ROOT/loop.sh"
 echo "Polish loop infrastructure ready."
 ```
 
-### Stage 9: Dev Server + Polish Loop
+### Stage 11: Dev Server + Polish Loop
 
 Start the AEM dev server in the background, then launch the polish loop.
 
@@ -867,7 +947,7 @@ The loop runs autonomously. It terminates on:
 Do NOT attempt to control individual iterations. The loop handles
 scoring, commit/revert decisions, and termination.
 
-### Stage 10: Report
+### Stage 12: Report
 
 After the loop finishes, clean up and report results.
 
@@ -909,7 +989,7 @@ iteration count (kept vs reverted).
 3. When satisfied, commit and open a PR
 ```
 
-### Stage 11: Retrospective
+### Stage 13: Retrospective
 
 After reporting results, analyze the full migration run to extract
 learnings that could improve the skill for future header migrations.
@@ -981,7 +1061,7 @@ this structure:
 - <suggestion>
 ```
 
-**Report to user** after the Stage 10 results, appending:
+**Report to user** after the Stage 12 results, appending:
 
 ```
 ### Retrospective
@@ -1015,7 +1095,7 @@ If any stage fails, follow this cleanup procedure:
 Example failure report:
 
 ```
-## Header Migration Failed at Stage 5 (Snapshot Capture)
+## Header Migration Failed at Stage 7 (Snapshot Capture)
 
 **Error:** Header selector '.site-header' not found in page DOM.
 
@@ -1024,8 +1104,10 @@ Example failure report:
 - [x] Stage 2: EDS repository validated
 - [x] Stage 2b: Browser probe (no bot protection / stealth config)
 - [x] Stage 3: Working directory prepared
-- [x] Stage 4: Overlay detection (2 overlays found)
-- [ ] Stage 5: Snapshot capture -- FAILED
+- [x] Stage 4: Visual tree captured (N nodes, M overlays)
+- [x] Stage 5: Overlay detection (2 overlays dismissed)
+- [x] Stage 6: Header detected (selector: header.site-header)
+- [ ] Stage 7: Snapshot capture -- FAILED
 
 **Suggestion:** Try a different header selector:
   /migrate-header https://example.com --header-selector="nav.main-nav"
