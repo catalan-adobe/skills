@@ -348,7 +348,7 @@ OVERLAY_COUNT=$(node --input-type=module -e "
 ")
 
 if [[ "$OVERLAY_COUNT" -eq 0 ]]; then
-  echo '[]' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
+  echo '{ "selectors": [], "action": "remove" }' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
   echo "No overlays detected."
 fi
 ```
@@ -388,12 +388,19 @@ For each overlay entry, the LLM:
    ```
 5. Records the action
 
-After all overlays are handled, write the recipe:
+After all overlays are handled, write the recipe in the format
+`capture-snapshot.js` expects — an object with a `selectors` array
+containing CSS selectors for elements to remove:
 
 ```bash
-# Write overlay-recipe.json with all recorded actions
-echo '<JSON array of {action, selector} objects>' \
-  > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
+# Collect all overlay selectors that were dismissed (clicked or removed)
+# into the format capture-snapshot.js reads: { selectors: [...], action: "remove" }
+node --input-type=module -e "
+  import { writeFileSync } from 'fs';
+  const selectors = [/* all overlay CSS selectors that were dismissed */];
+  writeFileSync('$PROJECT_ROOT/autoresearch/overlay-recipe.json',
+    JSON.stringify({ selectors, action: 'remove' }, null, 2));
+"
 ```
 
 **If visual-tree capture failed** (no `overlays.json`):
