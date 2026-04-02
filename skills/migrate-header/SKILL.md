@@ -316,33 +316,98 @@ fi
 **Keep the session open** — it will be used for overlay dismissal and
 header detection. Do NOT close it here.
 
-### Stage 4: Overlay Detection
+### Stage 5: Overlay Detection and Dismissal
 
 If `--overlay-recipe` was provided, copy it into the project and skip
-to Stage 5:
+to Stage 6:
 
 ```bash
 cp "$OVERLAY_RECIPE" "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
 ```
 
-Otherwise, detect overlays using the page-prep skill's CMP database
-(300+ known consent managers) via headless playwright-cli.
+Otherwise, use visual-tree data to detect and dismiss overlays.
 
-**Locate page-prep scripts** (sibling skill):
+**If visual-tree capture succeeded** (Stage 4 produced
+`autoresearch/source/overlays.json`):
+
+Read `overlays.json`. If the array is empty, write an empty recipe and
+skip to Stage 6:
+
+```bash
+OVERLAY_COUNT=$(node --input-type=module -e "
+  import { readFileSync } from 'fs';
+  const overlays = JSON.parse(readFileSync(
+    '$PROJECT_ROOT/autoresearch/source/overlays.json', 'utf-8'));
+  console.log(overlays.length);
+")
+
+if [[ "$OVERLAY_COUNT" -eq 0 ]]; then
+  echo '[]' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
+  echo "No overlays detected."
+fi
+```
+
+If overlays were detected, present the visual-tree data to the LLM
+for dismissal. Read and present these files:
+
+1. `autoresearch/source/visual-tree.txt` — full spatial map
+2. `autoresearch/source/overlays.json` — detected overlay entries with
+   selectors, occluding lists, bounds, and text hints
+
+For each overlay entry, the LLM:
+
+1. Reviews the overlay's geometry, text, and which page sections it
+   occludes from the visual-tree data
+2. Uses the overlay's CSS selector from nodeMap to inspect its internals
+   in the live playwright-cli session (`-s=visual-tree`):
+   ```bash
+   playwright-cli -s=visual-tree eval "
+     const el = document.querySelector('${OVERLAY_SELECTOR}');
+     const buttons = [...el.querySelectorAll('button, a, [role=button]')];
+     JSON.stringify(buttons.map(b => ({
+       text: b.textContent.trim().slice(0, 50),
+       tag: b.tagName,
+     })));
+   "
+   ```
+3. Decides the dismissal action:
+   - If an accept/close button is found → `{"action": "click", "selector": "<button>"}`
+   - If no interactive dismiss is possible → `{"action": "remove", "selector": "<overlay>"}`
+4. Executes the action in the live session:
+   ```bash
+   # For click actions:
+   playwright-cli -s=visual-tree eval "document.querySelector('${BTN_SELECTOR}').click()"
+   # For remove actions:
+   playwright-cli -s=visual-tree eval "document.querySelector('${OVERLAY_SELECTOR}').remove()"
+   ```
+5. Records the action
+
+After all overlays are handled, write the recipe:
+
+```bash
+# Write overlay-recipe.json with all recorded actions
+echo '<JSON array of {action, selector} objects>' \
+  > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
+```
+
+**If visual-tree capture failed** (no `overlays.json`):
+
+Fall back to page-prep if available. Locate page-prep scripts:
 
 ```bash
 PAGE_PREP_DIR="$(dirname "$SKILL_HOME")/page-prep/scripts"
 ```
 
-If page-prep scripts are not found, write an empty recipe and skip to
-Stage 5:
+If page-prep scripts are not found, write an empty recipe:
 
 ```bash
 if [[ -z "$PAGE_PREP_DIR" || ! -f "$PAGE_PREP_DIR/overlay-db.js" ]]; then
-  echo '{ "selectors": [], "action": "remove" }' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
-  echo "Warning: page-prep scripts not found. Skipping overlay detection."
+  echo '[]' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
+  echo "Warning: No overlay detection available. Using empty recipe."
 fi
 ```
+
+If page-prep is available, run the legacy overlay detection flow.
 
 **Refresh database and generate bundle:**
 
