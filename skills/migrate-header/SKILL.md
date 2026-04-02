@@ -189,6 +189,133 @@ mkdir -p "$PROJECT_ROOT/autoresearch/extraction"
 mkdir -p "$PROJECT_ROOT/autoresearch/results"
 ```
 
+### Stage 4: Visual Tree Capture
+
+Capture a spatial hierarchy of the source page using the visual-tree
+skill's pre-built bundle. This produces a spatial map consumed by
+overlay detection (Stage 5) and header identification (Stage 6).
+
+**Locate the visual-tree bundle:**
+
+```bash
+if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
+  VT_BUNDLE="$(dirname "$CLAUDE_SKILL_DIR")/visual-tree/scripts/visual-tree-bundle.js"
+else
+  VT_BUNDLE="$(find ~/.claude \
+    -path "*/visual-tree/scripts/visual-tree-bundle.js" \
+    -type f 2>/dev/null | head -1)"
+fi
+```
+
+If the bundle is not found, log a warning and skip to Stage 7 (Snapshot
+Capture). Overlay detection falls back to page-prep if available; header
+detection falls back to `--header-selector` or `header` tag default.
+
+**Open a session, navigate, and capture:**
+
+```bash
+# Build config with browser recipe if available
+VT_CONFIG="/tmp/vt-config-$$.json"
+if [[ -n "$BROWSER_RECIPE" && -f "$BROWSER_RECIPE" ]]; then
+  cp "$BROWSER_RECIPE" "$VT_CONFIG"
+else
+  echo '{}' > "$VT_CONFIG"
+fi
+
+playwright-cli -s=visual-tree --config="$VT_CONFIG" open "$URL"
+
+# Wait for page load
+playwright-cli -s=visual-tree eval "await new Promise(r => {
+  if (document.readyState === 'complete') return r();
+  window.addEventListener('load', r);
+})"
+
+# Inject bundle and capture with minWidth=1024
+VT_RESULT=$(playwright-cli -s=visual-tree eval "(() => {
+  $(cat "$VT_BUNDLE")
+  globalThis.__visualTree = __visualTree;
+  var r = __visualTree.captureVisualTree(1024);
+  return JSON.stringify({
+    textFormat: r.textFormat,
+    data: r.data,
+    nodeMap: r.nodeMap,
+    rootBackground: r.rootBackground,
+    rootBackgroundInfo: r.rootBackgroundInfo,
+  });
+})()")
+
+rm -f "$VT_CONFIG"
+```
+
+**Parse and save artifacts:**
+
+Parse `VT_RESULT` (strip playwright-cli output markers if present)
+and save three files:
+
+```bash
+echo "$VT_RESULT" | node --input-type=module -e "
+  import { readFileSync, writeFileSync } from 'fs';
+  const raw = readFileSync('/dev/stdin', 'utf-8');
+  const idx = raw.indexOf('{');
+  const json = raw.slice(idx);
+  const result = JSON.parse(json);
+
+  const outDir = '$PROJECT_ROOT/autoresearch/source';
+
+  // Full visual-tree output
+  writeFileSync(outDir + '/visual-tree.json',
+    JSON.stringify(result, null, 2));
+
+  // Text format for LLM consumption
+  writeFileSync(outDir + '/visual-tree.txt', result.textFormat);
+
+  // Extract overlay entries from nodeMap
+  const overlays = [];
+  for (const [id, info] of Object.entries(result.nodeMap)) {
+    if (info.overlay) {
+      // Find matching node in tree for bounds and text
+      const node = findNode(result.data, id);
+      overlays.push({
+        nodeId: id,
+        selector: info.selector,
+        occluding: info.overlay.occluding,
+        bounds: node?.bounds || null,
+        text: node?.text || null,
+      });
+    }
+  }
+  writeFileSync(outDir + '/overlays.json',
+    JSON.stringify(overlays, null, 2));
+
+  function findNode(tree, targetId, currentId = 'r') {
+    if (currentId === targetId) return tree;
+    for (let i = 0; i < (tree.children || []).length; i++) {
+      const found = findNode(
+        tree.children[i], targetId, currentId + 'c' + (i + 1)
+      );
+      if (found) return found;
+    }
+    return null;
+  }
+
+  console.error('Visual tree captured:');
+  console.error('  ' + result.textFormat.split('\\n').length + ' nodes');
+  console.error('  ' + overlays.length + ' overlays detected');
+"
+```
+
+Verify the output exists:
+
+```bash
+if [[ ! -f "$PROJECT_ROOT/autoresearch/source/visual-tree.json" ]]; then
+  echo "WARNING: Visual tree capture failed. Falling back to legacy pipeline."
+  playwright-cli -s=visual-tree close 2>/dev/null
+fi
+```
+
+**Keep the session open** — it will be used for overlay dismissal and
+header detection. Do NOT close it here.
+
 ### Stage 4: Overlay Detection
 
 If `--overlay-recipe` was provided, copy it into the project and skip
