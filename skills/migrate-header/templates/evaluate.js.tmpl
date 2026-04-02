@@ -20,6 +20,7 @@ const SOURCE_DIR = join(__dirname, 'source');
 const RESULTS_DIR = join(__dirname, 'results');
 const PORT = process.argv[2] || '{{PORT}}';
 const PAGE_PATH = '{{PAGE_PATH}}';
+const ITERATION = process.argv[3] || 'latest';
 const BASE_URL = `http://localhost:${PORT}${PAGE_PATH}`;
 const SESSION = 'header-eval';
 
@@ -210,6 +211,12 @@ for (const vp of VIEWPORTS) {
 
     if (rect && rect.width > 0 && rect.height > 0) {
       cropHeaderFromScreenshot(fullPath, renderedPath, rect);
+
+      // Save per-iteration copy for judge comparison and debugging
+      const iterPath = join(RESULTS_DIR, `${vp.name}-rendered-${ITERATION}.png`);
+      if (existsSync(renderedPath)) {
+        writeFileSync(iterPath, readFileSync(renderedPath));
+      }
 
       if (vp.name === 'desktop') {
         renderedHtml = cliEval(
