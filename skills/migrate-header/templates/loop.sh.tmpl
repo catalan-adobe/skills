@@ -149,7 +149,7 @@ run_judge() {
   local judge_raw
   judge_raw=$(claude -p "$(cat "${judge_prompt_file}")" \
     --allowedTools "Read" \
-    --output-format json 2>/dev/null) || true
+    --output-format json 2>"${PROJECT_DIR}/autoresearch/results/judge-stderr.log") || true
   rm -f "${judge_prompt_file}"
 
   if [[ -z "${judge_raw}" ]]; then
@@ -158,12 +158,19 @@ run_judge() {
     return
   fi
 
-  # Parse judge output
+  # Parse judge output — unwrap --output-format json envelope first
   echo "${judge_raw}" | node --input-type=commonjs -e "
     let raw = require('fs').readFileSync('/dev/stdin', 'utf-8').trim();
     try {
-      // Handle potential markdown fences or extra text
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      // Step 1: Unwrap the --output-format json envelope if present
+      let text = raw;
+      try {
+        const envelope = JSON.parse(raw);
+        if (envelope.result) text = envelope.result;
+      } catch { /* not an envelope, use raw */ }
+
+      // Step 2: Extract the model's JSON from the text
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) { console.log('50|[]'); process.exit(0); }
       const d = JSON.parse(jsonMatch[0]);
       const score = d.improved === true ? 100 : (d.improved === false ? 0 : 50);
