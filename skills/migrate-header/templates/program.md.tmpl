@@ -58,6 +58,21 @@ The outer loop keeps your changes if the score improves, reverts if it doesn't.
 - `autoresearch/source/desktop.png` — Screenshot of source header at 1440px
 - `autoresearch/source/nav-structure.json` — Extracted nav items ({{NAV_ITEM_COUNT}} items)
 
+## Source Visual Tree
+
+Spatial hierarchy of the source page captured at 1440px viewport.
+Each line shows: `ID [role] [CxR grid] [bg:type] @x,y wxh "text..."`.
+Use this to understand the source header's spatial structure — row
+heights, column counts, and element positions.
+
+```
+{{VISUAL_TREE}}
+```
+
+The header node identified during migration is marked in the tree. Match
+your rendered header's dimensions (position, width, height) to the
+corresponding node in this tree.
+
 ## CSS Query Tool
 
 You have access to an on-demand CSS inspector that queries the source

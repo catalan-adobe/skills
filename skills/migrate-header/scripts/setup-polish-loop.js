@@ -215,6 +215,14 @@ function main() {
   const headerHeight = Math.round(layout.headerHeight || 0);
   const port = detectPort(args.targetDir, args.explicitPort);
 
+  // Read visual-tree text format if available
+  const vtPath = join(args.sourceDir, 'visual-tree.txt');
+  let visualTreeText = 'Visual tree not available for this migration.';
+  if (existsSync(vtPath)) {
+    visualTreeText = readFileSync(vtPath, 'utf-8');
+    log(`  Loaded visual-tree.txt (${visualTreeText.split('\n').length} lines)`);
+  }
+
   const replacements = {
     '{{PORT}}': port,
     '{{PAGE_PATH}}': '/',
@@ -227,6 +235,7 @@ function main() {
     '{{URL}}': sourceUrl,
     '{{ICON_GUIDANCE}}': buildIconGuidance(args.targetDir),
     '{{SKILL_HOME}}': args.skillHome,
+    '{{VISUAL_TREE}}': visualTreeText,
   };
 
   // Load templates
