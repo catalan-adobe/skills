@@ -158,21 +158,12 @@ run_judge() {
     return
   fi
 
-  # Parse judge output — unwrap --output-format json envelope first
+  # Parse judge output — unwrap --output-format json envelope, then parse model response
   echo "${judge_raw}" | node --input-type=commonjs -e "
-    let raw = require('fs').readFileSync('/dev/stdin', 'utf-8').trim();
+    const raw = require('fs').readFileSync('/dev/stdin', 'utf-8').trim();
     try {
-      // Step 1: Unwrap the --output-format json envelope if present
-      let text = raw;
-      try {
-        const envelope = JSON.parse(raw);
-        if (envelope.result) text = envelope.result;
-      } catch { /* not an envelope, use raw */ }
-
-      // Step 2: Extract the model's JSON from the text
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) { console.log('50|[]'); process.exit(0); }
-      const d = JSON.parse(jsonMatch[0]);
+      const envelope = JSON.parse(raw);
+      const d = JSON.parse(envelope.result);
       const score = d.improved === true ? 100 : (d.improved === false ? 0 : 50);
       const diagnosis = JSON.stringify(d.diagnosis || []);
       console.log(score + '|' + diagnosis);
