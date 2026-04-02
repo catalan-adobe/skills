@@ -688,6 +688,14 @@ without pre-extracted icons (the polish loop handles icons manually).
 Detect fonts used on the source page and install them in the EDS
 project so the AEM dev server renders correct fonts from iteration 1.
 
+**ALWAYS run this stage.** Do not skip it based on fonts detected in
+earlier stages. Brand-setup uses 4 browser API layers (document.fonts,
+CSS import rules, Performance API, computed style voting) which detect
+web fonts that CSS extraction alone misses — including fonts loaded via
+JavaScript, lazy-loaded fonts, and fonts served from third-party CDNs.
+Even when earlier analysis shows only system fonts, brand-setup may
+discover web fonts that override them at render time.
+
 **Invoke the brand-setup skill** with `--only=fonts` to detect and
 install fonts without running the full brand extraction:
 
