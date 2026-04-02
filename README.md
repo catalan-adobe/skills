@@ -266,6 +266,16 @@ migrate-header and other migration skills.
 
 See [SKILL.md](skills/brand-setup/SKILL.md) for details.
 
+### visual-tree
+
+Capture a spatial hierarchy of rendered DOM elements from any webpage for
+page analysis. Maps element positions, dimensions, z-ordering, and nesting
+relationships to produce a structured tree of the visible page layout.
+
+**Dependencies:** playwright-cli
+
+See [SKILL.md](skills/visual-tree/SKILL.md) for details.
+
 ## License
 
 MIT
