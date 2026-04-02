@@ -16,6 +16,8 @@ HEADER_FILES="{{HEADER_FILES}}"
 BEST_SCORE=0
 ITERATION=0
 CONSECUTIVE_REVERTS=0
+BEST_KEPT_ITERATION=0
+JUDGE_TMPL_DIR="{{SKILL_HOME}}/templates"
 
 # Colors
 RED='\033[0;31m'
@@ -43,7 +45,7 @@ trap cleanup SIGINT SIGTERM
 
 # Initialize results file
 if [[ ! -f "${RESULTS_FILE}" ]]; then
-  printf "iteration\tcommit\tscore\tvisual_desktop\tnav_completeness\tstatus\tdescription\n" \
+  printf "iteration\tcommit\tscore\tvisual_desktop\tnav_completeness\tjudge\tstatus\tdescription\n" \
     > "${RESULTS_FILE}"
 fi
 
@@ -73,7 +75,7 @@ check_server() {
 # Run evaluator and extract score fields
 run_evaluation() {
   local eval_output
-  eval_output=$(${EVALUATE} "${PORT}" 2>/dev/null) || true
+  eval_output=$(${EVALUATE} "${PORT}" "${ITERATION}" 2>/dev/null) || true
 
   if [[ -z "${eval_output}" ]]; then
     echo "0|0|0|0|0"
@@ -89,6 +91,88 @@ run_evaluation() {
     ];
     console.log(fields.join('|'));
   " 2>/dev/null || echo "0|0|0"
+}
+
+# Run LLM judge: compare source + before + after screenshots
+run_judge() {
+  local iteration=$1
+  local source_img="${PROJECT_DIR}/autoresearch/source/desktop.png"
+  local after_img="${PROJECT_DIR}/autoresearch/results/desktop-rendered-${iteration}.png"
+  local judge_prompt_file="/tmp/judge-prompt-$$.md"
+
+  if [[ ! -f "${after_img}" ]]; then
+    warn "Judge: after screenshot not found, skipping"
+    echo '50|[]'
+    return
+  fi
+
+  # Build judge prompt from template
+  if [[ ${BEST_KEPT_ITERATION} -eq 0 ]]; then
+    # First iteration: use 2-image template
+    local tmpl="${JUDGE_TMPL_DIR}/judge-first.md.tmpl"
+    if [[ ! -f "${tmpl}" ]]; then
+      warn "Judge: first-iteration template not found, skipping"
+      echo '50|[]'
+      return
+    fi
+    sed -e "s|{{SOURCE_IMG}}|${source_img}|g" \
+        -e "s|{{AFTER_IMG}}|${after_img}|g" \
+        -e "s|{{AFTER_ITERATION}}|${iteration}|g" \
+        "${tmpl}" > "${judge_prompt_file}"
+  else
+    # Subsequent iterations: use 3-image template
+    local before_img="${PROJECT_DIR}/autoresearch/results/desktop-rendered-${BEST_KEPT_ITERATION}.png"
+    local tmpl="${JUDGE_TMPL_DIR}/judge.md.tmpl"
+    if [[ ! -f "${tmpl}" ]]; then
+      warn "Judge: template not found, skipping"
+      echo '50|[]'
+      return
+    fi
+    if [[ ! -f "${before_img}" ]]; then
+      warn "Judge: before screenshot not found, using first-iteration template"
+      tmpl="${JUDGE_TMPL_DIR}/judge-first.md.tmpl"
+      sed -e "s|{{SOURCE_IMG}}|${source_img}|g" \
+          -e "s|{{AFTER_IMG}}|${after_img}|g" \
+          -e "s|{{AFTER_ITERATION}}|${iteration}|g" \
+          "${tmpl}" > "${judge_prompt_file}"
+    else
+      sed -e "s|{{SOURCE_IMG}}|${source_img}|g" \
+          -e "s|{{BEFORE_IMG}}|${before_img}|g" \
+          -e "s|{{BEFORE_ITERATION}}|${BEST_KEPT_ITERATION}|g" \
+          -e "s|{{AFTER_IMG}}|${after_img}|g" \
+          -e "s|{{AFTER_ITERATION}}|${iteration}|g" \
+          "${tmpl}" > "${judge_prompt_file}"
+    fi
+  fi
+
+  # Invoke judge
+  local judge_raw
+  judge_raw=$(claude -p "$(cat "${judge_prompt_file}")" \
+    --allowedTools "Read" \
+    --output-format json 2>/dev/null) || true
+  rm -f "${judge_prompt_file}"
+
+  if [[ -z "${judge_raw}" ]]; then
+    warn "Judge: no output, defaulting to neutral"
+    echo '50|[]'
+    return
+  fi
+
+  # Parse judge output
+  echo "${judge_raw}" | node --input-type=commonjs -e "
+    let raw = require('fs').readFileSync('/dev/stdin', 'utf-8').trim();
+    try {
+      // Handle potential markdown fences or extra text
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) { console.log('50|[]'); process.exit(0); }
+      const d = JSON.parse(jsonMatch[0]);
+      const score = d.improved === true ? 100 : (d.improved === false ? 0 : 50);
+      const diagnosis = JSON.stringify(d.diagnosis || []);
+      console.log(score + '|' + diagnosis);
+    } catch {
+      console.log('50|[]');
+    }
+  " 2>/dev/null || echo '50|[]'
 }
 
 # Main loop
@@ -123,7 +207,7 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
   if [[ "${head_before}" == "${head_after}" ]] \
     && [[ "${has_uncommitted}" == "false" ]]; then
     warn "No changes detected, skipping evaluation"
-    printf "%d\t-\t%s\t-\t-\tno_changes\tAgent made no modifications\n" \
+    printf "%d\t-\t%s\t-\t-\t-\tno_changes\tAgent made no modifications\n" \
       "${ITERATION}" "${BEST_SCORE}" >> "${RESULTS_FILE}"
     CONSECUTIVE_REVERTS=$((CONSECUTIVE_REVERTS + 1))
     if [[ ${CONSECUTIVE_REVERTS} -ge ${MAX_CONSECUTIVE_REVERTS} ]]; then
@@ -150,32 +234,49 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
   # Run immutable evaluator
   log "Running evaluation..."
   eval_result=$(run_evaluation)
-  IFS='|' read -r score desktop nav_score <<< "${eval_result}"
+  IFS='|' read -r _eval_composite desktop nav_score <<< "${eval_result}"
+
+  # Run LLM judge
+  log "Running judge comparison..."
+  judge_result=$(run_judge "${ITERATION}")
+  IFS='|' read -r judge_score judge_diagnosis <<< "${judge_result}"
+
+  # Write judge diagnosis for next iteration's polish agent
+  echo "${judge_diagnosis}" > "${PROJECT_DIR}/autoresearch/results/judge-feedback.json"
+
+  # Recompute composite: pixelmatch 55% + nav 25% + judge 20%
+  score=$(node -e "
+    const pm = ${desktop} || 0;
+    const nav = ${nav_score} || 0;
+    const judge = ${judge_score} || 50;
+    console.log(Math.round((pm * 0.55 + nav * 0.25 + judge * 0.20) * 100) / 100);
+  " 2>/dev/null || echo "0")
 
   # Compare with best — strict improvement required
   keep=$(node -e "console.log(${score} > ${BEST_SCORE} ? 'yes' : 'no')" \
     2>/dev/null || echo "no")
 
   if [[ "${keep}" == "yes" ]]; then
-    ok "IMPROVED: ${BEST_SCORE} -> ${score} (desktop=${desktop}, nav=${nav_score})"
+    ok "IMPROVED: ${BEST_SCORE} -> ${score} (desktop=${desktop}, nav=${nav_score}, judge=${judge_score})"
     BEST_SCORE="${score}"
+    BEST_KEPT_ITERATION=${ITERATION}
     CONSECUTIVE_REVERTS=0
-    printf "%d\t%s\t%s\t%s\t%s\timproved\t%s [%s]\n" \
+    printf "%d\t%s\t%s\t%s\t%s\t%s\timproved\t%s [%s]\n" \
       "${ITERATION}" "${local_commit}" "${score}" \
-      "${desktop}" "${nav_score}" \
+      "${desktop}" "${nav_score}" "${judge_score}" \
       "${commit_msg}" "${changed_files}" \
       >> "${RESULTS_FILE}"
   else
-    warn "NO IMPROVEMENT: ${score} <= ${BEST_SCORE} — reverting"
+    warn "NO IMPROVEMENT: ${score} <= ${BEST_SCORE} (judge=${judge_score}) — reverting"
     # shellcheck disable=SC2086
     git -C "${PROJECT_DIR}" diff "${head_before}" HEAD -- ${HEADER_FILES} \
       > "${PROJECT_DIR}/autoresearch/results/last-reverted.diff" \
       2>/dev/null || true
     git -C "${PROJECT_DIR}" reset --hard "${head_before}" 2>/dev/null || true
     CONSECUTIVE_REVERTS=$((CONSECUTIVE_REVERTS + 1))
-    printf "%d\t%s\t%s\t%s\t%s\treverted\t%s [%s]\n" \
+    printf "%d\t%s\t%s\t%s\t%s\t%s\treverted\t%s [%s]\n" \
       "${ITERATION}" "${local_commit}" "${score}" \
-      "${desktop}" "${nav_score}" \
+      "${desktop}" "${nav_score}" "${judge_score}" \
       "${commit_msg}" "${changed_files}" \
       >> "${RESULTS_FILE}"
 
