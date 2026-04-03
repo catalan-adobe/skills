@@ -36,7 +36,7 @@ Everything else is off-limits. In particular:
 Before making changes, ALWAYS review what has been tried:
 1. `cat results.tsv` — Full experiment log (iteration, score, status, description)
 2. `git log --oneline` — Only successful improvements are in the git log
-3. `cat autoresearch/results/latest-evaluation.json` — Last evaluation breakdown with per-viewport scores AND source/rendered heights
+3. `cat autoresearch/results/latest-evaluation.json` — Last evaluation breakdown with per-viewport scores AND source/rendered heights. Note: `compositeScore` in this file is the pixelmatch+nav score only (70/30); the authoritative score including the judge (55/25/20) is in `results.tsv`.
 4. **Read the diff images** — `autoresearch/results/desktop-diff.png` shows pixel-level mismatches in red/yellow. Read this image to see WHERE the visual differences are and target your changes accordingly.
 5. `git diff HEAD~1` (if available) — see what the last successful change actually did
 6. `cat autoresearch/results/last-reverted.diff` (if exists) — see the exact diff of the last FAILED attempt, so you don't repeat it

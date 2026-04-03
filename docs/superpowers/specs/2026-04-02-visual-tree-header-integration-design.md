@@ -43,12 +43,14 @@ loads.
 
 **Flow:**
 
-1. Open a playwright-cli session (`-s=visual-tree`)
-2. Navigate to the source URL, applying browser recipe from probe if
-   present
-3. Wait for `document.readyState === 'complete'` + network idle
-4. Inject the visual-tree bundle via `playwright-cli eval` with
-   `minWidth=1024`
+1. Build a playwright-cli config with `initScript` pointing to the
+   visual-tree bundle file (and browser recipe if present)
+2. Open a playwright-cli session (`-s=visual-tree`) with the config —
+   the bundle is injected before navigation, creating
+   `window.__visualTree`
+3. Navigate to the source URL, wait for page load
+4. Capture via pure expression eval:
+   `JSON.stringify(window.__visualTree.captureVisualTree(1024))`
 5. Parse the returned JSON
 6. Save artifacts to `autoresearch/source/`:
    - `visual-tree.json` — full output (textFormat, data, nodeMap,
@@ -65,7 +67,7 @@ loads.
 | minWidth | 1024 | Filters elements narrower than 1024px. `position: fixed` elements bypass this filter and their descendants are walked with minWidth=0 |
 | viewport | 1440x900 | Matches existing capture-snapshot.js viewport |
 
-**Failure mode:** If injection fails (page blocks eval, heavy JS errors),
+**Failure mode:** If the page fails to load or the eval returns empty,
 log a warning and fall through. Downstream stages still work:
 - Overlay detection falls back to page-prep if available
 - Header detection falls back to `--header-selector` or `header` tag

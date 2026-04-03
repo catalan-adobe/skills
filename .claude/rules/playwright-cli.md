@@ -24,13 +24,15 @@ Never serve from localhost and fetch/inject via `<script src>` — Chrome's Priv
 ```bash
 CONFIG="/tmp/pw-config-$$.json"
 echo '{"browser":{"initScript":["'"$BUNDLE_PATH"'"]}}' > "$CONFIG"
-playwright-cli --config="$CONFIG" open "$URL"
+playwright-cli open "$URL" --config="$CONFIG"
 # Bundle globals (e.g., window.__myLib) are now available
 playwright-cli eval "JSON.stringify(window.__myLib.doThing())"
 rm -f "$CONFIG"
 ```
 
 The bundle file is read from disk by playwright-cli itself — no network request, no shell quoting, no expression limitation.
+
+**Flag position:** `--config` is an option on the `open` subcommand — it goes after the URL: `playwright-cli open <url> --config=<path>`. Same for `--persistent`, `--browser`, `--headed`.
 
 ## Merging initScript with browser recipes
 

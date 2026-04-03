@@ -166,11 +166,11 @@ run_judge() {
       const d = JSON.parse(envelope.result);
       const score = d.improved === true ? 100 : (d.improved === false ? 0 : 50);
       const diagnosis = JSON.stringify(d.diagnosis || []);
-      console.log(score + '|' + diagnosis);
+      console.log(score + '\t' + diagnosis);
     } catch {
-      console.log('50|[]');
+      console.log('50\t[]');
     }
-  " 2>/dev/null || echo '50|[]'
+  " 2>/dev/null || echo '50	[]'
 }
 
 # Main loop
@@ -237,7 +237,7 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
   # Run LLM judge
   log "Running judge comparison..."
   judge_result=$(run_judge "${ITERATION}")
-  IFS='|' read -r judge_score judge_diagnosis <<< "${judge_result}"
+  IFS=$'\t' read -r judge_score judge_diagnosis <<< "${judge_result}"
 
   # Write judge diagnosis for next iteration's polish agent
   echo "${judge_diagnosis}" > "${PROJECT_DIR}/autoresearch/results/judge-feedback.json"
