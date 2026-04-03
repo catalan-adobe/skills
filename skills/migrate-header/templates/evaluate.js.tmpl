@@ -249,7 +249,7 @@ try {
 const navStructurePath = join(SOURCE_DIR, 'nav-structure.json');
 results.navCompleteness = checkNavCompleteness(navStructurePath, renderedHtml);
 
-// Composite score: 70% visual similarity (weighted) + 30% nav completeness
+// Pixelmatch + nav score (does NOT include judge — loop.sh recomputes with judge weight)
 let visualScore = 0;
 let totalWeight = 0;
 for (const [, vp] of Object.entries(results.viewports)) {
@@ -259,7 +259,7 @@ for (const [, vp] of Object.entries(results.viewports)) {
 if (totalWeight > 0) visualScore /= totalWeight;
 
 const navScore = results.navCompleteness?.score || 0;
-results.compositeScore = Math.round((visualScore * 0.7 + navScore * 0.3) * 100) / 100;
+results.pixelmatchNavScore = Math.round((visualScore * 0.7 + navScore * 0.3) * 100) / 100;
 
 // Output
 console.log(JSON.stringify(results, null, 2));

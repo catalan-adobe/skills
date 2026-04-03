@@ -229,16 +229,15 @@ before navigation, creating `window.__visualTree` at the global scope.
 VT_CONFIG="/tmp/vt-config-$$.json"
 node --input-type=module -e "
   import { readFileSync, writeFileSync, existsSync } from 'fs';
-  const config = { browser: { initScript: ['$VT_BUNDLE'] } };
+  const config = { browser: {} };
   const recipePath = '$BROWSER_RECIPE';
   if (recipePath && existsSync(recipePath)) {
     const recipe = JSON.parse(readFileSync(recipePath, 'utf-8'));
     const cli = recipe.cliConfig || {};
     Object.assign(config.browser, cli.browser || {});
-    if (config.browser.initScript) {
-      config.browser.initScript = ['$VT_BUNDLE', ...config.browser.initScript];
-    }
   }
+  // Append VT bundle after any recipe initScripts (stealth patches run first)
+  config.browser.initScript = [...(config.browser.initScript || []), '$VT_BUNDLE'];
   writeFileSync('$VT_CONFIG', JSON.stringify(config, null, 2));
 "
 
@@ -277,34 +276,19 @@ echo "$VT_RESULT" | node --input-type=module -e "
   // Text format for LLM consumption
   writeFileSync(outDir + '/visual-tree.txt', result.textFormat);
 
-  // Extract overlay entries from nodeMap
+  // Extract overlay entries from nodeMap (bounds/text available in visual-tree.txt)
   const overlays = [];
   for (const [id, info] of Object.entries(result.nodeMap)) {
     if (info.overlay) {
-      // Find matching node in tree for bounds and text
-      const node = findNode(result.data, id);
       overlays.push({
         nodeId: id,
         selector: info.selector,
         occluding: info.overlay.occluding,
-        bounds: node?.bounds || null,
-        text: node?.text || null,
       });
     }
   }
   writeFileSync(outDir + '/overlays.json',
     JSON.stringify(overlays, null, 2));
-
-  function findNode(tree, targetId, currentId = 'r') {
-    if (currentId === targetId) return tree;
-    for (let i = 0; i < (tree.children || []).length; i++) {
-      const found = findNode(
-        tree.children[i], targetId, currentId + 'c' + (i + 1)
-      );
-      if (found) return found;
-    }
-    return null;
-  }
 
   console.error('Visual tree captured:');
   console.error('  ' + result.textFormat.split('\\n').length + ' nodes');
