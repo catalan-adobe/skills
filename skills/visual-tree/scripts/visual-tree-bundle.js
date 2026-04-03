@@ -1,5 +1,5 @@
 "use strict";
-var __visualTree = (() => {
+window.__visualTree = (() => {
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;

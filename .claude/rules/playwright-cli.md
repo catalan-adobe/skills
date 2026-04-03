@@ -9,7 +9,7 @@
 - **Fails:** IIFEs with statements — `(() => { var x = 1; return x; })()` errors with "result is not a function"
 
 If you need to run multi-statement code, use one of:
-1. **`initScript`** — inject a script file before navigation via config: `{"browser":{"initScript":["path/to/script.js"]}}`. The script runs at global scope, can use `var`/`const`/`function`, and creates `window.*` globals accessible to later `eval` calls.
+1. **`initScript`** — inject a script file before navigation via config: `{"browser":{"initScript":["path/to/script.js"]}}`. **CRITICAL:** initScript runs in Playwright's isolated execution context, NOT the main world. `var` at top level does NOT propagate to `window`. You MUST use explicit `window.myGlobal = ...` to make globals visible to subsequent `eval` calls.
 2. **Comma expressions** — chain pure expressions: `(window.x = compute(), window.y = transform(window.x), JSON.stringify({x: window.x, y: window.y}))`
 3. **Two-step** — store to global in one eval, read in another: `eval "window.result = heavyComputation(), 'ok'"` then `eval "window.result.field"`
 
