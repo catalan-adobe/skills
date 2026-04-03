@@ -53,24 +53,28 @@ If the path is empty, report an error and stop.
 
 ### Step 2 — Inject and capture
 
-Run a single `playwright-cli eval` that injects the bundle and captures the
-visual tree. The bundle defines a `__visualTree` global; the wrapper IIFE
-calls `captureVisualTree` and returns the result as JSON.
+Inject the bundle via `initScript` in the playwright-cli config, then
+capture with a pure expression eval. Do NOT use inline `$(cat)` or IIFE
+wrappers — `playwright-cli eval` only accepts pure expressions (it wraps
+them as `() => (EXPR)` internally, so function bodies with statements
+fail).
 
 ```bash
 MINWIDTH=900  # or caller-specified value
-playwright-cli eval "(() => {
-  $(cat "$VT_BUNDLE")
-  globalThis.__visualTree = __visualTree;
-  var r = __visualTree.captureVisualTree($MINWIDTH);
-  return JSON.stringify({
-    textFormat: r.textFormat,
-    data: r.data,
-    nodeMap: r.nodeMap,
-    rootBackground: r.rootBackground,
-    rootBackgroundInfo: r.rootBackgroundInfo,
-  });
-})()"
+
+# Build config with initScript — injects bundle before navigation
+VT_CONFIG="/tmp/vt-config-$$.json"
+echo "{\"browser\":{\"initScript\":[\"$VT_BUNDLE\"]}}" > "$VT_CONFIG"
+
+# Open page (or use existing session) — bundle creates window.__visualTree
+playwright-cli --config="$VT_CONFIG" open "$URL"
+sleep 2
+
+# Capture — pure expression, no IIFE
+VT_RESULT=$(playwright-cli eval \
+  "JSON.stringify(window.__visualTree.captureVisualTree($MINWIDTH))")
+
+rm -f "$VT_CONFIG"
 ```
 
 Parse the returned JSON string.

@@ -217,38 +217,40 @@ If the bundle is not found, log a warning and skip to Stage 7 (Snapshot
 Capture). Overlay detection falls back to page-prep if available; header
 detection falls back to `--header-selector` or `header` tag default.
 
-**Open a session, navigate, and capture:**
+**Build config with initScript and open the page:**
+
+The bundle must be injected via `initScript` (not inline eval) because
+`playwright-cli eval` only accepts pure expressions — multi-statement
+function bodies and IIFEs fail. `initScript` loads the bundle from disk
+before navigation, creating `window.__visualTree` at the global scope.
 
 ```bash
-# Build config with browser recipe if available
+# Build playwright-cli config: initScript injects the bundle before navigation
 VT_CONFIG="/tmp/vt-config-$$.json"
-if [[ -n "$BROWSER_RECIPE" && -f "$BROWSER_RECIPE" ]]; then
-  cp "$BROWSER_RECIPE" "$VT_CONFIG"
-else
-  echo '{}' > "$VT_CONFIG"
-fi
+node --input-type=module -e "
+  import { readFileSync, writeFileSync, existsSync } from 'fs';
+  const config = { browser: { initScript: ['$VT_BUNDLE'] } };
+  const recipePath = '$BROWSER_RECIPE';
+  if (recipePath && existsSync(recipePath)) {
+    const recipe = JSON.parse(readFileSync(recipePath, 'utf-8'));
+    const cli = recipe.cliConfig || {};
+    Object.assign(config.browser, cli.browser || {});
+    if (config.browser.initScript) {
+      config.browser.initScript = ['$VT_BUNDLE', ...config.browser.initScript];
+    }
+  }
+  writeFileSync('$VT_CONFIG', JSON.stringify(config, null, 2));
+"
 
 playwright-cli -s=visual-tree --config="$VT_CONFIG" open "$URL"
 
-# Wait for page load
-playwright-cli -s=visual-tree eval "await new Promise(r => {
-  if (document.readyState === 'complete') return r();
-  window.addEventListener('load', r);
-})"
+# Wait for page load (pure expression — no await, no function body)
+playwright-cli -s=visual-tree eval "document.readyState"
+sleep 2
 
-# Inject bundle and capture with minWidth=1024
-VT_RESULT=$(playwright-cli -s=visual-tree eval "(() => {
-  $(cat "$VT_BUNDLE")
-  globalThis.__visualTree = __visualTree;
-  var r = __visualTree.captureVisualTree(1024);
-  return JSON.stringify({
-    textFormat: r.textFormat,
-    data: r.data,
-    nodeMap: r.nodeMap,
-    rootBackground: r.rootBackground,
-    rootBackgroundInfo: r.rootBackgroundInfo,
-  });
-})()")
+# Capture visual tree — window.__visualTree is available from initScript
+VT_RESULT=$(playwright-cli -s=visual-tree eval \
+  "JSON.stringify(window.__visualTree.captureVisualTree(1024))")
 
 rm -f "$VT_CONFIG"
 ```
