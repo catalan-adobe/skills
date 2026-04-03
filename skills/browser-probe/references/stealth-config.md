@@ -2,8 +2,11 @@
 
 ## Stealth Init Script
 
-Inject via `playwright-cli eval` after `open` (no URL) and before `goto <url>`.
-This patches browser fingerprints that headless detection relies on.
+Inject via `initScript` in the playwright-cli config (NOT via `eval` —
+eval only accepts pure expressions, not multi-statement scripts). Write
+this script to a temp file and add the path to `browser.initScript` in
+the config. It runs before any page JS loads, patching browser
+fingerprints that headless detection relies on.
 
 ```js
 (function() {

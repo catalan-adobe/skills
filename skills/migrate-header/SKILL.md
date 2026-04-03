@@ -369,14 +369,7 @@ For each overlay entry, the LLM:
 2. Uses the overlay's CSS selector from nodeMap to inspect its internals
    in the live playwright-cli session (`-s=visual-tree`):
    ```bash
-   playwright-cli -s=visual-tree eval "
-     const el = document.querySelector('${OVERLAY_SELECTOR}');
-     const buttons = [...el.querySelectorAll('button, a, [role=button]')];
-     JSON.stringify(buttons.map(b => ({
-       text: b.textContent.trim().slice(0, 50),
-       tag: b.tagName,
-     })));
-   "
+   playwright-cli -s=visual-tree eval "JSON.stringify([...document.querySelector('${OVERLAY_SELECTOR}').querySelectorAll('button, a, [role=button]')].map(b => ({text: b.textContent.trim().slice(0, 50), tag: b.tagName})))"
    ```
 3. Decides the dismissal action:
    - If an accept/close button is found → `{"action": "click", "selector": "<button>"}`
