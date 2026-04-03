@@ -410,7 +410,7 @@ If page-prep scripts are not found, write an empty recipe:
 
 ```bash
 if [[ -z "$PAGE_PREP_DIR" || ! -f "$PAGE_PREP_DIR/overlay-db.js" ]]; then
-  echo '[]' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
+  echo '{ "selectors": [], "action": "remove" }' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
   echo "Warning: No overlay detection available. Using empty recipe."
 fi
 ```
@@ -561,12 +561,6 @@ HEADER_SELECTOR="$DETECTED_SELECTOR"
 echo "Detected header element: $HEADER_SELECTOR"
 ```
 
-**Close the visual-tree session** (no longer needed):
-
-```bash
-playwright-cli -s=visual-tree close
-```
-
 **If visual-tree capture failed** (no `visual-tree.txt`):
 
 Fall back to the default `header` selector (or `--header-selector` if
@@ -574,6 +568,12 @@ it was provided). Log a warning:
 
 ```bash
 echo "Warning: Visual tree not available. Using default selector: $HEADER_SELECTOR"
+```
+
+**Close the visual-tree session** (always, regardless of which path ran):
+
+```bash
+playwright-cli -s=visual-tree close 2>/dev/null || true
 ```
 
 ### Stage 7: Snapshot Capture

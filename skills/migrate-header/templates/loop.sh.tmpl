@@ -78,7 +78,7 @@ run_evaluation() {
   eval_output=$(${EVALUATE} "${PORT}" "${ITERATION}" 2>/dev/null) || true
 
   if [[ -z "${eval_output}" ]]; then
-    echo "0|0|0|0|0"
+    echo "0|0|0"
     return
   fi
 
