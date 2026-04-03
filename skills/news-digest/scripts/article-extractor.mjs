@@ -36,11 +36,7 @@ function pwcli(...args) {
 function extractResult(output) {
   const match = output.match(/### Result\n"(.+)"/s);
   if (!match) return null;
-  try {
-    return JSON.parse(`"${match[1]}"`);
-  } catch {
-    return match[1];
-  }
+  return match[1];
 }
 
 function extractJsonResult(output) {

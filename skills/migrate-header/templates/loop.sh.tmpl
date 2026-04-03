@@ -255,6 +255,7 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
     2>/dev/null || echo "no")
 
   if [[ "${keep}" == "yes" ]]; then
+    iteration_status="kept"
     ok "IMPROVED: ${BEST_SCORE} -> ${score} (desktop=${desktop}, nav=${nav_score}, judge=${judge_score})"
     BEST_SCORE="${score}"
     BEST_KEPT_ITERATION=${ITERATION}
@@ -265,6 +266,7 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
       "${commit_msg}" "${changed_files}" \
       >> "${RESULTS_FILE}"
   else
+    iteration_status="reverted"
     warn "NO IMPROVEMENT: ${score} <= ${BEST_SCORE} (judge=${judge_score}) — reverting"
     # shellcheck disable=SC2086
     git -C "${PROJECT_DIR}" diff "${head_before}" HEAD -- ${HEADER_FILES} \
@@ -283,6 +285,24 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
       break
     fi
   fi
+
+  # Append to cumulative judge history (survives git reverts)
+  node -e "
+    const fs = require('fs');
+    const entry = {
+      iteration: ${ITERATION},
+      composite: ${score},
+      desktop: ${desktop},
+      nav: ${nav_score},
+      judge: ${judge_score},
+      status: '${iteration_status}',
+      diagnosis: JSON.parse(process.argv[1] || '[]'),
+    };
+    fs.appendFileSync(
+      '${PROJECT_DIR}/autoresearch/results/judge-history.jsonl',
+      JSON.stringify(entry) + '\n'
+    );
+  " "${judge_diagnosis}" 2>/dev/null || true
 
   echo ""
 done

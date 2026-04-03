@@ -248,24 +248,33 @@ playwright-cli -s=visual-tree eval "document.readyState"
 sleep 2
 
 # Capture visual tree — window.__visualTree is available from initScript
-VT_RESULT=$(playwright-cli -s=visual-tree eval \
-  "JSON.stringify(window.__visualTree.captureVisualTree(1024))")
+# Return the object directly (NOT JSON.stringify) so playwright-cli
+# serializes it as clean JSON without double-encoding.
+VT_RAW="$PROJECT_ROOT/autoresearch/source/vt-raw.txt"
+playwright-cli -s=visual-tree eval \
+  "window.__visualTree.captureVisualTree(1024)" \
+  > "$VT_RAW"
 
 rm -f "$VT_CONFIG"
 ```
 
 **Parse and save artifacts:**
 
-Parse `VT_RESULT` (strip playwright-cli output markers if present)
-and save three files:
+Parse the raw playwright-cli output file and save three files:
 
 ```bash
-echo "$VT_RESULT" | node --input-type=module -e "
-  import { readFileSync, writeFileSync } from 'fs';
-  const raw = readFileSync('/dev/stdin', 'utf-8');
-  const idx = raw.indexOf('{');
-  const json = raw.slice(idx);
-  const result = JSON.parse(json);
+node --input-type=module -e "
+  import { readFileSync, writeFileSync, unlinkSync } from 'fs';
+  const raw = readFileSync('$VT_RAW', 'utf-8');
+
+  // Strip playwright-cli ### Result envelope to get clean JSON
+  const rIdx = raw.indexOf('### Result');
+  const cIdx = raw.indexOf('### Ran Playwright code');
+  const value = rIdx === -1
+    ? raw.trim()
+    : raw.slice(rIdx + '### Result'.length, cIdx !== -1 ? cIdx : undefined).trim();
+  const result = JSON.parse(value);
+  unlinkSync('$VT_RAW');
 
   const outDir = '$PROJECT_ROOT/autoresearch/source';
 
@@ -353,7 +362,7 @@ For each overlay entry, the LLM:
 2. Uses the overlay's CSS selector from nodeMap to inspect its internals
    in the live playwright-cli session (`-s=visual-tree`):
    ```bash
-   playwright-cli -s=visual-tree eval "JSON.stringify([...document.querySelector('${OVERLAY_SELECTOR}').querySelectorAll('button, a, [role=button]')].map(b => ({text: b.textContent.trim().slice(0, 50), tag: b.tagName})))"
+   playwright-cli -s=visual-tree eval "[...document.querySelector('${OVERLAY_SELECTOR}').querySelectorAll('button, a, [role=button]')].map(b => ({text: b.textContent.trim().slice(0, 50), tag: b.tagName}))"
    ```
 3. Decides the dismissal action:
    - If an accept/close button is found → `{"action": "click", "selector": "<button>"}`
@@ -445,7 +454,7 @@ playwright-cli -s=overlay-detect --config="$OVERLAY_CONFIG" open "$URL"
 
 # The bundle ran via initScript on page load. Now extract the report
 # by reading the global result the bundle sets.
-REPORT_RAW=$(playwright-cli -s=overlay-detect eval "JSON.stringify(window.__overlayReport || {})")
+REPORT_RAW=$(playwright-cli -s=overlay-detect eval "window.__overlayReport || {}")
 playwright-cli -s=overlay-detect close
 rm -f "$OVERLAY_CONFIG" "/tmp/overlay-stealth-$$.js" "$BUNDLE_FILE"
 ```
@@ -647,7 +656,14 @@ else
   if [[ -n "$BROWSER_RECIPE" ]]; then
     RECIPE_ARGS="--browser-recipe $BROWSER_RECIPE"
   fi
-  node "$PAGE_COLLECT" icons "$URL" --output "$ICON_OUTPUT" $RECIPE_ARGS
+  # Ensure page-collect dependencies are installed
+  PAGE_COLLECT_DIR="$(dirname "$PAGE_COLLECT")"
+  if [[ ! -d "$PAGE_COLLECT_DIR/node_modules" ]]; then
+    echo "Installing page-collect dependencies..."
+    (cd "$PAGE_COLLECT_DIR" && npm install --no-audit --no-fund 2>/dev/null) || true
+  fi
+
+  node "$PAGE_COLLECT" icons "$URL" --output "$ICON_OUTPUT" $RECIPE_ARGS 2>/dev/null
 
   if [[ -f "$ICON_OUTPUT/icons.json" ]]; then
     ICON_COUNT=$(node --input-type=module -e "import {readFileSync} from 'fs'; const d=JSON.parse(readFileSync('$ICON_OUTPUT/icons.json','utf-8')); console.log(d.icons.length)")
@@ -993,11 +1009,12 @@ learnings that could improve the skill for future header migrations.
 
 1. `$PROJECT_ROOT/results.tsv` — iteration scores and keep/revert decisions
 2. `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json` — detailed score breakdown
-3. `$PROJECT_ROOT/autoresearch/extraction/layout.json` — extracted layout structure
-4. `$PROJECT_ROOT/autoresearch/extraction/styles.json` — CDP-extracted CSS values
-5. `$PROJECT_ROOT/autoresearch/overlay-recipe.json` — overlays detected
-6. Source screenshots in `$PROJECT_ROOT/autoresearch/source/` — visual reference
-7. `git log --oneline` — changes made during polish
+3. `$PROJECT_ROOT/autoresearch/results/judge-history.jsonl` — per-iteration judge diagnosis log (JSONL: iteration, composite, desktop, nav, judge score, status, diagnosis array)
+4. `$PROJECT_ROOT/autoresearch/extraction/layout.json` — extracted layout structure
+5. `$PROJECT_ROOT/autoresearch/extraction/styles.json` — CDP-extracted CSS values
+6. `$PROJECT_ROOT/autoresearch/overlay-recipe.json` — overlays detected
+7. Source screenshots in `$PROJECT_ROOT/autoresearch/source/` — visual reference
+8. `git log --oneline` — changes made during polish
 
 **Analyze these dimensions:**
 
@@ -1006,6 +1023,7 @@ learnings that could improve the skill for future header migrations.
 | Extraction accuracy | Compare styles.json values against final CSS custom properties in header.css | Whether extraction scripts need calibration |
 | Scaffold quality | First iteration score in results.tsv | How good the initial code generation was |
 | Convergence pattern | Score trajectory and revert rate across iterations | Whether the polish loop guidance is effective |
+| Judge effectiveness | judge-history.jsonl: were diagnoses for kept iterations actionable? Did reverted iterations try to fix a diagnosed item but fail? | Whether judge guidance is helping or misleading |
 | Desktop fidelity | Desktop visual score in evaluation | Whether scaffold and polish loop guidance are effective |
 | Nav completeness | Nav score in evaluation vs layout.json navItems count | Whether content mapping missed items |
 | Overlay handling | Overlay recipe contents vs capture quality | Whether overlay detection was sufficient |
