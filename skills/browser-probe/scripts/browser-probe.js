@@ -29,7 +29,7 @@ export function parseEvalOutput(raw) {
   const end = codeIdx !== -1 ? codeIdx : raw.length;
   let value = raw.slice(start, end).trim();
   if (value.startsWith('"') && value.endsWith('"')) {
-    value = JSON.parse(value);
+    value = value.slice(1, -1);
   }
   return value;
 }

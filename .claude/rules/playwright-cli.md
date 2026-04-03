@@ -26,7 +26,7 @@ CONFIG="/tmp/pw-config-$$.json"
 echo '{"browser":{"initScript":["'"$BUNDLE_PATH"'"]}}' > "$CONFIG"
 playwright-cli open "$URL" --config="$CONFIG"
 # Bundle globals (e.g., window.__myLib) are now available
-playwright-cli eval "JSON.stringify(window.__myLib.doThing())"
+playwright-cli eval "window.__myLib.doThing()"
 rm -f "$CONFIG"
 ```
 
@@ -42,12 +42,41 @@ When combining a bundle injection with a browser recipe (from browser-probe), me
 config.browser.initScript = ['bundle.js', ...existingInitScripts];
 ```
 
+## Returning structured data from eval
+
+When you need JSON output from `eval`, **return the object directly** — do NOT wrap in `JSON.stringify()`. playwright-cli serializes objects as clean JSON, but serializes strings with lossy quote-wrapping that breaks on content containing escaped quotes (e.g., CSS `url("...")`).
+
+```bash
+# GOOD — returns object, playwright-cli serializes as clean JSON
+playwright-cli eval "window.__visualTree.captureVisualTree(1024)"
+
+# BAD — returns string, playwright-cli wraps in quotes with broken escaping
+playwright-cli eval "JSON.stringify(window.__visualTree.captureVisualTree(1024))"
+```
+
+All `eval` output is wrapped in a `### Result` / `### Ran Playwright code` envelope. Strip it before parsing:
+
+```javascript
+const rIdx = raw.indexOf('### Result');
+const cIdx = raw.indexOf('### Ran Playwright code');
+const value = rIdx === -1
+  ? raw.trim()
+  : raw.slice(rIdx + '### Result'.length, cIdx !== -1 ? cIdx : undefined).trim();
+const result = JSON.parse(value);
+```
+
+**For large results**, redirect to a file instead of a shell variable:
+```bash
+playwright-cli eval "window.bigObj" > /tmp/result.txt
+# then read file in Node and strip envelope
+```
+
 ## Result size
 
 `playwright-cli eval` returns results via stdout. For large results (100KB+), verify the output isn't truncated. If it is, use the two-step approach:
 
 ```bash
 playwright-cli eval "window.__result = heavyComputation(), 'ok'"
-playwright-cli eval "JSON.stringify(window.__result.field1)"
-playwright-cli eval "JSON.stringify(window.__result.field2)"
+playwright-cli eval "window.__result.field1"
+playwright-cli eval "window.__result.field2"
 ```

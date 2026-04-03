@@ -164,9 +164,10 @@ You may restructure the JS and CSS completely. The only contract is:
 
 1. **Vanilla JS and CSS only.** No frameworks, no build tools, no external dependencies.
 2. **The header must render.** A broken header that doesn't display scores 0. Prefer incremental progress over risky rewrites.
-3. **Commit before exiting.** Stage your changes and commit with a descriptive message: `git add blocks/header/ nav.plain.html && git commit -m "description of change"`
-4. **Read results.tsv and diff images first.** Understand what was already tried. Do not repeat approaches that were reverted.
-5. **You may make multiple related changes in one iteration.** For example: adjust height + change background color + update font together if they serve a coherent goal. Avoid unrelated changes.
+3. **Strongly prefer CSS-only changes.** The base `header.js` is battle-tested. JS modifications frequently break the header element entirely, causing the evaluator to fail (score drops to 0). Only touch header.js if a structural DOM change is absolutely required AND you have verified the header still renders after your change. If a CSS-only approach exists, always use it.
+4. **Commit before exiting.** Stage your changes and commit with a descriptive message: `git add blocks/header/ nav.plain.html && git commit -m "description of change"`
+5. **Read results.tsv and diff images first.** Understand what was already tried. Do not repeat approaches that were reverted.
+6. **You may make multiple related changes in one iteration.** For example: adjust height + change background color + update font together if they serve a coherent goal. Avoid unrelated changes.
 
 ## Strategy
 

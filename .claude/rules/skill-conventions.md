@@ -16,6 +16,20 @@
 - JSON manifest as contract between Claude and script
 - Gallery/preview HTML must inline base64 assets (fetch fails on `file://`)
 
+## Sibling Skill Dependencies
+
+Skills that invoke another skill's scripts at runtime (e.g., migrate-header calling page-collect) must handle missing npm dependencies. Sibling skills are resolved via `dirname "$SKILL_HOME"` or `find`, but their `node_modules/` may not exist on the user's machine.
+
+```bash
+SIBLING_SCRIPT="$(dirname "$SKILL_HOME")/other-skill/scripts/tool.js"
+SIBLING_DIR="$(dirname "$SIBLING_SCRIPT")"
+if [[ ! -d "$SIBLING_DIR/node_modules" ]]; then
+  (cd "$SIBLING_DIR" && npm install --no-audit --no-fund 2>/dev/null) || true
+fi
+```
+
+Always degrade gracefully if the sibling skill is missing entirely — warn and skip, don't fail the pipeline.
+
 ## Dual-Output Skills
 
 Skills that generate user artifacts should produce both:

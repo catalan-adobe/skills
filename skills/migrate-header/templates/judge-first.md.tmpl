@@ -26,9 +26,9 @@ Consider these dimensions:
 
 **Respond with ONLY this JSON (no markdown fences, no other text):**
 
-{"improved": true, "confidence": "high", "diagnosis": ["first item to fix", "second item to fix"]}
+{"improved": true, "confidence": "high", "diagnosis": ["biggest visual gap to fix"]}
 
 Rules for the JSON:
 - "improved": true if the header renders with recognizable structure, false if it is broken or empty
 - "confidence": "high", "medium", or "low"
-- "diagnosis": 3-5 specific actionable items describing what needs to change to match the Source. Be precise — reference positions (left/center/right), approximate colors, sizes, and spacing.
+- "diagnosis": 1-2 specific actionable items describing the HIGHEST-PRIORITY differences between the render and Source. Focus on the single biggest visual gap. Be precise — reference positions (left/center/right), approximate colors, sizes, and spacing. Fewer focused items produce better iterations than long wishlists.

@@ -48,7 +48,7 @@ function parseEvalOutput(raw) {
   const end = codeIdx !== -1 ? codeIdx : raw.length;
   let value = raw.slice(start, end).trim();
   if (value.startsWith('"') && value.endsWith('"')) {
-    value = JSON.parse(value);
+    value = value.slice(1, -1);
   }
   return value;
 }
@@ -123,6 +123,16 @@ function compareImages(sourcePath, renderedPath, diffPath) {
   };
 }
 
+function normalizeNavText(text) {
+  return text
+    .replace(/&amp;/gi, '&')
+    .replace(/&#38;/g, '&')
+    .replace(/&/g, ' and ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+}
+
 function checkNavCompleteness(navStructurePath, renderedHtml) {
   if (!existsSync(navStructurePath)) return { score: 50, reason: 'no source nav structure' };
 
@@ -130,14 +140,14 @@ function checkNavCompleteness(navStructurePath, renderedHtml) {
   if (!source?.topNav?.length) return { score: 50, reason: 'empty source nav' };
 
   const sourceItems = source.topNav
-    .map((item) => item.text.toLowerCase().trim())
+    .map((item) => normalizeNavText(item.text))
     .filter((text) => text.length > 0);
-  const renderedLower = renderedHtml.toLowerCase();
+  const renderedNorm = normalizeNavText(renderedHtml);
 
   let found = 0;
   const missing = [];
   for (const item of sourceItems) {
-    if (renderedLower.includes(item)) {
+    if (renderedNorm.includes(item)) {
       found++;
     } else {
       missing.push(item);
@@ -205,7 +215,7 @@ for (const vp of VIEWPORTS) {
 
     // Get header bounding rect for cropping
     const rectRaw = cliEval(
-      "JSON.stringify(document.querySelector('header')?.getBoundingClientRect()?.toJSON() || null)",
+      "document.querySelector('header')?.getBoundingClientRect()?.toJSON() || null",
     );
     const rect = JSON.parse(rectRaw);
 

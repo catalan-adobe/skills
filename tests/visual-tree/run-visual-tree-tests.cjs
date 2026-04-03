@@ -28,8 +28,11 @@ function parseEvalOutput(raw) {
   const start = idx + '### Result'.length;
   const end = codeIdx !== -1 ? codeIdx : raw.length;
   let value = raw.slice(start, end).trim();
+  // Strip outer quotes with slice — NOT JSON.parse. playwright-cli wraps
+  // string results in quotes without proper escaping, so CSS url("...")
+  // values break JSON.parse.
   if (value.startsWith('"') && value.endsWith('"')) {
-    value = JSON.parse(value);
+    value = value.slice(1, -1);
   }
   return value;
 }
@@ -70,7 +73,7 @@ try {
   results.globalType = cliEval('typeof window.__visualTree');
 
   const keysRaw = cliEval(
-    'JSON.stringify(Object.keys(window.__visualTree.captureVisualTree(0)))'
+    'Object.keys(window.__visualTree.captureVisualTree(0))'
   );
   results.keys = JSON.parse(keysRaw);
 
@@ -79,14 +82,14 @@ try {
   );
 
   const nodeMapRaw = cliEval(
-    'JSON.stringify(window.__visualTree.captureVisualTree(0).nodeMap)'
+    'window.__visualTree.captureVisualTree(0).nodeMap'
   );
   const nodeMap = JSON.parse(nodeMapRaw);
   results.nodeMapKeys = Object.keys(nodeMap);
   results.rootSelector = nodeMap.r?.selector;
 
   const dataRaw = cliEval(
-    'JSON.stringify({tag: window.__visualTree.captureVisualTree(0).data.tag, childCount: window.__visualTree.captureVisualTree(0).data.children.length})'
+    '({tag: window.__visualTree.captureVisualTree(0).data.tag, childCount: window.__visualTree.captureVisualTree(0).data.children.length})'
   );
   const dataInfo = JSON.parse(dataRaw);
   results.rootTag = dataInfo.tag;
@@ -101,7 +104,7 @@ try {
   ).split('\n').filter(Boolean).length;
 
   const fullRaw = cliEval(
-    'JSON.stringify(window.__visualTree.captureVisualTree(1024))'
+    'window.__visualTree.captureVisualTree(1024)'
   );
   try {
     JSON.parse(fullRaw);
