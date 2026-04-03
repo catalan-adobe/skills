@@ -36,18 +36,45 @@ Everything else is off-limits. In particular:
 Before making changes, ALWAYS review what has been tried:
 1. `cat results.tsv` — Full experiment log (iteration, score, status, description)
 2. `git log --oneline` — Only successful improvements are in the git log
-3. `cat autoresearch/results/latest-evaluation.json` — Last evaluation breakdown with per-viewport scores AND source/rendered heights
+3. `cat autoresearch/results/latest-evaluation.json` — Last evaluation breakdown with per-viewport scores AND source/rendered heights. Note: `compositeScore` in this file is the pixelmatch+nav score only (70/30); the authoritative score including the judge (55/25/20) is in `results.tsv`.
 4. **Read the diff images** — `autoresearch/results/desktop-diff.png` shows pixel-level mismatches in red/yellow. Read this image to see WHERE the visual differences are and target your changes accordingly.
 5. `git diff HEAD~1` (if available) — see what the last successful change actually did
 6. `cat autoresearch/results/last-reverted.diff` (if exists) — see the exact diff of the last FAILED attempt, so you don't repeat it
 
 If results.tsv shows repeated reverts for similar approaches (e.g., multiple "height" or "padding" attempts), DO NOT try that approach again. Try something fundamentally different.
 
+## Judge Feedback
+
+If `autoresearch/results/judge-feedback.json` exists, read it FIRST.
+It contains a diagnosis from the previous iteration — a list of specific
+visual differences between your rendered header and the source, identified
+by comparing screenshots. Address these items before exploring other
+changes.
+
+Example:
+```json
+[
+  "Header background is #f5f5f5, source is #1a1a2e — dark background missing",
+  "Nav links are stacked vertically, source shows horizontal flex layout",
+  "Logo is 40px tall, source shows ~28px — reduce logo height"
+]
+```
+
+These observations come from comparing the source screenshot against
+your latest rendered screenshot. They are more reliable than guessing
+from the pixelmatch diff image. Prioritize fixing these items.
+
 ## How the Evaluator Scores You
 
-After you exit, an immutable evaluator runs. It produces a composite score (0-100):
-- **70% weight**: Visual similarity via pixelmatch (desktop only)
-- **30% weight**: Nav completeness (are all {{NAV_ITEM_COUNT}} source nav items present in the rendered HTML?)
+After you exit, two evaluations run:
+
+1. **Pixelmatch evaluator** — compares your rendered header screenshot against the source pixel-by-pixel
+2. **LLM judge** — compares source, previous best, and your current render to assess semantic improvement
+
+The composite score (0-100) combines:
+- **55% weight**: Visual similarity via pixelmatch (desktop only)
+- **25% weight**: Nav completeness (are all {{NAV_ITEM_COUNT}} source nav items present in the rendered HTML?)
+- **20% weight**: LLM judge (did this iteration improve? YES=100, NO=0)
 
 **Important**: The evaluator pads images to equal dimensions before comparing. If your rendered header is shorter than the source, the missing rows count as full-row pixel mismatches. **Matching the source header height (~{{HEADER_HEIGHT}}px) is essential for a good visual score.**
 
@@ -57,6 +84,21 @@ The outer loop keeps your changes if the score improves, reverts if it doesn't.
 
 - `autoresearch/source/desktop.png` — Screenshot of source header at 1440px
 - `autoresearch/source/nav-structure.json` — Extracted nav items ({{NAV_ITEM_COUNT}} items)
+
+## Source Visual Tree
+
+Spatial hierarchy of the source page captured at 1440px viewport.
+Each line shows: `ID [role] [CxR grid] [bg:type] @x,y wxh "text..."`.
+Use this to understand the source header's spatial structure — row
+heights, column counts, and element positions.
+
+```
+{{VISUAL_TREE}}
+```
+
+Cross-reference with `autoresearch/source/header-detection.json` to find
+which node ID is the header. Match your rendered header's dimensions
+(position, width, height) to that node in this tree.
 
 ## CSS Query Tool
 

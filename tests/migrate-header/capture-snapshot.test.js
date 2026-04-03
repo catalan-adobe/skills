@@ -35,13 +35,16 @@ describe('parseArgs', () => {
 });
 
 describe('buildRecipeArgs', () => {
-  it('returns empty args when no recipe', () => {
+  it('injects capture-helpers.js via initScript even without recipe', () => {
     const result = buildRecipeArgs(null);
-    expect(result).toEqual({
-      extraArgs: [],
-      configPath: null,
-      tempFiles: [],
-    });
+    expect(result.extraArgs).toHaveLength(1);
+    expect(result.extraArgs[0]).toMatch(/--config=/);
+    expect(result.configPath).toBeTruthy();
+    expect(result.tempFiles).toHaveLength(1);
+
+    const written = JSON.parse(readFileSync(result.configPath, 'utf-8'));
+    expect(written.browser.initScript).toHaveLength(1);
+    expect(written.browser.initScript[0]).toMatch(/capture-helpers\.js$/);
   });
 
   it('writes config with initScript for stealth', () => {
@@ -65,9 +68,11 @@ describe('buildRecipeArgs', () => {
 
     const written = JSON.parse(readFileSync(result.configPath, 'utf-8'));
     expect(written.browser.launchOptions.channel).toBe('chrome');
-    expect(written.browser.initScript).toHaveLength(1);
+    // capture-helpers.js + stealth script
+    expect(written.browser.initScript).toHaveLength(2);
+    expect(written.browser.initScript[1]).toMatch(/capture-helpers\.js$/);
 
-    // Stealth script written to temp file referenced by initScript
+    // Stealth script prepended before capture-helpers
     const stealthPath = written.browser.initScript[0];
     expect(existsSync(stealthPath)).toBe(true);
     expect(readFileSync(stealthPath, 'utf-8')).toBe(
@@ -75,7 +80,7 @@ describe('buildRecipeArgs', () => {
     );
   });
 
-  it('skips initScript when no stealth script', () => {
+  it('includes only capture-helpers.js when no stealth script', () => {
     const recipe = {
       cliConfig: {
         browser: {
@@ -92,7 +97,8 @@ describe('buildRecipeArgs', () => {
 
     const result = buildRecipeArgs(recipePath);
     const written = JSON.parse(readFileSync(result.configPath, 'utf-8'));
-    expect(written.browser.initScript).toBeUndefined();
+    expect(written.browser.initScript).toHaveLength(1);
+    expect(written.browser.initScript[0]).toMatch(/capture-helpers\.js$/);
     expect(result.tempFiles.length).toBe(1);
   });
 

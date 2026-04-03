@@ -146,9 +146,11 @@ with a broken configuration.
 Any script using `playwright-cli` can consume `browser-recipe.json`:
 
 1. Write `cliConfig` to a temp file (e.g., `/tmp/probe-cli-config.json`)
-2. Pass `--config=/tmp/probe-cli-config.json` to `playwright-cli open`
-3. After `open` (before `goto`), inject `stealthInitScript` via
-   `playwright-cli eval "<script>"`
+2. If recipe has `stealthInitScript`, write it to a temp file and add
+   it to the config's `browser.initScript` array (do NOT use
+   `playwright-cli eval` — eval only accepts pure expressions, not
+   multi-statement scripts)
+3. Pass `--config=/tmp/probe-cli-config.json` to `playwright-cli open`
 4. Proceed with normal `goto <url>` and workflow
 
 If recipe has `"persistent": true`, also pass `--persistent` to `open`.

@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { resolve, join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const EXEC_OPTS = {
   encoding: 'utf-8',
@@ -111,32 +114,18 @@ export function buildStepResult(name, config, result, health, durationMs) {
   return { name, config, result, health, durationMs };
 }
 
-const HEALTH_CHECK_JS = `(function() {
-  var perf = performance.getEntriesByType('navigation');
-  var status = perf.length > 0 ? perf[0].responseStatus : 0;
-  return JSON.stringify({
-    title: document.title || '',
-    url: location.href,
-    bodyLength: (document.body ? document.body.innerText.length : 0),
-    status: status,
-    hasMainContent: !!document.querySelector(
-      'main, [role="main"], article, #content'
-    )
-  });
-})()`;
+// Pure expression — no IIFE, no var, no return (playwright-cli eval constraint)
+const HEALTH_CHECK_JS = `JSON.stringify({
+  title: document.title || '',
+  url: location.href,
+  bodyLength: document.body ? document.body.innerText.length : 0,
+  status: (performance.getEntriesByType('navigation')[0] || {}).responseStatus || 0,
+  hasMainContent: !!document.querySelector('main, [role="main"], article, #content')
+})`;
 
-const STEALTH_INIT_SCRIPT = `(function() {
-  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  Object.defineProperty(navigator, 'plugins', {
-    get: () => [
-      { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-      { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
-      { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
-    ],
-  });
-  Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-  window.chrome = { runtime: {} };
-})()`;
+// Stealth script lives in a separate file for initScript injection
+// (playwright-cli eval only accepts pure expressions, not IIFEs)
+const STEALTH_INIT_PATH = join(__dirname, 'stealth-init.js');
 
 const REALISTIC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
   + ' AppleWebKit/537.36 (KHTML, like Gecko)'
@@ -184,16 +173,21 @@ function runStep(url, stepDef) {
     }
 
     if (stepDef.stealth) {
-      const openArgs = ['open'];
-      if (configPath) {
-        openArgs.push(`--config=${configPath}`);
-      } else if (stepDef.browser !== 'chromium') {
-        openArgs.push(`--browser=${stepDef.browser}`);
+      // Inject stealth script via initScript (not eval — eval only accepts pure expressions)
+      if (!configPath) {
+        const channel = stepDef.browser !== 'chromium'
+          ? stepDef.browser : undefined;
+        configPath = writeConfigFile(stepDef.name, channel);
       }
+      // Add stealth-init.js to the config's initScript array
+      const cfg = JSON.parse(readFileSync(configPath, 'utf-8'));
+      if (!cfg.browser) cfg.browser = {};
+      cfg.browser.initScript = [STEALTH_INIT_PATH];
+      writeFileSync(configPath, JSON.stringify(cfg));
+
+      const openArgs = ['open', url, `--config=${configPath}`];
       if (stepDef.persistent) openArgs.push('--persistent');
       cli(session, ...openArgs);
-      cliEval(session, STEALTH_INIT_SCRIPT);
-      cli(session, 'goto', url);
     } else {
       const openArgs = ['open', url];
       if (stepDef.browser !== 'chromium') {
