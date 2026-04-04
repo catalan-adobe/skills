@@ -200,7 +200,12 @@ function parseRunCodeOutput(raw) {
   let value = endIdx === -1 ? after : after.slice(0, endIdx).trim();
   // playwright-cli wraps string return values in quotes — unwrap
   if (value.startsWith('"') && value.endsWith('"')) {
-    value = value.slice(1, -1);
+    try {
+      const parsed = JSON.parse(value);
+      value = typeof parsed === 'string' ? parsed : value.slice(1, -1);
+    } catch {
+      value = value.slice(1, -1);
+    }
   }
   return value;
 }

@@ -55,7 +55,7 @@ function parseArgs(argv) {
     targetDir: resolve(named['target-dir']),
     explicitPort: named['port'] || null,
     maxIterations: named['max-iterations'] || '30',
-    skillHome: named['skill-home'] || '',
+    skillHome: named['skill-home'] || join(__dirname, '..'),
   };
 }
 
@@ -319,4 +319,8 @@ function main() {
   log(`  Run: cd ${args.targetDir} && ./loop.sh`);
 }
 
-main();
+const isDirectRun = process.argv[1]
+  && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectRun) {
+  main();
+}

@@ -171,10 +171,17 @@ export function parseRunCodeOutput(raw) {
   const end = codeIdx !== -1 ? codeIdx : raw.length;
   let value = raw.slice(start, end).trim();
   if (value.startsWith('"') && value.endsWith('"')) {
-    value = value.slice(1, -1);
+    try {
+      const parsed = JSON.parse(value);
+      value = typeof parsed === 'string' ? parsed : value.slice(1, -1);
+    } catch {
+      value = value.slice(1, -1);
+    }
   }
   return value;
 }
+
+export { parseRunCodeOutput as parseEvalOutput };
 
 const isDirectRun = process.argv[1]
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url);

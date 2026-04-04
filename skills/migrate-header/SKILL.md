@@ -23,8 +23,12 @@ to converge on pixel-accurate fidelity.
 ## Pipeline Overview
 
 ```
-URL --> PARSE --> VALIDATE --> PROBE --> PREPARE --> VIS-TREE --> OVERLAY --> HEADER --> SNAPSHOT --> EXTRACT --> ICONS --> FONTS --> SCAFFOLD --> SETUP --> DEV+POLISH --> REPORT --> RETRO
-        (args)    (EDS?)      (CDN)    (mkdir)     (spatial)    (LLM)     (LLM)      (pw-cli)   (scripts)   (collect) (brand)    (LLM)      (files)   (aem+loop)    (score)   (learnings)
+Phase 1: Setup & Validation     │ Parse args → Validate EDS → Probe CDN → Prepare dirs
+Phase 2: Page Analysis          │ Visual tree → Overlay detection → Header identification
+Phase 3: Source Extraction      │ Snapshot → Layout/styles → Icons → Fonts
+Phase 4: Scaffold Generation    │ Copy base block → Customize CSS → Generate nav
+Phase 5: Visual Polish          │ Setup loop infra → Run autonomous polish loop
+Phase 6: Wrap-up                │ Report results → Generate retrospective
 ```
 
 ## Scripts
@@ -37,6 +41,8 @@ SKILL_HOME="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/migrate-header}"
 ```
 
 Scripts:
+- `node $SKILL_HOME/scripts/capture-visual-tree.js <url> <output-dir> [--browser-recipe=path] [--session=visual-tree]`
+- `node $SKILL_HOME/scripts/detect-overlays-fallback.js <url> <output-dir> [--browser-recipe=path]`
 - `node $SKILL_HOME/scripts/capture-snapshot.js <url> <output-dir> [--header-selector=header] [--overlay-recipe=path] [--browser-recipe=path]`
 - `node $SKILL_HOME/scripts/extract-layout.js <snapshot.json>` (stdout JSON)
 - `node $SKILL_HOME/scripts/extract-styles.js <snapshot.json> <url> [--browser-recipe=path]` (stdout JSON)
@@ -54,8 +60,26 @@ See [EDS header conventions](references/eds-header-conventions.md) for block pat
 
 ## Execution
 
-Track state across stages with these variables. Set each one as its
-stage completes. Use them in error handling to know what to clean up.
+### Pipeline Tracking
+
+After parsing arguments (step 1.1), create a task list to track
+progress through all 6 phases:
+
+1. **Phase 1: Setup & Validation** — Parse args, validate EDS repo, probe CDN, prepare dirs
+2. **Phase 2: Page Analysis** — Visual tree, overlay detection, header identification
+3. **Phase 3: Source Extraction** — Snapshot, layout/styles, icons, fonts
+4. **Phase 4: Scaffold Generation** — Copy base block, customize CSS, generate nav
+5. **Phase 5: Visual Polish** — Setup loop infrastructure, run autonomous polish
+6. **Phase 6: Wrap-up** — Report results, generate retrospective
+
+Use TaskCreate for each phase. Mark each phase `in_progress` when you
+start it and `completed` when all its steps finish. On failure, leave
+the phase in_progress and report which step failed.
+
+### State Variables
+
+Track state across phases with these variables. Set each one as its
+phase completes. Use them in error handling to know what to clean up.
 
 ```
 PROJECT_ROOT="$(git rev-parse --show-toplevel)"
@@ -63,7 +87,11 @@ AEM_PID=""
 BROWSER_RECIPE=""
 ```
 
-### Stage 1: Parse Arguments
+### Phase 1: Setup & Validation
+
+Mark Phase 1 as in_progress.
+
+#### 1.1 Parse Arguments
 
 Extract arguments from the user's message:
 
@@ -88,10 +116,10 @@ MAX_ITERATIONS="${max_iterations:-30}"
 ```
 
 When `--header-selector` is found in the user's message, also set
-`HEADER_SELECTOR_EXPLICIT="true"`. Stage 6 uses this to skip
+`HEADER_SELECTOR_EXPLICIT="true"`. Step 2.3 uses this to skip
 LLM-based header detection.
 
-### Stage 2: Validate EDS Repository
+#### 1.2 Validate EDS Repository
 
 Run via Bash. Every check must pass or the pipeline stops.
 
@@ -122,7 +150,7 @@ fi
 echo "EDS repository validated."
 ```
 
-### Stage 2b: Browser Probe
+#### 1.3 Browser Probe
 
 Detect CDN bot protection before any browser interaction. If the site
 blocks headless Chrome, all downstream captures will fail. Probe once,
@@ -184,7 +212,7 @@ ERROR: All browser configurations failed for $URL.
   3. Provide pre-captured snapshots in autoresearch/source/
 ```
 
-### Stage 3: Prepare Working Directory
+#### 1.4 Prepare Working Directory
 
 All file operations happen in the current project root. Create the
 autoresearch directory structure:
@@ -195,132 +223,47 @@ mkdir -p "$PROJECT_ROOT/autoresearch/extraction"
 mkdir -p "$PROJECT_ROOT/autoresearch/results"
 ```
 
-### Stage 4: Visual Tree Capture
+Mark Phase 1 as completed.
+
+### Phase 2: Page Analysis
+
+Mark Phase 2 as in_progress.
+
+#### 2.1 Visual Tree Capture
 
 Capture a spatial hierarchy of the source page using the visual-tree
-skill's pre-built bundle. This produces a spatial map consumed by
-overlay detection (Stage 5) and header identification (Stage 6).
-
-**Locate the visual-tree bundle:**
+skill's bundle. Produces a spatial map consumed by overlay detection
+(step 2.2) and header identification (step 2.3).
 
 ```bash
-if [[ -n "${CLAUDE_SKILL_DIR:-}" ]]; then
-  VT_BUNDLE="$(dirname "$CLAUDE_SKILL_DIR")/visual-tree/scripts/visual-tree-bundle.js"
-else
-  VT_BUNDLE="$(find ~/.claude \
-    -path "*/visual-tree/scripts/visual-tree-bundle.js" \
-    -type f 2>/dev/null | head -1)"
+RECIPE_FLAG=""
+if [[ -n "$BROWSER_RECIPE" ]]; then
+  RECIPE_FLAG="--browser-recipe=$BROWSER_RECIPE"
 fi
+
+node "$SKILL_HOME/scripts/capture-visual-tree.js" \
+  "$URL" \
+  "$PROJECT_ROOT/autoresearch/source" \
+  $RECIPE_FLAG
 ```
 
-If the bundle is not found, log a warning and skip to Stage 7 (Snapshot
-Capture). Overlay detection falls back to page-prep if available; header
-detection falls back to `--header-selector` or `header` tag default.
+The script locates the visual-tree bundle, injects it via `initScript`,
+captures the spatial hierarchy, and saves `visual-tree.json`,
+`visual-tree.txt`, and `overlays.json` to the output directory.
 
-**Build config with initScript and open the page:**
+If the visual-tree bundle is not found (exit code 1) or capture fails
+(exit code 2), log a warning and skip to step 3.1. Overlay detection
+falls back to page-prep; header detection falls back to
+`--header-selector` or `header` tag default.
 
-The bundle must be injected via `initScript` (not inline eval) because
-`playwright-cli eval` only accepts pure expressions — multi-statement
-function bodies and IIFEs fail. `initScript` loads the bundle from disk
-before navigation, creating `window.__visualTree` at the global scope.
+**The script leaves the playwright-cli session open** (`-s=visual-tree`)
+— it will be used for overlay dismissal and header detection. Do NOT
+close it here.
 
-```bash
-# Build playwright-cli config: initScript injects the bundle before navigation
-VT_CONFIG="/tmp/vt-config-$$.json"
-node --input-type=module -e "
-  import { readFileSync, writeFileSync, existsSync } from 'fs';
-  const config = { browser: {} };
-  const recipePath = '$BROWSER_RECIPE';
-  if (recipePath && existsSync(recipePath)) {
-    const recipe = JSON.parse(readFileSync(recipePath, 'utf-8'));
-    const cli = recipe.cliConfig || {};
-    Object.assign(config.browser, cli.browser || {});
-  }
-  // Append VT bundle after any recipe initScripts (stealth patches run first)
-  config.browser.initScript = [...(config.browser.initScript || []), '$VT_BUNDLE'];
-  writeFileSync('$VT_CONFIG', JSON.stringify(config, null, 2));
-"
-
-playwright-cli -s=visual-tree --config="$VT_CONFIG" open "$URL"
-
-# Wait for page load (pure expression — no await, no function body)
-playwright-cli -s=visual-tree eval "document.readyState"
-sleep 2
-
-# Capture visual tree — window.__visualTree is available from initScript
-# Return the object directly (NOT JSON.stringify) so playwright-cli
-# serializes it as clean JSON without double-encoding.
-VT_RAW="$PROJECT_ROOT/autoresearch/source/vt-raw.txt"
-playwright-cli -s=visual-tree eval \
-  "window.__visualTree.captureVisualTree(1024)" \
-  > "$VT_RAW"
-
-rm -f "$VT_CONFIG"
-```
-
-**Parse and save artifacts:**
-
-Parse the raw playwright-cli output file and save three files:
-
-```bash
-node --input-type=module -e "
-  import { readFileSync, writeFileSync, unlinkSync } from 'fs';
-  const raw = readFileSync('$VT_RAW', 'utf-8');
-
-  // Strip playwright-cli ### Result envelope to get clean JSON
-  const rIdx = raw.indexOf('### Result');
-  const cIdx = raw.indexOf('### Ran Playwright code');
-  const value = rIdx === -1
-    ? raw.trim()
-    : raw.slice(rIdx + '### Result'.length, cIdx !== -1 ? cIdx : undefined).trim();
-  const result = JSON.parse(value);
-  unlinkSync('$VT_RAW');
-
-  const outDir = '$PROJECT_ROOT/autoresearch/source';
-
-  // Full visual-tree output
-  writeFileSync(outDir + '/visual-tree.json',
-    JSON.stringify(result, null, 2));
-
-  // Text format for LLM consumption
-  writeFileSync(outDir + '/visual-tree.txt', result.textFormat);
-
-  // Extract overlay entries from nodeMap (bounds/text available in visual-tree.txt)
-  const overlays = [];
-  for (const [id, info] of Object.entries(result.nodeMap)) {
-    if (info.overlay) {
-      overlays.push({
-        nodeId: id,
-        selector: info.selector,
-        occluding: info.overlay.occluding,
-      });
-    }
-  }
-  writeFileSync(outDir + '/overlays.json',
-    JSON.stringify(overlays, null, 2));
-
-  console.error('Visual tree captured:');
-  console.error('  ' + result.textFormat.split('\\n').length + ' nodes');
-  console.error('  ' + overlays.length + ' overlays detected');
-"
-```
-
-Verify the output exists:
-
-```bash
-if [[ ! -f "$PROJECT_ROOT/autoresearch/source/visual-tree.json" ]]; then
-  echo "WARNING: Visual tree capture failed. Falling back to legacy pipeline."
-  playwright-cli -s=visual-tree close 2>/dev/null
-fi
-```
-
-**Keep the session open** — it will be used for overlay dismissal and
-header detection. Do NOT close it here.
-
-### Stage 5: Overlay Detection and Dismissal
+#### 2.2 Overlay Detection & Dismissal
 
 If `--overlay-recipe` was provided, copy it into the project and skip
-to Stage 6:
+to step 2.3:
 
 ```bash
 cp "$OVERLAY_RECIPE" "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
@@ -328,11 +271,11 @@ cp "$OVERLAY_RECIPE" "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
 
 Otherwise, use visual-tree data to detect and dismiss overlays.
 
-**If visual-tree capture succeeded** (Stage 4 produced
+**If visual-tree capture succeeded** (step 2.1 produced
 `autoresearch/source/overlays.json`):
 
 Read `overlays.json`. If the array is empty, write an empty recipe and
-skip to Stage 6:
+skip to step 2.3:
 
 ```bash
 OVERLAY_COUNT=$(node --input-type=module -e "
@@ -391,110 +334,28 @@ node --input-type=module -e "
 "
 ```
 
-**If visual-tree capture failed** (no `overlays.json`):
+**If visual-tree capture failed** (no `overlays.json` from step 2.1):
 
-Fall back to page-prep if available. Locate page-prep scripts:
-
-```bash
-PAGE_PREP_DIR="$(dirname "$SKILL_HOME")/page-prep/scripts"
-```
-
-If page-prep scripts are not found, write an empty recipe:
+Fall back to page-prep's CMP database for overlay detection:
 
 ```bash
-if [[ -z "$PAGE_PREP_DIR" || ! -f "$PAGE_PREP_DIR/overlay-db.js" ]]; then
-  echo '{ "selectors": [], "action": "remove" }' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
-  echo "Warning: No overlay detection available. Using empty recipe."
+RECIPE_FLAG=""
+if [[ -n "$BROWSER_RECIPE" ]]; then
+  RECIPE_FLAG="--browser-recipe=$BROWSER_RECIPE"
 fi
+
+node "$SKILL_HOME/scripts/detect-overlays-fallback.js" \
+  "$URL" \
+  "$PROJECT_ROOT/autoresearch" \
+  $RECIPE_FLAG
 ```
 
-If page-prep is available, run the legacy overlay detection flow.
+The script locates page-prep, refreshes the CMP database, injects the
+detection bundle via `initScript`, extracts the report, and writes
+`overlay-recipe.json`. If page-prep is not found or detection fails,
+it writes an empty recipe as fallback.
 
-**Refresh database and generate bundle:**
-
-```bash
-node "$PAGE_PREP_DIR/overlay-db.js" refresh
-BUNDLE_FILE="/tmp/overlay-bundle-$$.js"
-# Wrap the bundle IIFE so initScript stores the result in a global
-node -e "
-  const fs = require('fs');
-  const { execSync } = require('child_process');
-  const bundle = execSync('node $PAGE_PREP_DIR/overlay-db.js bundle', { encoding: 'utf-8' });
-  fs.writeFileSync('$BUNDLE_FILE', 'window.__overlayReport = ' + bundle + ';');
-"
-```
-
-**Inject via headless playwright-cli:**
-
-Open the URL with the overlay bundle as an `initScript` so it runs
-before any page JS. Build a playwright-cli config file that includes
-the bundle path and any browser-recipe settings.
-
-```bash
-# Build playwright-cli config with initScript for the bundle
-OVERLAY_CONFIG="/tmp/overlay-detect-config-$$.json"
-node -e "
-  const fs = require('fs');
-  const config = { browser: { initScript: ['$BUNDLE_FILE'] } };
-  const recipePath = '$BROWSER_RECIPE';
-  if (recipePath && fs.existsSync(recipePath)) {
-    const recipe = JSON.parse(fs.readFileSync(recipePath, 'utf-8'));
-    const cli = recipe.cliConfig || {};
-    Object.assign(config.browser, cli.browser || {});
-    if (recipe.stealthInitScript) {
-      const stealthFile = '/tmp/overlay-stealth-$$.js';
-      fs.writeFileSync(stealthFile, recipe.stealthInitScript);
-      config.browser.initScript.unshift(stealthFile);
-    }
-  }
-  fs.writeFileSync('$OVERLAY_CONFIG', JSON.stringify(config, null, 2));
-"
-
-playwright-cli -s=overlay-detect --config="$OVERLAY_CONFIG" open "$URL"
-
-# The bundle ran via initScript on page load. Now extract the report
-# by reading the global result the bundle sets.
-REPORT_RAW=$(playwright-cli -s=overlay-detect eval "window.__overlayReport || {}")
-playwright-cli -s=overlay-detect close
-rm -f "$OVERLAY_CONFIG" "/tmp/overlay-stealth-$$.js" "$BUNDLE_FILE"
-```
-
-**Convert detection report to overlay recipe:**
-
-The detection report contains an `overlays` array with selectors for
-each detected overlay. Extract all selectors and write the recipe in
-the format `capture-snapshot.js` expects:
-
-```bash
-echo "$REPORT_RAW" | node -e "
-  const raw = require('fs').readFileSync('/dev/stdin', 'utf-8');
-  const idx = raw.indexOf('### Result');
-  const end = raw.indexOf('### Ran Playwright code');
-  const json = idx === -1
-    ? raw.trim()
-    : raw.slice(idx + 10, end === -1 ? undefined : end).trim();
-  try {
-    const parsed = json.startsWith('\"') ? JSON.parse(json) : json;
-    const report = JSON.parse(parsed);
-    const selectors = (report.overlays || [])
-      .map(o => o.selector).filter(Boolean);
-    console.log(JSON.stringify({ selectors, action: 'remove' }, null, 2));
-  } catch {
-    console.log(JSON.stringify({ selectors: [], action: 'remove' }, null, 2));
-  }
-" > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
-```
-
-Verify the recipe file exists:
-
-```bash
-if [[ ! -f "$PROJECT_ROOT/autoresearch/overlay-recipe.json" ]]; then
-  echo '{ "selectors": [], "action": "remove" }' > "$PROJECT_ROOT/autoresearch/overlay-recipe.json"
-  echo "Warning: Overlay detection produced no recipe. Using empty recipe."
-fi
-```
-
-### Stage 6: Header Element Detection
+#### 2.3 Header Element Detection
 
 If `--header-selector` was explicitly provided, use it directly and skip
 detection:
@@ -507,7 +368,7 @@ fi
 
 Otherwise, use visual-tree data to identify the header element.
 
-**If visual-tree capture succeeded** (Stage 4 produced
+**If visual-tree capture succeeded** (step 2.1 produced
 `autoresearch/source/visual-tree.txt`):
 
 Present the visual-tree text format to the LLM. The LLM identifies the
@@ -518,7 +379,7 @@ header node based on:
 - Content (navigation text, grid layouts suggesting nav link rows)
 - ARIA roles (`[navigation]` role annotation)
 
-The LLM should exclude nodes already identified as overlays in Stage 5.
+The LLM should exclude nodes already identified as overlays in step 2.2.
 
 After identifying the header node, extract its CSS selector from the
 nodeMap in `visual-tree.json`:
@@ -569,7 +430,13 @@ echo "Warning: Visual tree not available. Using default selector: $HEADER_SELECT
 playwright-cli -s=visual-tree close 2>/dev/null || true
 ```
 
-### Stage 7: Snapshot Capture
+Mark Phase 2 as completed.
+
+### Phase 3: Source Extraction
+
+Mark Phase 3 as in_progress.
+
+#### 3.1 Snapshot Capture
 
 Run the capture script via Bash:
 
@@ -601,7 +468,7 @@ echo "Snapshot capture complete."
 
 If capture fails, suggest: different `--header-selector`, manual `--overlay-recipe`, or retry.
 
-### Stage 8: Extraction
+#### 3.2 Layout & Style Extraction
 
 Run layout extraction (from snapshot, no browser needed):
 
@@ -635,7 +502,7 @@ Extracted styles: font-family: <family>, nav color: <color>, <N> custom properti
 
 If either script fails, report the error and stop.
 
-### Stage 8b: Icon Collection
+#### 3.3 Icon Collection
 
 Extract and classify icons from the source header using page-collect:
 
@@ -674,17 +541,17 @@ else
 fi
 ```
 
-If icon extraction succeeds, the scaffold stage will use the output.
+If icon extraction succeeds, Phase 4 (Scaffold) will use the output.
 If it fails or page-collect is not installed, the migration continues
 without pre-extracted icons (the polish loop handles icons manually).
 
-### Stage 8c: Brand Font Detection & Installation
+#### 3.4 Font Detection & Installation
 
 Detect fonts used on the source page and install them in the EDS
 project so the AEM dev server renders correct fonts from iteration 1.
 
-**ALWAYS run this stage.** Do not skip it based on fonts detected in
-earlier stages. Brand-setup uses 4 browser API layers (document.fonts,
+**ALWAYS run this step.** Do not skip it based on fonts detected in
+earlier steps. Brand-setup uses 4 browser API layers (document.fonts,
 CSS import rules, Performance API, computed style voting) which detect
 web fonts that CSS extraction alone misses — including fonts loaded via
 JavaScript, lazy-loaded fonts, and fonts served from third-party CDNs.
@@ -727,7 +594,7 @@ git diff --cached --quiet head.html 2>/dev/null || \
   git commit -m "scaffold: install brand fonts in head.html"
 ```
 
-After this stage:
+After this step:
 - `head.html` has Typekit or Google Fonts `<link>` tags (committed)
 - `fonts-detected.json` available for the scaffold subagent
 - The AEM dev server renders pages with correct fonts
@@ -738,9 +605,13 @@ If brand-setup is not installed or fails, the migration continues
 without installed fonts — the polish loop can still converge, just
 with more iterations spent on font-related differences.
 
-### Stage 9: Scaffold Generation
+Mark Phase 3 as completed.
 
-This stage copies a battle-tested base header block and then dispatches
+### Phase 4: Scaffold Generation
+
+Mark Phase 4 as in_progress.
+
+This phase copies a battle-tested base header block and then dispatches
 a subagent to customize the CSS and generate nav.plain.html from the
 extraction data.
 
@@ -761,121 +632,9 @@ and generates nav.plain.html.
 
 **Step 2 — Dispatch scaffold subagent:**
 
-The subagent receives this prompt:
-
-```
-You are customizing an EDS header block for a specific website. The
-header.js is already in place and must NOT be modified. You will:
-1. Customize the CSS custom properties in header.css
-2. Generate nav.plain.html from extraction data
-
-## Input Data
-
-Read these files:
-- Layout: <PROJECT_ROOT>/autoresearch/extraction/layout.json
-- Styles: <PROJECT_ROOT>/autoresearch/extraction/styles.json
-- Fonts (if exists): <PROJECT_ROOT>/autoresearch/extraction/fonts-detected.json
-
-styles.json contains CDP-queried CSS values with provenance (which
-rule, which file, whether inherited). Use these directly — they are
-the source of truth for all styling decisions.
-
-If fonts-detected.json exists, use its `fonts.heading.stack` and
-`fonts.body.stack` values for `font-family` in header.css. These
-are the actual rendered fonts detected from the source page, and
-the corresponding font files are already installed in head.html.
-
-## Reference Docs
-
-Read ALL of these for patterns and mapping guidance:
-- $SKILL_HOME/references/eds-header-conventions.md
-- $SKILL_HOME/references/content-mapping.md
-- $SKILL_HOME/references/styling-guide.md
-- $SKILL_HOME/references/header-block-guide.md
-
-## Task 1: Customize header.css
-
-Open <PROJECT_ROOT>/blocks/header/header.css and update ONLY the CSS
-custom properties block at the top (.header.block { ... }) to match the
-source site's styles from styles.json.
-
-**Properties to set (all from styles.json):**
-- --header-background: from styles.header["background-color"].value
-- --header-nav-gap: from styles.navSpacing.value (spatially measured)
-- --header-nav-font-size: from styles.navLinks["font-size"].value
-- --header-nav-font-weight: from styles.navLinks["font-weight"].value
-- font-family: from styles.navLinks["font-family"].value
-- --header-text-color: from styles.navLinks.color.value
-- --header-section-padding: from styles.header.padding.value
-- For multi-row headers: styles.rows[N]["background-color"].value
-- For CTA buttons: styles.cta (background-color, color, border-radius)
-- Accent/hover color: styles.navLinksHover.color.value
-
-Do NOT modify the structural CSS (layout, dropdowns, etc.).
-
-## Task 2: Generate nav.plain.html
-
-Create <PROJECT_ROOT>/nav.plain.html following the content-mapping
-guide patterns. Use the extraction data:
-
-- layout.rows tells you the section structure (brand, main-nav, etc.)
-- layout.navItems.primary are the main nav links
-- layout.navItems.secondary are secondary/utility links
-- layout.rows[].elements tells you what each section contains
-- layout.logo has the logo image data (src, alt, width, height, href)
-- branding.logo also has the logo image data (src, alt, width, height)
-
-### Logo Handling
-
-If layout.logo or branding.logo has a src URL:
-
-Use `layout.logo` as the primary source (it includes `href`).
-Fall back to `branding.logo` only if `layout.logo` is null;
-use `href="/"` in that case since `branding.logo` has no link.
-
-1. Download the logo image to <PROJECT_ROOT>/images/logo.png (or
-   matching extension). Use curl or fetch.
-2. In nav.plain.html, use the local path:
-   `<p><a href="<logo.href>"><img src="./images/logo.png" alt="<logo.alt>"></a></p>`
-
-If no logo URL is available, use text: `<p><a href="/">Company Name</a></p>`
-
-Each section needs a section-metadata block with Style property.
-See content-mapping.md for exact HTML patterns per section type.
-
-For single-row headers (1 row): use a single main-nav section with
-inline brand and tools.
-
-For multi-row headers: use separate sections (brand, main-nav, utility)
-each with their own section-metadata.
-
-## Task 3: Wire extracted icons into EDS
-
-If `<PROJECT_ROOT>/autoresearch/extraction/icons/icons.json` exists:
-
-1. Read the icon manifest
-2. Copy all SVG files from `<PROJECT_ROOT>/autoresearch/extraction/icons/icons/`
-   to `<PROJECT_ROOT>/icons/`
-3. In nav.plain.html, use `:iconname:` notation for icons that appear
-   in the tools/utility section. For example, if the manifest has a
-   "search" icon, use `:search:` where a search button appears.
-4. For the logo, if the manifest has a "logo" class icon, use `:logo:`
-   in the brand section instead of an `<img>` tag.
-
-The EDS `decorateIcons()` function in `aem.js` automatically converts
-`:iconname:` to `<span class="icon icon-{name}"><img src="/icons/{name}.svg">`
-at runtime. Do NOT create inline SVGs for icons in the manifest.
-
-If the icon manifest does not exist, skip this task — icons will be
-handled by the polish loop instead.
-
-## After Generating
-
-Stage and commit:
-  cd <PROJECT_ROOT>
-  git add blocks/header/header.css nav.plain.html images/ icons/
-  git commit -m "scaffold: customize header CSS and generate nav content"
-```
+Read the [scaffold subagent prompt](references/scaffold-prompt.md) and
+send it to a subagent. Replace `<PROJECT_ROOT>` and `$SKILL_HOME` with
+actual paths before dispatching.
 
 After the subagent completes, verify the files exist:
 
@@ -889,7 +648,13 @@ done
 echo "Scaffold committed."
 ```
 
-### Stage 10: Polish Loop Setup
+Mark Phase 4 as completed.
+
+### Phase 5: Visual Polish
+
+Mark Phase 5 as in_progress.
+
+#### 5.1 Polish Loop Setup
 
 Run the setup script to generate the polish loop infrastructure:
 
@@ -917,7 +682,7 @@ chmod +x "$PROJECT_ROOT/loop.sh"
 echo "Polish loop infrastructure ready."
 ```
 
-### Stage 11: Dev Server + Polish Loop
+#### 5.2 Dev Server + Polish Loop
 
 Start the AEM dev server in the background, then launch the polish loop.
 
@@ -958,7 +723,13 @@ The loop runs autonomously. It terminates on:
 Do NOT attempt to control individual iterations. The loop handles
 scoring, commit/revert decisions, and termination.
 
-### Stage 12: Report
+Mark Phase 5 as completed.
+
+### Phase 6: Wrap-up
+
+Mark Phase 6 as in_progress.
+
+#### 6.1 Report
 
 After the loop finishes, clean up and report results.
 
@@ -1000,101 +771,20 @@ iteration count (kept vs reverted).
 3. When satisfied, commit and open a PR
 ```
 
-### Stage 13: Retrospective
+#### 6.2 Retrospective
 
-After reporting results, analyze the full migration run to extract
-learnings that could improve the skill for future header migrations.
+Read the [retrospective template](references/retrospective-template.md)
+and follow its data sources, analysis dimensions, output format, and
+user report appendix.
 
-**Read all data sources:**
-
-1. `$PROJECT_ROOT/results.tsv` — iteration scores and keep/revert decisions
-2. `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json` — detailed score breakdown
-3. `$PROJECT_ROOT/autoresearch/results/judge-history.jsonl` — per-iteration judge diagnosis log (JSONL: iteration, composite, desktop, nav, judge score, status, diagnosis array)
-4. `$PROJECT_ROOT/autoresearch/extraction/layout.json` — extracted layout structure
-5. `$PROJECT_ROOT/autoresearch/extraction/styles.json` — CDP-extracted CSS values
-6. `$PROJECT_ROOT/autoresearch/overlay-recipe.json` — overlays detected
-7. Source screenshots in `$PROJECT_ROOT/autoresearch/source/` — visual reference
-8. `git log --oneline` — changes made during polish
-
-**Analyze these dimensions:**
-
-| Dimension | Evidence | What it reveals |
-|-----------|----------|-----------------|
-| Extraction accuracy | Compare styles.json values against final CSS custom properties in header.css | Whether extraction scripts need calibration |
-| Scaffold quality | First iteration score in results.tsv | How good the initial code generation was |
-| Convergence pattern | Score trajectory and revert rate across iterations | Whether the polish loop guidance is effective |
-| Judge effectiveness | judge-history.jsonl: were diagnoses for kept iterations actionable? Did reverted iterations try to fix a diagnosed item but fail? | Whether judge guidance is helping or misleading |
-| Desktop fidelity | Desktop visual score in evaluation | Whether scaffold and polish loop guidance are effective |
-| Nav completeness | Nav score in evaluation vs layout.json navItems count | Whether content mapping missed items |
-| Overlay handling | Overlay recipe contents vs capture quality | Whether overlay detection was sufficient |
-| Bot protection | probe-report.json vs firstSuccess config | Whether probe correctly identified protection and recipe worked |
-
-**Generate the retrospective:**
-
-Save to `$PROJECT_ROOT/autoresearch/results/retrospective.md` using
-this structure:
-
-```markdown
-# Migration Retrospective: <domain>
-
-## Summary
-- Source: <URL>
-- Final composite: <score>% | Desktop: <d>%
-- Iterations: <kept>/<total> kept (<revert_rate>% revert rate)
-- Header type: <single-row|multi-row|mega-menu|etc.>
-
-## What Worked (Reinforcements)
-<!-- Concrete patterns the pipeline handled well. Include evidence:
-     "Brand color extraction (#1a2b3c) matched source exactly — zero
-     iterations spent fixing colors." -->
-
-- <finding with evidence>
-
-## What Struggled (Improvement Opportunities)
-<!-- Areas where the pipeline underperformed. Include evidence:
-     "Mobile hamburger menu took 8 iterations to converge, 4 reverted
-     — the scaffold default for slide-in mode didn't match the source
-     fullscreen overlay pattern." -->
-
-- <finding with evidence>
-
-## Pattern Notes
-<!-- Header-type observations useful for future migrations of similar
-     headers. E.g., "Mega menu with icon grid: extraction captured
-     grid dimensions but not icon placement — needed manual column
-     template in polish loop." -->
-
-- <observation>
-
-## Recommendations for Skill Improvement
-<!-- Actionable suggestions: script changes, new reference patterns,
-     CSS defaults, extraction improvements. Be specific enough that
-     someone could file an issue or write a patch. -->
-
-- <suggestion>
-```
-
-**Report to user** after the Stage 12 results, appending:
-
-```
-### Retrospective
-
-Learnings from this migration saved to:
-<PROJECT_ROOT>/autoresearch/results/retrospective.md
-
-**Reinforcements:** <1-2 sentence summary of what worked>
-**Improvements:** <1-2 sentence summary of what struggled>
-
-Review the full retrospective for detailed findings and skill
-improvement recommendations.
-```
+Mark Phase 6 as completed.
 
 ## Error Handling
 
-If any stage fails, follow this cleanup procedure:
+If any step fails, follow this cleanup procedure:
 
-1. Report which stage failed and the error message
-2. Report what completed successfully before the failure
+1. Report which phase and step failed, with the error message
+2. Report which phases completed successfully before the failure
 3. Kill the AEM dev server if it was started:
    ```bash
    if [[ -n "${AEM_PID:-}" ]]; then
@@ -1108,19 +798,17 @@ If any stage fails, follow this cleanup procedure:
 Example failure report:
 
 ```
-## Header Migration Failed at Stage 7 (Snapshot Capture)
+## Header Migration Failed at Step 3.1 (Snapshot Capture)
 
 **Error:** Header selector '.site-header' not found in page DOM.
 
-**Completed stages:**
-- [x] Stage 1: Arguments parsed (URL: https://example.com)
-- [x] Stage 2: EDS repository validated
-- [x] Stage 2b: Browser probe (no bot protection / stealth config)
-- [x] Stage 3: Working directory prepared
-- [x] Stage 4: Visual tree captured (N nodes, M overlays)
-- [x] Stage 5: Overlay detection (2 overlays dismissed)
-- [x] Stage 6: Header detected (selector: header.site-header)
-- [ ] Stage 7: Snapshot capture -- FAILED
+**Phase status:**
+- [x] Phase 1: Setup & Validation — completed
+- [x] Phase 2: Page Analysis — completed (N nodes, M overlays, header detected)
+- [ ] Phase 3: Source Extraction — FAILED at step 3.1 (Snapshot Capture)
+- [ ] Phase 4: Scaffold Generation — not started
+- [ ] Phase 5: Visual Polish — not started
+- [ ] Phase 6: Wrap-up — not started
 
 **Suggestion:** Try a different header selector:
   /migrate-header https://example.com --header-selector="nav.main-nav"
