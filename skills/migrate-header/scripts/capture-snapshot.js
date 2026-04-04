@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { parseEvalOutput } from './cdp-helpers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -134,19 +135,6 @@ function cli(...args) {
   return execFileSync(
     'playwright-cli', [`-s=${SESSION}`, ...args], EXEC_OPTS
   ).trim();
-}
-
-function parseEvalOutput(raw) {
-  const resultIdx = raw.indexOf('### Result');
-  const codeIdx = raw.indexOf('### Ran Playwright code');
-  if (resultIdx === -1) return raw;
-  const start = resultIdx + '### Result'.length;
-  const end = codeIdx !== -1 ? codeIdx : raw.length;
-  let value = raw.slice(start, end).trim();
-  if (value.startsWith('"') && value.endsWith('"')) {
-    value = value.slice(1, -1);
-  }
-  return value;
 }
 
 function cliEval(js) {
