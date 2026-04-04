@@ -70,9 +70,12 @@ Load [stealth-config.md](references/stealth-config.md) and match the
 `detectedSignals` array against the Provider Signature Table.
 
 Key interpretation rules:
-- `stealth` fails but `stealth-ua` succeeds → UA-based blocking (e.g.,
-  CloudFront WAF matching `HeadlessChrome` in User-Agent). Common on
-  pharma/enterprise sites. Simple fix, no TLS concerns.
+- `cloudfront-block` or `stealth` fails but `stealth-ua` succeeds →
+  CloudFront WAF UA-based blocking (matches `HeadlessChrome` in HTTP
+  User-Agent header). Common on pharma/enterprise sites. Simple fix,
+  no TLS concerns. `stealth-ua` is the minimum working config.
+- `cloudfront` without `cloudfront-block` → CloudFront present but not
+  actively blocking. Default config may work.
 - `akamai-server` or `akamai-bot-manager` → TLS fingerprint blocking.
   System Chrome is the fix. Stealth + UA alone is insufficient.
 - `cloudflare-ray` without `cloudflare-challenge` → Cloudflare present

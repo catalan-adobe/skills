@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -50,7 +50,7 @@ export function checkHealth(health) {
   return 'success';
 }
 
-export function detectSignals(networkLines, health) {
+export function detectSignals(networkLines, healths) {
   const signals = [];
   const joined = networkLines.join('\n').toLowerCase();
 
@@ -73,14 +73,23 @@ export function detectSignals(networkLines, health) {
   if (joined.includes('x-cdn: imperva') || joined.includes('x-iinfo')) {
     signals.push('incapsula');
   }
-
-  const title = (health.title || '').toLowerCase();
-  if (title.includes('just a moment')
-      || title.includes('checking your browser')) {
-    signals.push('cloudflare-challenge');
+  if (joined.includes('server: cloudfront') || joined.includes('x-amz-cf-id')) {
+    signals.push('cloudfront');
   }
 
-  return signals;
+  const healthArr = Array.isArray(healths) ? healths : [healths];
+  for (const health of healthArr) {
+    const title = (health.title || '').toLowerCase();
+    if (title.includes('just a moment')
+        || title.includes('checking your browser')) {
+      signals.push('cloudflare-challenge');
+    }
+    if (title.includes('the request could not be satisfied')) {
+      signals.push('cloudfront-block');
+    }
+  }
+
+  return [...new Set(signals)];
 }
 
 // --- CLI plumbing ---
@@ -136,10 +145,13 @@ const REALISTIC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
   + ' AppleWebKit/537.36 (KHTML, like Gecko)'
   + ' Chrome/120.0.0.0 Safari/537.36';
 
-function writeConfigFile(stepName, channel) {
+function writeConfigFile(stepName, { channel, uaOverride, stealthInitPath } = {}) {
   const config = { browser: { browserName: 'chromium', launchOptions: {} } };
   if (channel) config.browser.launchOptions.channel = channel;
-  config.browser.launchOptions.args = [`--user-agent=${REALISTIC_UA}`];
+  if (uaOverride) {
+    config.browser.launchOptions.args = [`--user-agent=${REALISTIC_UA}`];
+  }
+  if (stealthInitPath) config.browser.initScript = [stealthInitPath];
   const path = join(tmpdir(), `probe-${stepName}-config.json`);
   writeFileSync(path, JSON.stringify(config));
   return path;
@@ -171,36 +183,25 @@ function runStep(url, stepDef) {
   let configPath = null;
 
   try {
-    if (stepDef.uaOverride) {
+    const needsConfig = stepDef.stealth || stepDef.uaOverride;
+    if (needsConfig) {
       const channel = stepDef.browser !== 'chromium'
         ? stepDef.browser : undefined;
-      configPath = writeConfigFile(stepDef.name, channel);
+      configPath = writeConfigFile(stepDef.name, {
+        channel,
+        uaOverride: stepDef.uaOverride,
+        stealthInitPath: stepDef.stealth ? STEALTH_INIT_PATH : undefined,
+      });
     }
 
-    if (stepDef.stealth) {
-      // Inject stealth script via initScript (not eval — eval only accepts pure expressions)
-      if (!configPath) {
-        const channel = stepDef.browser !== 'chromium'
-          ? stepDef.browser : undefined;
-        configPath = writeConfigFile(stepDef.name, channel);
-      }
-      // Add stealth-init.js to the config's initScript array
-      const cfg = JSON.parse(readFileSync(configPath, 'utf-8'));
-      if (!cfg.browser) cfg.browser = {};
-      cfg.browser.initScript = [STEALTH_INIT_PATH];
-      writeFileSync(configPath, JSON.stringify(cfg));
-
-      const openArgs = ['open', url, `--config=${configPath}`];
-      if (stepDef.persistent) openArgs.push('--persistent');
-      cli(session, ...openArgs);
-    } else {
-      const openArgs = ['open', url];
-      if (stepDef.browser !== 'chromium') {
-        openArgs.push(`--browser=${stepDef.browser}`);
-      }
-      if (stepDef.persistent) openArgs.push('--persistent');
-      cli(session, ...openArgs);
+    const openArgs = ['open', url];
+    if (configPath) {
+      openArgs.push(`--config=${configPath}`);
+    } else if (stepDef.browser !== 'chromium') {
+      openArgs.push(`--browser=${stepDef.browser}`);
     }
+    if (stepDef.persistent) openArgs.push('--persistent');
+    cli(session, ...openArgs);
 
     waitForStable(session);
     const healthRaw = cliEval(session, HEALTH_CHECK_JS);
@@ -310,8 +311,8 @@ function main() {
     }
   }
 
-  const lastHealth = steps[steps.length - 1].health;
-  const detectedSignals = detectSignals(allNetworkLines, lastHealth);
+  const allHealths = steps.map(s => s.health);
+  const detectedSignals = detectSignals(allNetworkLines, allHealths);
 
   const report = {
     url,

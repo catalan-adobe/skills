@@ -3,6 +3,7 @@ import {
   parseEvalOutput,
   checkHealth,
   detectSignals,
+  buildStepResult,
 } from '../../skills/browser-probe/scripts/browser-probe.js';
 
 describe('parseEvalOutput', () => {
@@ -105,9 +106,9 @@ describe('detectSignals', () => {
     const networkLines = [
       'GET https://www.example.com/ 403 server: AkamaiGHost',
     ];
-    const signals = detectSignals(networkLines, {
-      title: 'Access Denied', status: 403,
-    });
+    const signals = detectSignals(networkLines, [
+      { title: 'Access Denied', status: 403 },
+    ]);
     expect(signals).toContain('akamai-server');
   });
 
@@ -115,33 +116,75 @@ describe('detectSignals', () => {
     const networkLines = [
       'GET https://www.example.com/ 200 cf-ray: abc123',
     ];
-    const signals = detectSignals(networkLines, {
-      title: 'Example', status: 200,
-    });
+    const signals = detectSignals(networkLines, [
+      { title: 'Example', status: 200 },
+    ]);
     expect(signals).toContain('cloudflare-ray');
   });
 
   it('detects Cloudflare challenge from page title', () => {
-    const signals = detectSignals([], {
-      title: 'Just a moment...', status: 200,
-    });
+    const signals = detectSignals([], [
+      { title: 'Just a moment...', status: 200 },
+    ]);
     expect(signals).toContain('cloudflare-challenge');
   });
 
+  it('detects CloudFront from server header and title', () => {
+    const networkLines = [
+      'GET https://www.example.com/ 403 server: CloudFront x-amz-cf-id: abc123',
+    ];
+    const signals = detectSignals(networkLines, [
+      { title: 'ERROR: The request could not be satisfied', status: 403 },
+    ]);
+    expect(signals).toContain('cloudfront');
+    expect(signals).toContain('cloudfront-block');
+  });
+
+  it('detects CloudFront block from title alone', () => {
+    const signals = detectSignals([], [
+      { title: 'ERROR: The request could not be satisfied', status: 403 },
+    ]);
+    expect(signals).toContain('cloudfront-block');
+    expect(signals).not.toContain('cloudfront');
+  });
+
+  it('detects CloudFront block from earlier step when later step succeeds', () => {
+    const signals = detectSignals(
+      ['GET https://example.com/ 403 server: CloudFront'],
+      [
+        { title: 'ERROR: The request could not be satisfied', status: 403 },
+        { title: 'AstraZeneca | Home', status: 200 },
+      ],
+    );
+    expect(signals).toContain('cloudfront');
+    expect(signals).toContain('cloudfront-block');
+  });
+
+  it('deduplicates signals across multiple blocked steps', () => {
+    const signals = detectSignals([], [
+      { title: 'Just a moment...', status: 200 },
+      { title: 'Just a moment...', status: 200 },
+      { title: 'Example', status: 200 },
+    ]);
+    const cfChallenges = signals.filter(s => s === 'cloudflare-challenge');
+    expect(cfChallenges).toHaveLength(1);
+  });
+
+  it('accepts single health for backward compatibility', () => {
+    const signals = detectSignals([], { title: 'Adobe', status: 200 });
+    expect(signals).toEqual([]);
+  });
+
   it('returns empty array for clean site', () => {
-    const signals = detectSignals([], {
-      title: 'Adobe', status: 200,
-    });
+    const signals = detectSignals([], [
+      { title: 'Adobe', status: 200 },
+    ]);
     expect(signals).toEqual([]);
   });
 });
 
 describe('buildStepResult', () => {
-  it('builds a well-formed step result', async () => {
-    // Dynamic import — buildStepResult not in the static import yet
-    const { buildStepResult } = await import(
-      '../../skills/browser-probe/scripts/browser-probe.js'
-    );
+  it('builds a well-formed step result', () => {
     const result = buildStepResult('default', {
       browser: 'chromium', stealth: false, persistent: false,
     }, 'blocked', {
