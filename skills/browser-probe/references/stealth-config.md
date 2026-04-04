@@ -90,5 +90,9 @@ page content) to CDN bot detection providers and typical remedies.
 | `x-amzn-waf-action` header present | AWS WAF | medium | Stealth script (UA-based detection) |
 | `x-cdn: Imperva` or `x-iinfo` header | Incapsula/Imperva | medium | System Chrome + stealth |
 | Page title contains "Access Denied" + `server: AkamaiGHost` | Akamai hard block | high | System Chrome — TLS fingerprint |
+| `server: CloudFront` or `x-amz-cf-id` header | CloudFront | medium | Stealth script (often UA-based) |
+| Page title contains "The request could not be satisfied" | CloudFront WAF block | high | UA override or stealth script |
+| `stealth` (JS-only) succeeds, `default` blocked | JS fingerprint detection | high | Stealth script sufficient |
+| `stealth` fails but `stealth-ua` succeeds | HTTP UA-based blocking | high | UA override (`--user-agent` launch arg) |
 | Page title matches `/error\|denied\|blocked\|403\|captcha/i` + no known provider | Unknown WAF | low | Escalate to persistent profile |
 | `status: 403` + `bodyLength < 500` | Generic block | low | Escalate through all steps |
