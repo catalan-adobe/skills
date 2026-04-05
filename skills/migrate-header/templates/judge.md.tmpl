@@ -1,10 +1,16 @@
-You are evaluating a header migration iteration by comparing screenshots.
+You are evaluating a header migration iteration by comparing screenshots and CSS values.
 
 ## Source Header (the target to match)
 
 Read this image: {{SOURCE_IMG}}
 
 This is the original website header we are trying to replicate in AEM Edge Delivery Services.
+
+## Source CSS Reference
+
+Read the source styles: {{STYLES_JSON}}
+
+This contains the extracted CSS values from the original header (font-family, font-size, height, background-color, etc.).
 
 ## Before (iteration {{BEFORE_ITERATION}})
 
@@ -18,25 +24,62 @@ Read this image: {{AFTER_IMG}}
 
 This is how the migrated header looks after the current iteration's changes.
 
+## CSS Query Tool
+
+To check actual CSS values on the rendered page, run bash commands:
+
+```bash
+node {{CSS_QUERY}} query "<selector>" "<properties>" --session=judge
+```
+
+Example: `node {{CSS_QUERY}} query "header" "font-family,font-size,height" --session=judge`
+
+The session is already open on http://localhost:{{PORT}}/ — just run query commands.
+
 ## Your Task
 
-Compare Before and After against the Source. Did the After iteration move closer to matching the Source header?
+Compare Before and After against the Source. Did the After iteration move closer to matching the Source header? Use a three-gate approach. Always evaluate Gate 1 first. Only proceed to the next gate if the current gate passes.
 
-Consider these dimensions:
-- **Layout structure** — row arrangement, column alignment, element positioning
+### Gate 1 — Structure (screenshots only)
+
+Check each of these. If ANY fails, set `layout_ok` to false:
+- **Element positioning** — is each element (logo, nav items, CTA/buttons) on the correct side (left/center/right)? An element on the wrong side = fail.
+- **Row/column arrangement** — correct number of rows? Elements in the correct row? Horizontal nav rendered vertically (or vice versa) = fail.
+- **Element sizes** — is the header height within ~30% of the source? Is the logo roughly the right size? An element 2x too large or too small = fail.
+- **Element order** — are elements in the same left-to-right sequence as the source?
+
+`layout_ok` is false unless ALL four checks pass. Err on the side of false.
+
+### Gate 2 — Precision (CSS queries — only if Gate 1 passes)
+
+Use the CSS query tool to compare rendered values against the source styles JSON. Check:
+- **Font family** — query `header nav a` for `font-family`. Does it match the source? A serif/sans-serif mismatch = fail.
+- **Font size** — query nav links for `font-size`. Within 2px of source = pass.
+- **Header height** — query `header` for `height`. Within 10% of source = pass.
+- **Element dimensions** — query logo for `width,height`. Within 15% of source = pass.
+
+`precision_ok` is false unless font-family matches AND sizes are within tolerance. Run at least 3 CSS queries to verify.
+
+### Gate 3 — Polish (screenshots — only if Gate 2 passes)
+
+Only evaluate these if `precision_ok` is true:
 - **Colors** — background colors, text colors, accent colors
-- **Typography** — sizes, weights, and typeface identity. For typeface, look at the letterform shapes of nav items specifically: are they serif (small feet/strokes at letter ends, e.g. Times, Georgia, Lexia) or sans-serif (clean strokes, no feet, e.g. Helvetica, Arial)? A serif/sans-serif mismatch is a high-priority gap regardless of how subtle it looks — report it as "nav items use wrong typeface: source is [serif/sans-serif], migration uses [serif/sans-serif]"
 - **Spacing** — padding, gaps between elements, margins
-- **Logo** — placement, size, proportions
-- **Nav items** — arrangement, visibility, hover indicators
+- **Decorative details** — hover indicators, icons, borders, shadows
 
-Ignore minor subpixel differences, antialiasing, and font rendering variations between browsers.
+Ignore minor subpixel differences, antialiasing, and font rendering variations.
 
 **Respond with ONLY this JSON (no markdown fences, no other text):**
 
-{"improved": true, "confidence": "high", "diagnosis": ["biggest visual gap to fix"]}
+{"improved": true, "layout_ok": true, "precision_ok": false, "active_gate": 2, "confidence": "high", "reasoning": "Layout correct. Font-family is Arial but source is Helvetica Neue. Header height 120px vs source 94px (27% off).", "structure_issues": [], "precision_issues": ["font-family: Arial vs source Helvetica Neue", "header height: 120px vs source 94px"], "diagnosis": ["set header font-family to Helvetica Neue and reduce header height to 94px"]}
 
 Rules for the JSON:
 - "improved": true if After is closer to Source than Before, false otherwise
+- "layout_ok": false unless ALL Gate 1 checks pass
+- "precision_ok": false unless Gate 2 passes (always false if layout_ok is false)
+- "active_gate": 1, 2, or 3 — the gate that produced the diagnosis
+- "reasoning": 1-3 sentences explaining what you see/measured and why. Include actual CSS values for Gate 2.
+- "structure_issues": Gate 1 failures (empty if layout_ok is true)
+- "precision_issues": Gate 2 failures with actual vs expected values (empty if not evaluated or precision_ok is true)
 - "confidence": "high", "medium", or "low"
-- "diagnosis": 1-2 specific actionable items describing the HIGHEST-PRIORITY differences between After and Source. Focus on the single biggest visual gap. Be precise — reference positions (left/center/right), approximate colors, sizes, and spacing. Fewer focused items produce better iterations than long wishlists.
+- "diagnosis": 1-2 specific actionable items from the ACTIVE gate only. Be precise — for Gate 2, include exact CSS values to target.

@@ -57,10 +57,15 @@ describe.skipIf(!hasPlaywrightCli())(
       expect(results.missingSelector).toBeNull();
     });
 
-    it('extractNavItems finds 3 links', () => {
-      expect(results.navItems.length).toBe(3);
-      expect(results.navItems[0].text).toBe('Products');
-      expect(results.navItems[0].href).toBe('/products');
+    it('extractNavItems finds all links with visibility flag', () => {
+      const visible = results.navItems.filter(i => i.visible);
+      const hidden = results.navItems.filter(i => !i.visible);
+      expect(visible.length).toBe(3);
+      expect(hidden.length).toBe(4);
+      expect(visible[0].text).toBe('Products');
+      expect(visible[0].href).toBe('/products');
+      expect(hidden[0].text).toBe('Featured Product Alpha');
+      expect(hidden[0].visible).toBe(false);
     });
 
     it('extractNavItems returns empty for missing selector', () => {

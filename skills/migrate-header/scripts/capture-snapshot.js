@@ -324,7 +324,8 @@ function main() {
     }
 
     const navItems = extractNavItems(headerSelector);
-    log(`  Found ${navItems.length} nav items`);
+    const visibleCount = navItems.filter(i => i.visible).length;
+    log(`  Found ${navItems.length} nav items (${visibleCount} visible, ${navItems.length - visibleCount} hidden)`);
 
     const screenshots = captureScreenshots(outputDir, headerSelector);
 
