@@ -85,6 +85,22 @@
       var header = document.querySelector(selector);
       if (!header) return JSON.stringify([]);
 
+      function isVisible(el) {
+        var node = el;
+        while (node && node !== header) {
+          var style = getComputedStyle(node);
+          if (style.display === 'none') return false;
+          if (style.visibility === 'hidden') return false;
+          if (style.opacity === '0') return false;
+          if (style.maxHeight === '0px' && style.overflow === 'hidden')
+            return false;
+          node = node.parentElement;
+        }
+        var rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return false;
+        return true;
+      }
+
       var links = header.querySelectorAll('a');
       var items = [];
 
@@ -92,6 +108,8 @@
         var a = links[i];
         var text = (a.textContent || '').trim();
         if (!text) continue;
+
+        var visible = isVisible(a);
 
         var level = 0;
         var ancestor = a.parentElement;
@@ -122,6 +140,7 @@
           text: text,
           href: a.getAttribute('href') || '',
           level: level,
+          visible: visible,
         };
         if (parent) item.parent = parent;
         items.push(item);

@@ -468,6 +468,43 @@ echo "Snapshot capture complete."
 
 If capture fails, suggest: different `--header-selector`, manual `--overlay-recipe`, or retry.
 
+#### 3.1b Nav Item Classification
+
+The snapshot contains raw nav items with a `visible` flag. Visible items
+are the primary nav (shown when the page loads). Hidden items come from
+dropdown/mega-menu panels and need LLM classification — some are real
+submenu items, others are promotional content (e.g., "Featured website...",
+"Annual Report 2025").
+
+Read `$PROJECT_ROOT/autoresearch/source/snapshot.json` and extract the
+`navItems` array. Classify each hidden item as either:
+- **`submenu`** — a real navigation link that belongs under a primary nav
+  item (e.g., "Clinical Trials" under "R&D")
+- **`promotional`** — a featured/promotional link that should be excluded
+  from the nav structure (e.g., "Featured website AstraZeneca Clinical Trials")
+
+Use this classification logic:
+1. Visible items (`visible: true`) are always **primary nav** — keep as-is
+2. For hidden items (`visible: false`), determine if the item is a genuine
+   submenu link or promotional content based on:
+   - Text pattern: "Featured...", "Annual Report...", promotional language → promotional
+   - The item's `parent` field (if present) suggests it belongs under a nav item → submenu
+   - URL structure: matches the site's nav URL pattern → submenu
+   - Duplicates a visible item's text → promotional
+3. Assign `role: "primary"`, `role: "submenu"`, or `role: "promotional"`
+
+Write the classified array back to `snapshot.json` (update the `navItems`
+field in place). Downstream scripts (`extract-layout.js`) will use the
+`role` field to build the nav hierarchy — items with `role: "promotional"`
+are excluded.
+
+Example classification:
+```json
+{"text": "R&D", "href": "/r-and-d", "level": 1, "visible": true, "role": "primary"}
+{"text": "Clinical Trials", "href": "/clinical-trials", "level": 2, "visible": false, "parent": "R&D", "role": "submenu"}
+{"text": "Featured website AstraZeneca Clinical Trials", "href": "/featured/trials", "level": 2, "visible": false, "parent": "R&D", "role": "promotional"}
+```
+
 #### 3.2 Layout & Style Extraction
 
 Run layout extraction (from snapshot, no browser needed):
@@ -490,7 +527,7 @@ node "$SKILL_HOME/scripts/extract-styles.js" \
   "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
   "$URL" \
   $RECIPE_FLAG \
-  > "$PROJECT_ROOT/autoresearch/extraction/styles.json"
+  > "$PROJECT_ROOT/autoresearch/extraction/styles.json" 2>/dev/null
 ```
 
 After extraction, read both JSON files and log a summary:
@@ -527,7 +564,7 @@ else
   PAGE_COLLECT_DIR="$(dirname "$PAGE_COLLECT")"
   if [[ ! -d "$PAGE_COLLECT_DIR/node_modules" ]]; then
     echo "Installing page-collect dependencies..."
-    (cd "$PAGE_COLLECT_DIR" && npm install --no-audit --no-fund 2>/dev/null) || true
+    (cd "$PAGE_COLLECT_DIR" && npm install --no-audit --no-fund 2>/dev/null && npx playwright install chromium 2>/dev/null) || true
   fi
 
   node "$PAGE_COLLECT" icons "$URL" --output "$ICON_OUTPUT" $RECIPE_ARGS 2>/dev/null
@@ -713,7 +750,8 @@ echo "AEM dev server ready on http://localhost:3000/"
 **Launch the polish loop** (this blocks until completion):
 
 ```bash
-cd "$PROJECT_ROOT" && ./loop.sh
+cd "$PROJECT_ROOT" && ./loop.sh 2>&1 | tee autoresearch/results/loop.log
+echo "Loop finished. Full log at autoresearch/results/loop.log"
 ```
 
 The loop runs autonomously. It terminates on:
@@ -723,7 +761,7 @@ The loop runs autonomously. It terminates on:
 Do NOT attempt to control individual iterations. The loop handles
 scoring, commit/revert decisions, and termination.
 
-Mark Phase 5 as completed.
+Mark Phase 5 as completed. Then proceed to Phase 6 — do NOT stop here.
 
 ### Phase 6: Wrap-up
 
@@ -771,11 +809,13 @@ iteration count (kept vs reverted).
 3. When satisfied, commit and open a PR
 ```
 
-#### 6.2 Retrospective
+#### 6.2 Retrospective (required — do not skip)
 
 Read the [retrospective template](references/retrospective-template.md)
 and follow its data sources, analysis dimensions, output format, and
-user report appendix.
+user report appendix. Save the retrospective to
+`$PROJECT_ROOT/autoresearch/results/retrospective.md` and append
+the summary to the user report.
 
 Mark Phase 6 as completed.
 

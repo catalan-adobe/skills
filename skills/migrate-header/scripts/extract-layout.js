@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 
 const snapshot = JSON.parse(readFileSync(process.argv[2], 'utf-8'));
 const header = snapshot.header;
-const navItemsRaw = snapshot.navItems || [];
+const navItemsRaw = (snapshot.navItems || [])
+  .filter(item => item.role !== 'promotional');
 
 const headerHeight = header.boundingRect?.height || 0;
 const rows = identifyRows(header);

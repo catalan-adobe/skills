@@ -41,9 +41,22 @@ function cliEval(js) {
 const HTML = `<body style="margin:0">
 <header style="width:1440px;height:80px;background:rgb(26,26,46);display:flex;align-items:center">
 <nav><ul style="display:flex;gap:20px;list-style:none;margin:0;padding:0">
-<li><a href="/products">Products</a></li>
-<li><a href="/solutions">Solutions</a></li>
-<li><a href="/resources">Resources</a></li>
+<li><a href="/products">Products</a>
+  <div style="display:none"><ul>
+    <li><a href="/products/featured">Featured Product Alpha</a></li>
+    <li><a href="/products/new">New Release Beta</a></li>
+  </ul></div>
+</li>
+<li><a href="/solutions">Solutions</a>
+  <div style="visibility:hidden;position:absolute"><ul>
+    <li><a href="/solutions/enterprise">Enterprise</a></li>
+  </ul></div>
+</li>
+<li><a href="/resources">Resources</a>
+  <div style="opacity:0;position:absolute"><ul>
+    <li><a href="/resources/docs">Documentation</a></li>
+  </ul></div>
+</li>
 </ul></nav></header>
 <main style="height:2000px"><p>Content</p></main></body>`;
 

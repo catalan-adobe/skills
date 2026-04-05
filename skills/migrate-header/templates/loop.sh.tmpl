@@ -18,6 +18,7 @@ ITERATION=0
 CONSECUTIVE_REVERTS=0
 BEST_KEPT_ITERATION=0
 JUDGE_TMPL_DIR="{{SKILL_HOME}}/templates"
+JUDGE_NEUTRAL=$'50\t{"layout_ok":true,"precision_ok":false,"active_gate":1,"diagnosis":[],"structure_issues":[],"precision_issues":[],"reasoning":""}'
 
 # Colors
 RED='\033[0;31m'
@@ -93,68 +94,76 @@ run_evaluation() {
   " 2>/dev/null || echo "0|0|0"
 }
 
-# Run LLM judge: compare source + before + after screenshots
+# Run LLM judge: compare source + before + after screenshots + CSS queries
 run_judge() {
   local iteration=$1
   local source_img="${PROJECT_DIR}/autoresearch/source/desktop.png"
+  local styles_json="${PROJECT_DIR}/autoresearch/extraction/styles.json"
+  local css_query="{{SKILL_HOME}}/scripts/css-query.js"
   local after_img="${PROJECT_DIR}/autoresearch/results/desktop-rendered-${iteration}.png"
   local judge_prompt_file="/tmp/judge-prompt-$$.md"
 
   if [[ ! -f "${after_img}" ]]; then
     warn "Judge: after screenshot not found, skipping"
-    echo '50|[]'
+    printf '%s\n' "${JUDGE_NEUTRAL}"
     return
   fi
 
+  # Common sed replacements for both templates
+  local common_seds=(
+    -e "s|{{SOURCE_IMG}}|${source_img}|g"
+    -e "s|{{AFTER_IMG}}|${after_img}|g"
+    -e "s|{{AFTER_ITERATION}}|${iteration}|g"
+    -e "s|{{STYLES_JSON}}|${styles_json}|g"
+    -e "s|{{CSS_QUERY}}|${css_query}|g"
+    -e "s|{{PORT}}|${PORT}|g"
+  )
+
   # Build judge prompt from template
   if [[ ${BEST_KEPT_ITERATION} -eq 0 ]]; then
-    # First iteration: use 2-image template
     local tmpl="${JUDGE_TMPL_DIR}/judge-first.md.tmpl"
     if [[ ! -f "${tmpl}" ]]; then
       warn "Judge: first-iteration template not found, skipping"
-      echo '50|[]'
+      printf '%s\n' "${JUDGE_NEUTRAL}"
       return
     fi
-    sed -e "s|{{SOURCE_IMG}}|${source_img}|g" \
-        -e "s|{{AFTER_IMG}}|${after_img}|g" \
-        -e "s|{{AFTER_ITERATION}}|${iteration}|g" \
-        "${tmpl}" > "${judge_prompt_file}"
+    sed "${common_seds[@]}" "${tmpl}" > "${judge_prompt_file}"
   else
-    # Subsequent iterations: use 3-image template
     local before_img="${PROJECT_DIR}/autoresearch/results/desktop-rendered-${BEST_KEPT_ITERATION}.png"
     local tmpl="${JUDGE_TMPL_DIR}/judge.md.tmpl"
     if [[ ! -f "${tmpl}" ]]; then
       warn "Judge: template not found, skipping"
-      echo '50|[]'
+      printf '%s\n' "${JUDGE_NEUTRAL}"
       return
     fi
     if [[ ! -f "${before_img}" ]]; then
       warn "Judge: before screenshot not found, using first-iteration template"
       tmpl="${JUDGE_TMPL_DIR}/judge-first.md.tmpl"
-      sed -e "s|{{SOURCE_IMG}}|${source_img}|g" \
-          -e "s|{{AFTER_IMG}}|${after_img}|g" \
-          -e "s|{{AFTER_ITERATION}}|${iteration}|g" \
-          "${tmpl}" > "${judge_prompt_file}"
+      sed "${common_seds[@]}" "${tmpl}" > "${judge_prompt_file}"
     else
-      sed -e "s|{{SOURCE_IMG}}|${source_img}|g" \
+      sed "${common_seds[@]}" \
           -e "s|{{BEFORE_IMG}}|${before_img}|g" \
           -e "s|{{BEFORE_ITERATION}}|${BEST_KEPT_ITERATION}|g" \
-          -e "s|{{AFTER_IMG}}|${after_img}|g" \
-          -e "s|{{AFTER_ITERATION}}|${iteration}|g" \
           "${tmpl}" > "${judge_prompt_file}"
     fi
   fi
 
-  # Invoke judge
+  # Open css-query session on rendered page for Gate 2
+  node "${css_query}" open "http://localhost:${PORT}/" --session=judge 2>/dev/null || true
+
+  # Invoke judge (Read for images/styles, Bash for css-query)
   local judge_raw
   judge_raw=$(claude -p "$(cat "${judge_prompt_file}")" \
-    --allowedTools "Read" \
+    --allowedTools "Read,Bash" \
     --output-format json 2>"${PROJECT_DIR}/autoresearch/results/judge-stderr.log") || true
   rm -f "${judge_prompt_file}"
 
+  # Close css-query session
+  node "${css_query}" close --session=judge 2>/dev/null || true
+
   if [[ -z "${judge_raw}" ]]; then
     warn "Judge: no output, defaulting to neutral"
-    echo '50|[]'
+    printf '%s\n' "${JUDGE_NEUTRAL}"
     return
   fi
 
@@ -165,12 +174,20 @@ run_judge() {
       const envelope = JSON.parse(raw);
       const d = JSON.parse(envelope.result);
       const score = d.improved === true ? 100 : (d.improved === false ? 0 : 50);
-      const diagnosis = JSON.stringify(d.diagnosis || []);
-      console.log(score + '\t' + diagnosis);
+      const detail = JSON.stringify({
+        layout_ok: d.layout_ok === true,
+        precision_ok: d.precision_ok === true,
+        active_gate: d.active_gate || 1,
+        diagnosis: d.diagnosis || [],
+        structure_issues: d.structure_issues || [],
+        precision_issues: d.precision_issues || [],
+        reasoning: d.reasoning || '',
+      });
+      console.log(score + '\t' + detail);
     } catch {
-      console.log('50\t[]');
+      console.log('50\t' + JSON.stringify({layout_ok:true,precision_ok:false,active_gate:1,diagnosis:[],structure_issues:[],precision_issues:[],reasoning:''}));
     }
-  " 2>/dev/null || printf '50\t[]\n'
+  " 2>/dev/null || printf '%s\n' "${JUDGE_NEUTRAL}"
 }
 
 # Main loop
@@ -237,17 +254,17 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
   # Run LLM judge
   log "Running judge comparison..."
   judge_result=$(run_judge "${ITERATION}")
-  IFS=$'\t' read -r judge_score judge_diagnosis <<< "${judge_result}"
+  IFS=$'\t' read -r judge_score judge_detail <<< "${judge_result}"
 
-  # Write judge diagnosis for next iteration's polish agent
-  echo "${judge_diagnosis}" > "${PROJECT_DIR}/autoresearch/results/judge-feedback.json"
+  # Write judge feedback for next iteration's polish agent
+  echo "${judge_detail}" > "${PROJECT_DIR}/autoresearch/results/judge-feedback.json"
 
-  # Recompute composite: pixelmatch 55% + nav 25% + judge 20%
+  # Recompute composite: pixelmatch 50% + nav 25% + judge 25%
   score=$(node -e "
     const pm = ${desktop} || 0;
     const nav = ${nav_score} || 0;
     const judge = ${judge_score} || 50;
-    console.log(Math.round((pm * 0.55 + nav * 0.25 + judge * 0.20) * 100) / 100);
+    console.log(Math.round((pm * 0.50 + nav * 0.25 + judge * 0.25) * 100) / 100);
   " 2>/dev/null || echo "0")
 
   # Compare with best — strict improvement required
@@ -289,20 +306,21 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
   # Append to cumulative judge history (survives git reverts)
   node -e "
     const fs = require('fs');
+    const detail = JSON.parse(process.argv[1] || '{}');
     const entry = {
+      ...detail,
       iteration: ${ITERATION},
       composite: ${score},
       desktop: ${desktop},
       nav: ${nav_score},
       judge: ${judge_score},
       status: '${iteration_status}',
-      diagnosis: JSON.parse(process.argv[1] || '[]'),
     };
     fs.appendFileSync(
       '${PROJECT_DIR}/autoresearch/results/judge-history.jsonl',
       JSON.stringify(entry) + '\n'
     );
-  " "${judge_diagnosis}" 2>/dev/null || true
+  " "${judge_detail}" 2>/dev/null || true
 
   echo ""
 done

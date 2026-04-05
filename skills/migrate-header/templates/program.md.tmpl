@@ -46,22 +46,36 @@ If results.tsv shows repeated reverts for similar approaches (e.g., multiple "he
 ## Judge Feedback
 
 If `autoresearch/results/judge-feedback.json` exists, read it FIRST.
-It contains a diagnosis from the previous iteration — a list of specific
-visual differences between your rendered header and the source, identified
-by comparing screenshots. Address these items before exploring other
-changes.
+It contains a three-gate assessment from the previous iteration:
 
-Example:
 ```json
-[
-  "Header background is #f5f5f5, source is #1a1a2e — dark background missing",
-  "Nav links are stacked vertically, source shows horizontal flex layout",
-  "Logo is 40px tall, source shows ~28px — reduce logo height"
-]
+{
+  "layout_ok": true,
+  "precision_ok": false,
+  "active_gate": 2,
+  "reasoning": "Layout correct. Font-family is Arial but source is Helvetica Neue. Header height 120px vs source 94px.",
+  "structure_issues": [],
+  "precision_issues": ["font-family: Arial vs source Helvetica Neue", "header height: 120px vs source 94px"],
+  "diagnosis": ["set header font-family to Helvetica Neue and reduce header height to 94px"]
+}
 ```
 
-These observations come from comparing the source screenshot against
-your latest rendered screenshot. They are more reliable than guessing
+The judge uses three gates — fix issues from the **active gate** only:
+
+- **Gate 1 (`layout_ok: false`)** — structural layout is wrong. Fix element
+  positions, row arrangement, element order. Do NOT work on fonts, sizes,
+  colors, or details.
+- **Gate 2 (`precision_ok: false`)** — layout is correct but fonts, sizes,
+  or dimensions don't match the source. Fix the specific CSS values listed
+  in `precision_issues`. Do NOT work on colors or decorative details.
+- **Gate 3 (both ok)** — structure and precision are correct. Fix colors,
+  spacing fine-tuning, decorative details.
+
+`reasoning` includes actual CSS values the judge measured (Gate 2) or
+visual observations (Gates 1 and 3). Use these to target your fixes.
+
+These observations come from comparing screenshots and querying actual
+CSS values on the rendered page. They are more reliable than guessing
 from the pixelmatch diff image. Prioritize fixing these items.
 
 ## How the Evaluator Scores You
@@ -72,9 +86,9 @@ After you exit, two evaluations run:
 2. **LLM judge** — compares source, previous best, and your current render to assess semantic improvement
 
 The composite score (0-100) combines:
-- **55% weight**: Visual similarity via pixelmatch (desktop only)
+- **50% weight**: Visual similarity via pixelmatch (desktop only)
 - **25% weight**: Nav completeness (are all {{NAV_ITEM_COUNT}} source nav items present in the rendered HTML?)
-- **20% weight**: LLM judge (did this iteration improve? YES=100, NO=0)
+- **25% weight**: LLM judge (did this iteration improve? YES=100, NO=0)
 
 **Important**: The evaluator pads images to equal dimensions before comparing. If your rendered header is shorter than the source, the missing rows count as full-row pixel mismatches. **Matching the source header height (~{{HEADER_HEIGHT}}px) is essential for a good visual score.**
 
