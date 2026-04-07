@@ -25,7 +25,7 @@ to converge on pixel-accurate fidelity.
 ```
 Phase 1: Setup & Validation     │ Parse args → Validate EDS → Probe CDN → Prepare dirs
 Phase 2: Page Analysis          │ Visual tree → Overlay detection → Header identification
-Phase 3: Source Extraction      │ Snapshot → Layout/styles → Icons → Fonts
+Phase 3: Source Extraction      │ Row agents (parallel) → Icons → Fonts
 Phase 4: Scaffold Generation    │ Copy base block → Customize CSS → Generate nav
 Phase 5: Visual Polish          │ Setup loop infra → Run autonomous polish loop
 Phase 6: Wrap-up                │ Report results → Generate retrospective
@@ -43,10 +43,7 @@ SKILL_HOME="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/migrate-header}"
 Scripts:
 - `node $SKILL_HOME/scripts/capture-visual-tree.js <url> <output-dir> [--browser-recipe=path] [--session=visual-tree]`
 - `node $SKILL_HOME/scripts/detect-overlays-fallback.js <url> <output-dir> [--browser-recipe=path]`
-- `node $SKILL_HOME/scripts/capture-snapshot.js <url> <output-dir> [--header-selector=header] [--overlay-recipe=path] [--browser-recipe=path]`
-- `node $SKILL_HOME/scripts/extract-layout.js <snapshot.json>` (stdout JSON)
-- `node $SKILL_HOME/scripts/extract-styles.js <snapshot.json> <url> [--browser-recipe=path]` (stdout JSON)
-- `node $SKILL_HOME/scripts/setup-polish-loop.js --layout=... --styles=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
+- `node $SKILL_HOME/scripts/setup-polish-loop.js --rows-dir=... --url=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
 - `node $SKILL_HOME/scripts/css-query.js open <url> [--browser-recipe=path] [--session=name]`
 - `node $SKILL_HOME/scripts/css-query.js query <selector|node:N> <properties>`
 - `node $SKILL_HOME/scripts/css-query.js cascade <selector|node:N>`
@@ -67,7 +64,7 @@ progress through all 6 phases:
 
 1. **Phase 1: Setup & Validation** — Parse args, validate EDS repo, probe CDN, prepare dirs
 2. **Phase 2: Page Analysis** — Visual tree, overlay detection, header identification
-3. **Phase 3: Source Extraction** — Snapshot, layout/styles, icons, fonts
+3. **Phase 3: Source Extraction** — Row agents (parallel), icons, fonts
 4. **Phase 4: Scaffold Generation** — Copy base block, customize CSS, generate nav
 5. **Phase 5: Visual Polish** — Setup loop infrastructure, run autonomous polish
 6. **Phase 6: Wrap-up** — Report results, generate retrospective
@@ -784,8 +781,8 @@ Run the setup script to generate the polish loop infrastructure:
 
 ```bash
 node "$SKILL_HOME/scripts/setup-polish-loop.js" \
-  "--layout=$PROJECT_ROOT/autoresearch/extraction/layout.json" \
-  "--styles=$PROJECT_ROOT/autoresearch/extraction/styles.json" \
+  "--rows-dir=$PROJECT_ROOT/autoresearch/extraction" \
+  "--url=$URL" \
   "--source-dir=$PROJECT_ROOT/autoresearch/source" \
   "--target-dir=$PROJECT_ROOT" \
   "--port=3000" \
