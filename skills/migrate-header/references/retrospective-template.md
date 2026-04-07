@@ -10,8 +10,8 @@ Read all of these before analyzing:
 1. `$PROJECT_ROOT/results.tsv` — iteration scores and keep/revert decisions
 2. `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json` — detailed score breakdown
 3. `$PROJECT_ROOT/autoresearch/results/judge-history.jsonl` — per-iteration judge diagnosis log (JSONL: iteration, composite, desktop, nav, judge score, status, diagnosis array)
-4. `$PROJECT_ROOT/autoresearch/extraction/layout.json` — extracted layout structure
-5. `$PROJECT_ROOT/autoresearch/extraction/styles.json` — CDP-extracted CSS values
+4. `$PROJECT_ROOT/autoresearch/extraction/row-*.json` — per-row content and style extractions
+5. `$PROJECT_ROOT/autoresearch/extraction/styles.json` — synthesized CSS reference values (derived from row data)
 6. `$PROJECT_ROOT/autoresearch/overlay-recipe.json` — overlays detected
 7. Source screenshots in `$PROJECT_ROOT/autoresearch/source/` — visual reference
 8. `git log --oneline` — changes made during polish
@@ -20,12 +20,12 @@ Read all of these before analyzing:
 
 | Dimension | Evidence | What it reveals |
 |-----------|----------|-----------------|
-| Extraction accuracy | Compare styles.json values against final CSS custom properties in header.css | Whether extraction scripts need calibration |
+| Extraction accuracy | Compare row-*.json styles against final CSS custom properties in header.css | Whether row agent extraction needs tuning |
 | Scaffold quality | First iteration score in results.tsv | How good the initial code generation was |
 | Convergence pattern | Score trajectory and revert rate across iterations | Whether the polish loop guidance is effective |
 | Judge effectiveness | judge-history.jsonl: were diagnoses for kept iterations actionable? Did reverted iterations try to fix a diagnosed item but fail? | Whether judge guidance is helping or misleading |
 | Desktop fidelity | Desktop visual score in evaluation | Whether scaffold and polish loop guidance are effective |
-| Nav completeness | Nav score in evaluation vs layout.json navItems count | Whether content mapping missed items |
+| Nav completeness | Nav score in evaluation vs row-*.json nav-link element count | Whether content mapping missed items |
 | Overlay handling | Overlay recipe contents vs capture quality | Whether overlay detection was sufficient |
 | Bot protection | probe-report.json vs firstSuccess config | Whether probe correctly identified protection and recipe worked |
 

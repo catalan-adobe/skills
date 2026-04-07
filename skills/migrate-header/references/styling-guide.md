@@ -514,7 +514,7 @@ For single-row headers where utility is inside main-nav:
 
 ### Extracting Colors from Source
 
-From `computed-styles.json`, map these properties:
+From the row extraction styles, map these properties:
 
 ```javascript
 // Source computed styles → Header CSS

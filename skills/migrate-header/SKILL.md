@@ -5,7 +5,8 @@ description: >
   fidelity using an automated extraction + scaffold + visual polish pipeline.
   Takes a URL, captures a visual tree for spatial analysis, detects and
   dismisses overlays via LLM, identifies the header element from the spatial
-  map, captures DOM snapshots, extracts layout and branding, generates scaffold
+  map, identifies visual rows, dispatches parallel LLM agents to extract content
+  and styles per row, generates scaffold
   code, then launches an autonomous visual polish loop. Requires being in an
   EDS git repository. Works in the current directory — the caller is
   responsible for worktree/branch setup if isolation is needed. Triggers on:
