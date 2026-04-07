@@ -479,8 +479,18 @@ playwright-cli -s=visual-tree screenshot \
   --filename=$PROJECT_ROOT/autoresearch/source/desktop-full.png
 ```
 
-**Crop to header region** using bounds from `header-detection.json`.
-Use pngjs from the skill's scripts/node_modules:
+**Extract header height** from the rows.json produced in step 2.4:
+
+```bash
+HEADER_HEIGHT=$(node --input-type=module -e "
+  import { readFileSync } from 'fs';
+  const rows = JSON.parse(readFileSync(
+    '$PROJECT_ROOT/autoresearch/source/rows.json', 'utf-8'));
+  console.log(rows.headerHeight);
+")
+```
+
+**Crop to header region** using pngjs from the skill's scripts/node_modules:
 
 ```bash
 node --input-type=module -e "
@@ -503,9 +513,6 @@ node --input-type=module -e "
 "
 ```
 
-Where `${HEADER_HEIGHT}` is the `headerHeight` from `rows.json`
-(or `header-detection.json` bounds).
-
 #### 2.6 Close Visual-Tree Session
 
 ```bash
@@ -522,6 +529,21 @@ Mark Phase 3 as in_progress.
 
 Read `$PROJECT_ROOT/autoresearch/source/rows.json` (produced in step 2.4).
 Dispatch one subagent per row **in parallel** using the Agent tool.
+
+**Placeholder resolution** for the row agent prompt:
+
+| Placeholder | Value |
+|-------------|-------|
+| `[INDEX]` | Row index from `rows.json` (0, 1, ...) |
+| `[TOTAL_ROWS]` | Length of `rows.json` rows array |
+| `[DESCRIPTION]` | Row description from `rows.json` |
+| `[SELECTOR]` | Row CSS selector from `rows.json` |
+| `[VT_SUBTREE]` | Row vtSubtree text from `rows.json` |
+| `[CSS_QUERY_PATH]` | `$SKILL_HOME/scripts/css-query.js` |
+| `[URL]` | `$URL` (from step 1.1) |
+| `[BROWSER_RECIPE_FLAG]` | `--browser-recipe=$BROWSER_RECIPE` if set, empty otherwise |
+| `[PROJECT_ROOT]` | `$PROJECT_ROOT` |
+| `[Y]`, `[HEIGHT]` | Row bounds from `rows.json` |
 
 **Row agent prompt** (customize per row — replace bracketed values):
 
