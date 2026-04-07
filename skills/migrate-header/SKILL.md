@@ -521,110 +521,112 @@ Mark Phase 2 as completed.
 
 Mark Phase 3 as in_progress.
 
-#### 3.1 Snapshot Capture
+#### 3.1 Row Agent Dispatch
 
-Run the capture script via Bash:
+Read `$PROJECT_ROOT/autoresearch/source/rows.json` (produced in step 2.4).
+Dispatch one subagent per row **in parallel** using the Agent tool.
 
+**Row agent prompt** (customize per row — replace bracketed values):
+
+```
+You are extracting content and styles from one row of a website header.
+
+## Your Row
+
+- **Row [INDEX]** of [TOTAL_ROWS]: [DESCRIPTION]
+- **CSS selector:** [SELECTOR]
+- **Visual tree context:**
+[VT_SUBTREE]
+
+## Tools
+
+css-query.js for browser CSS queries:
 ```bash
-RECIPE_FLAG=""
-if [[ -n "$BROWSER_RECIPE" ]]; then
-  RECIPE_FLAG="--browser-recipe=$BROWSER_RECIPE"
-fi
-
-node "$SKILL_HOME/scripts/capture-snapshot.js" \
-  "$URL" \
-  "$PROJECT_ROOT/autoresearch/source" \
-  "--header-selector=$HEADER_SELECTOR" \
-  "--overlay-recipe=$PROJECT_ROOT/autoresearch/overlay-recipe.json" \
-  $RECIPE_FLAG
+node [CSS_QUERY_PATH] open [URL] --session=row-[INDEX] [BROWSER_RECIPE_FLAG]
+node [CSS_QUERY_PATH] query "<selector>" "<properties>"
+node [CSS_QUERY_PATH] close --session=row-[INDEX]
 ```
 
-Verify output files exist:
+playwright-cli for DOM reads:
+```bash
+playwright-cli -s=row-[INDEX] eval "<expression>"
+```
+
+## Steps
+
+1. Open a css-query session:
+   ```bash
+   node [CSS_QUERY_PATH] open [URL] --session=row-[INDEX] [BROWSER_RECIPE_FLAG]
+   ```
+
+2. Read the row's DOM content:
+   ```bash
+   playwright-cli -s=row-[INDEX] eval "document.querySelector('[SELECTOR]').innerHTML"
+   ```
+
+3. Analyze the DOM to classify elements. Assign each a role:
+   logo, nav-link, utility-link, promotional-card, search, icon, cta, text.
+   For nav-link elements, also extract children from nested <ul>s —
+   including items in hidden submenus (display:none panels). These are
+   real navigation links that belong in the output.
+
+4. Query CSS values for each element type via css-query:
+   ```bash
+   node [CSS_QUERY_PATH] query "[SELECTOR]" "background-color, height, padding, font-family"
+   node [CSS_QUERY_PATH] query "[SELECTOR] a" "font-size, color, font-weight, letter-spacing"
+   ```
+   Query each distinct element type separately to avoid mixing styles.
+
+5. Close the session:
+   ```bash
+   node [CSS_QUERY_PATH] close --session=row-[INDEX]
+   ```
+
+6. Write output to [PROJECT_ROOT]/autoresearch/extraction/row-[INDEX].json
+
+## Output Schema
+
+```json
+{
+  "index": [INDEX],
+  "description": "[DESCRIPTION]",
+  "bounds": { "y": [Y], "height": [HEIGHT] },
+  "suggestedSectionStyle": "<brand|main-nav|utility|top-bar>",
+  "elements": [
+    {
+      "role": "<logo|nav-link|utility-link|cta|search|icon|text>",
+      "position": "<left|right|center>",
+      "content": { "text": "...", "href": "...", "children": [...] },
+      "styles": { "font-size": "15px", "color": "rgb(60, 66, 66)" }
+    }
+  ],
+  "rowStyles": {
+    "background-color": "...",
+    "height": "...",
+    "font-family": "..."
+  }
+}
+```
+
+All elements are included regardless of role — nothing is filtered.
+The `suggestedSectionStyle` is your best guess for the section-metadata
+Style value based on the row's content.
+```
+
+After all row agents complete, verify the output files:
 
 ```bash
-for f in snapshot.json desktop.png; do
-  if [[ ! -f "$PROJECT_ROOT/autoresearch/source/$f" ]]; then
-    echo "ERROR: Snapshot capture failed -- missing $f"
+for f in $PROJECT_ROOT/autoresearch/extraction/row-*.json; do
+  if [[ ! -f "$f" ]]; then
+    echo "ERROR: Row agent failed — missing $f"
     exit 1
   fi
 done
-echo "Snapshot capture complete."
+ROW_COUNT=$(ls -1 $PROJECT_ROOT/autoresearch/extraction/row-*.json | wc -l)
+echo "Row extraction complete: $ROW_COUNT rows"
 ```
 
-If capture fails, suggest: different `--header-selector`, manual `--overlay-recipe`, or retry.
-
-#### 3.1b Nav Item Classification
-
-The snapshot contains raw nav items with a `visible` flag. Visible items
-are the primary nav (shown when the page loads). Hidden items come from
-dropdown/mega-menu panels and need LLM classification — some are real
-submenu items, others are promotional content (e.g., "Featured website...",
-"Annual Report 2025").
-
-Read `$PROJECT_ROOT/autoresearch/source/snapshot.json` and extract the
-`navItems` array. Classify each hidden item as either:
-- **`submenu`** — a real navigation link that belongs under a primary nav
-  item (e.g., "Clinical Trials" under "R&D")
-- **`promotional`** — a featured/promotional link that should be excluded
-  from the nav structure (e.g., "Featured website AstraZeneca Clinical Trials")
-
-Use this classification logic:
-1. Visible items (`visible: true`) are always **primary nav** — keep as-is
-2. For hidden items (`visible: false`), determine if the item is a genuine
-   submenu link or promotional content based on:
-   - Text pattern: "Featured...", "Annual Report...", promotional language → promotional
-   - The item's `parent` field (if present) suggests it belongs under a nav item → submenu
-   - URL structure: matches the site's nav URL pattern → submenu
-   - Duplicates a visible item's text → promotional
-3. Assign `role: "primary"`, `role: "submenu"`, or `role: "promotional"`
-
-Write the classified array back to `snapshot.json` (update the `navItems`
-field in place). Downstream scripts (`extract-layout.js`) will use the
-`role` field to build the nav hierarchy — items with `role: "promotional"`
-are excluded.
-
-Example classification:
-```json
-{"text": "R&D", "href": "/r-and-d", "level": 1, "visible": true, "role": "primary"}
-{"text": "Clinical Trials", "href": "/clinical-trials", "level": 2, "visible": false, "parent": "R&D", "role": "submenu"}
-{"text": "Featured website AstraZeneca Clinical Trials", "href": "/featured/trials", "level": 2, "visible": false, "parent": "R&D", "role": "promotional"}
-```
-
-#### 3.2 Layout & Style Extraction
-
-Run layout extraction (from snapshot, no browser needed):
-
-```bash
-node "$SKILL_HOME/scripts/extract-layout.js" \
-  "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
-  > "$PROJECT_ROOT/autoresearch/extraction/layout.json"
-```
-
-Run style extraction (opens a css-query session on the source URL):
-
-```bash
-RECIPE_FLAG=""
-if [[ -n "$BROWSER_RECIPE" ]]; then
-  RECIPE_FLAG="--browser-recipe=$BROWSER_RECIPE"
-fi
-
-node "$SKILL_HOME/scripts/extract-styles.js" \
-  "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
-  "$URL" \
-  $RECIPE_FLAG \
-  > "$PROJECT_ROOT/autoresearch/extraction/styles.json" 2>/dev/null
-```
-
-After extraction, read both JSON files and log a summary:
-
-```
-Extracted layout: <N> rows, <height>px total header height, <N> nav items
-Extracted styles: font-family: <family>, nav color: <color>, <N> custom properties
-```
-
-If either script fails, report the error and stop.
-
-#### 3.3 Icon Collection
+#### 3.2 Icon Collection
 
 Extract and classify icons from the source header using page-collect:
 
@@ -667,7 +669,7 @@ If icon extraction succeeds, Phase 4 (Scaffold) will use the output.
 If it fails or page-collect is not installed, the migration continues
 without pre-extracted icons (the polish loop handles icons manually).
 
-#### 3.4 Font Detection & Installation
+#### 3.3 Font Detection & Installation
 
 Detect fonts used on the source page and install them in the EDS
 project so the AEM dev server renders correct fonts from iteration 1.
