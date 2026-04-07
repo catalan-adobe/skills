@@ -59,19 +59,6 @@ function parseArgs(argv) {
   };
 }
 
-function loadJSON(path, label) {
-  if (!existsSync(path)) {
-    console.error(`${label} not found: ${path}`);
-    process.exit(1);
-  }
-  try {
-    return JSON.parse(readFileSync(path, 'utf-8'));
-  } catch (err) {
-    console.error(`Failed to parse ${label}: ${err.message}`);
-    process.exit(1);
-  }
-}
-
 export function loadRowFiles(rowsDir) {
   const files = readdirSync(rowsDir)
     .filter((f) => /^row-\d+\.json$/.test(f))
@@ -286,16 +273,11 @@ function main() {
   // Build template values
   const headerDescription = buildHeaderDescription(rows);
   const navItemCount = countNavItems(rows);
-  const headerHeight = Math.round(
-    rows.reduce(
-      (max, r) => Math.max(max, (r.bounds?.y || 0) + (r.bounds?.height || 0)),
-      0,
-    ),
-  );
   const port = detectPort(args.targetDir, args.explicitPort);
 
   // Synthesize styles.json for the judge templates
   const styles = synthesizeStyles(rows);
+  const headerHeight = parseInt(styles.header.height.value, 10);
   const stylesOutPath = join(
     args.targetDir, 'autoresearch', 'extraction', 'styles.json',
   );
