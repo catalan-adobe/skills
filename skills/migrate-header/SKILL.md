@@ -761,6 +761,10 @@ The loop runs autonomously. It terminates on:
 Do NOT attempt to control individual iterations. The loop handles
 scoring, commit/revert decisions, and termination.
 
+Do NOT wrap the loop with `timeout` or any time limit. Each iteration
+takes 8-12 minutes, so 10 iterations needs ~90+ minutes. This is
+expected — let it run to completion.
+
 Mark Phase 5 as completed. Then proceed to Phase 6 — do NOT stop here.
 
 ### Phase 6: Wrap-up
