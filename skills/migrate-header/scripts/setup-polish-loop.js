@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 /**
- * Reads extraction JSON + templates and writes populated loop
- * infrastructure into a target directory (the worktree where the
+ * Reads row-*.json extraction files + templates and writes populated
+ * loop infrastructure into a target directory (the worktree where the
  * header migration is happening).
  *
  * Usage:
  *   node setup-polish-loop.js \
- *     --layout=path/to/layout.json \
- *     --styles=path/to/styles.json \
+ *     --rows-dir=path/to/rows/ \
+ *     --url=https://example.com \
  *     --source-dir=path/to/source/ \
  *     --target-dir=path/to/worktree/ \
  *     --port=3000 \
@@ -16,7 +16,7 @@
  */
 
 import {
-  copyFileSync, existsSync, mkdirSync,
+  copyFileSync, existsSync, mkdirSync, readdirSync,
   readFileSync, writeFileSync, chmodSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -33,24 +33,24 @@ function parseArgs(argv) {
     if (m) named[m[1]] = m[2];
   }
 
-  const required = ['layout', 'source-dir', 'target-dir'];
+  const required = ['rows-dir', 'url', 'source-dir', 'target-dir'];
   const missing = required.filter((k) => !named[k]);
   if (missing.length > 0) {
     console.error(
-      `Missing required arguments: ${missing.map((k) => `--${k}`).join(', ')}`
+      `Missing required arguments: ${missing.map((k) => `--${k}`).join(', ')}`,
     );
     console.error(
       'Usage: node setup-polish-loop.js'
-      + ' --layout=<path> --styles=<path>'
+      + ' --rows-dir=<path> --url=<url>'
       + ' --source-dir=<path> --target-dir=<path>'
-      + ' [--port=3000] [--max-iterations=30]'
+      + ' [--port=3000] [--max-iterations=30]',
     );
     process.exit(1);
   }
 
   return {
-    layoutPath: resolve(named['layout']),
-    stylesPath: named['styles'] ? resolve(named['styles']) : null,
+    rowsDir: resolve(named['rows-dir']),
+    url: named['url'],
     sourceDir: resolve(named['source-dir']),
     targetDir: resolve(named['target-dir']),
     explicitPort: named['port'] || null,
@@ -72,6 +72,20 @@ function loadJSON(path, label) {
   }
 }
 
+export function loadRowFiles(rowsDir) {
+  const files = readdirSync(rowsDir)
+    .filter((f) => /^row-\d+\.json$/.test(f))
+    .sort((a, b) => {
+      const numA = parseInt(a.match(/\d+/)[0], 10);
+      const numB = parseInt(b.match(/\d+/)[0], 10);
+      return numA - numB;
+    });
+
+  return files.map((f) =>
+    JSON.parse(readFileSync(join(rowsDir, f), 'utf-8')),
+  );
+}
+
 function loadTemplate(name) {
   const path = join(TEMPLATES_DIR, name);
   if (!existsSync(path)) {
@@ -81,49 +95,114 @@ function loadTemplate(name) {
   return readFileSync(path, 'utf-8');
 }
 
-function buildHeaderDescription(layout, styles) {
-  const rows = styles?.rows || [];
+export function buildHeaderDescription(rows) {
   const lines = [];
 
-  for (let i = 0; i < layout.rows.length; i++) {
-    const row = layout.rows[i];
-    const heightStr = `~${Math.round(row.height)}px`;
-    const elements = row.elements.join(', ') || 'unknown';
-    const bgColor = rows[i]?.['background-color']?.value;
-    const bgStr = bgColor ? `, ${bgColor} background` : '';
+  for (const row of rows) {
+    const heightStr = `~${Math.round(row.bounds.height)}px`;
+    const elements = row.elements.map((e) => e.role).join(', ') || 'unknown';
+    const bg = row.rowStyles?.['background-color'];
+    const isTransparent = !bg
+      || bg === 'transparent'
+      || bg === 'rgba(0, 0, 0, 0)';
+    const bgStr = isTransparent ? '' : `, ${bg} background`;
     lines.push(
-      `${lines.length + 1}. **${row.role}** (${heightStr}): `
-      + `${elements}${bgStr}`
+      `${lines.length + 1}. **${row.suggestedSectionStyle}** (${heightStr}): `
+      + `${elements}${bgStr}`,
     );
   }
 
   return lines.join('\n');
 }
 
-function countNavItems(layout) {
-  const primary = layout.navItems?.primary?.length || 0;
-  const secondary = layout.navItems?.secondary?.length || 0;
-  return primary + secondary;
+export function countNavItems(rows) {
+  return rows.reduce((count, row) => {
+    const links = row.elements.filter(
+      (e) => e.role === 'nav-link' || e.role === 'utility-link',
+    );
+    return count + links.length;
+  }, 0);
 }
 
-function buildNavStructure(layout) {
-  const primary = layout.navItems?.primary || [];
-  const secondary = layout.navItems?.secondary || [];
-  const topNav = [...primary, ...secondary].map((item) => ({
-    text: typeof item === 'string' ? item : item.text,
-    href: typeof item === 'string' ? '#' : (item.href || '#'),
-  }));
+export function buildNavStructure(rows) {
+  const topNav = [];
+  for (const row of rows) {
+    for (const el of row.elements) {
+      if (el.role !== 'nav-link' && el.role !== 'utility-link') continue;
+      const text = el.content.text;
+      if (typeof text !== 'string') {
+        throw new Error(
+          `nav-structure: expected .content.text to be a string, got `
+          + `${typeof text} — check row-${row.index}.json element format`,
+        );
+      }
+      topNav.push({ text, href: el.content.href || '#' });
+    }
+  }
+  return { topNav };
+}
 
-  for (const entry of topNav) {
-    if (typeof entry.text !== 'string') {
-      throw new Error(
-        `nav-structure: expected .text to be a string, got ${typeof entry.text}`
-        + ` — check layout.json navItems format`
+export function synthesizeStyles(rows) {
+  const styles = {
+    header: {},
+    rows: [],
+    navLinks: {},
+    navSpacing: { value: '2rem' },
+    cta: null,
+  };
+
+  const totalHeight = rows.reduce(
+    (max, r) => Math.max(max, (r.bounds?.y || 0) + (r.bounds?.height || 0)),
+    0,
+  );
+
+  if (rows.length > 0) {
+    const first = rows[0];
+    styles.header = {
+      'background-color': {
+        value: first.rowStyles?.['background-color'] || 'transparent',
+      },
+      height: { value: `${totalHeight}px` },
+      padding: { value: first.rowStyles?.padding || '0' },
+      'font-family': {
+        value: first.rowStyles?.['font-family'] || 'inherit',
+      },
+    };
+  }
+
+  for (const row of rows) {
+    styles.rows.push({
+      'background-color': {
+        value: row.rowStyles?.['background-color'] || 'transparent',
+      },
+    });
+  }
+
+  for (const row of rows) {
+    const navLink = row.elements.find((e) => e.role === 'nav-link');
+    if (navLink?.styles) {
+      styles.navLinks = Object.fromEntries(
+        Object.entries(navLink.styles).map(
+          ([k, v]) => [k, { value: v }],
+        ),
       );
+      break;
     }
   }
 
-  return { topNav };
+  for (const row of rows) {
+    const cta = row.elements.find((e) => e.role === 'cta');
+    if (cta?.styles) {
+      styles.cta = Object.fromEntries(
+        Object.entries(cta.styles).map(
+          ([k, v]) => [k, { value: v }],
+        ),
+      );
+      break;
+    }
+  }
+
+  return styles;
 }
 
 function buildIconGuidance(targetDir) {
@@ -194,26 +273,35 @@ function log(msg) {
 function main() {
   const args = parseArgs(process.argv);
 
-  // Load extraction data
-  const layout = loadJSON(args.layoutPath, 'layout.json');
-  const styles = args.stylesPath
-    ? loadJSON(args.stylesPath, 'styles.json')
-    : {};
-
-  // Load snapshot.json to get URL
-  const snapshotPath = join(args.sourceDir, 'snapshot.json');
-  const snapshot = loadJSON(snapshotPath, 'snapshot.json');
-  const sourceUrl = snapshot.url;
-  if (!sourceUrl) {
-    console.error('snapshot.json is missing the "url" field');
+  // Load row extraction data
+  const rows = loadRowFiles(args.rowsDir);
+  if (rows.length === 0) {
+    console.error(`No row-*.json files found in: ${args.rowsDir}`);
     process.exit(1);
   }
+  log(`Loaded ${rows.length} row files from ${args.rowsDir}`);
+
+  const sourceUrl = args.url;
 
   // Build template values
-  const headerDescription = buildHeaderDescription(layout, styles);
-  const navItemCount = countNavItems(layout);
-  const headerHeight = Math.round(layout.headerHeight || 0);
+  const headerDescription = buildHeaderDescription(rows);
+  const navItemCount = countNavItems(rows);
+  const headerHeight = Math.round(
+    rows.reduce(
+      (max, r) => Math.max(max, (r.bounds?.y || 0) + (r.bounds?.height || 0)),
+      0,
+    ),
+  );
   const port = detectPort(args.targetDir, args.explicitPort);
+
+  // Synthesize styles.json for the judge templates
+  const styles = synthesizeStyles(rows);
+  const stylesOutPath = join(
+    args.targetDir, 'autoresearch', 'extraction', 'styles.json',
+  );
+  mkdirSync(dirname(stylesOutPath), { recursive: true });
+  writeFileSync(stylesOutPath, JSON.stringify(styles, null, 2));
+  log('  Wrote synthesized styles.json for judge reference');
 
   // Read visual-tree text format if available
   const vtPath = join(args.sourceDir, 'visual-tree.txt');
@@ -286,10 +374,10 @@ function main() {
   }
 
   // Generate nav-structure.json
-  const navStructure = buildNavStructure(layout);
+  const navStructure = buildNavStructure(rows);
   writeFileSync(
     join(sourceOutDir, 'nav-structure.json'),
-    JSON.stringify(navStructure, null, 2)
+    JSON.stringify(navStructure, null, 2),
   );
   log(`  Wrote source/nav-structure.json (${navStructure.topNav.length} items)`);
 
@@ -299,7 +387,6 @@ function main() {
     cwd: autoresearchDir,
     stdio: 'pipe',
   });
-  // Set type: module for ESM imports in evaluate.js
   const pkgPath = join(autoresearchDir, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
   pkg.type = 'module';
@@ -315,7 +402,7 @@ function main() {
   log('Polish loop infrastructure ready.');
   log(`  Target: ${args.targetDir}`);
   log(`  Source URL: ${sourceUrl}`);
-  log(`  Header: ${headerHeight}px, ${layout.rows.length} rows, ${navItemCount} nav items`);
+  log(`  Header: ${headerHeight}px, ${rows.length} rows, ${navItemCount} nav items`);
   log(`  Run: cd ${args.targetDir} && ./loop.sh`);
 }
 
