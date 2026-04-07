@@ -926,14 +926,14 @@ If any step fails, follow this cleanup procedure:
 Example failure report:
 
 ```
-## Header Migration Failed at Step 3.1 (Snapshot Capture)
+## Header Migration Failed at Step 3.1 (Row Agent Dispatch)
 
-**Error:** Header selector '.site-header' not found in page DOM.
+**Error:** Row agent for row-0 failed — css-query session timed out.
 
 **Phase status:**
 - [x] Phase 1: Setup & Validation — completed
 - [x] Phase 2: Page Analysis — completed (N nodes, M overlays, header detected)
-- [ ] Phase 3: Source Extraction — FAILED at step 3.1 (Snapshot Capture)
+- [ ] Phase 3: Source Extraction — FAILED at step 3.1 (Row Agent Dispatch)
 - [ ] Phase 4: Scaffold Generation — not started
 - [ ] Phase 5: Visual Polish — not started
 - [ ] Phase 6: Wrap-up — not started
