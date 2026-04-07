@@ -1,0 +1,59 @@
+{
+  "index": 0,
+  "description": "Top bar with logo and utility links",
+  "bounds": { "y": 0, "height": 44 },
+  "suggestedSectionStyle": "brand",
+  "elements": [
+    {
+      "role": "logo",
+      "position": "left",
+      "content": {
+        "tag": "a",
+        "href": "/",
+        "children": [
+          {
+            "tag": "img",
+            "src": "/img/logo.png",
+            "alt": "TestCorp logo"
+          }
+        ]
+      },
+      "styles": {
+        "width": "108px",
+        "padding": "0 0 0 1.25rem"
+      }
+    },
+    {
+      "role": "utility-link",
+      "position": "right",
+      "content": {
+        "text": "Global Sites",
+        "href": "/global"
+      },
+      "styles": {
+        "font-size": "10px",
+        "color": "rgb(60, 66, 66)",
+        "letter-spacing": "0.8px"
+      }
+    },
+    {
+      "role": "utility-link",
+      "position": "right",
+      "content": {
+        "text": "Contact",
+        "href": "/contact"
+      },
+      "styles": {
+        "font-size": "10px",
+        "color": "rgb(60, 66, 66)",
+        "letter-spacing": "0.8px"
+      }
+    }
+  ],
+  "rowStyles": {
+    "background-color": "rgba(0, 0, 0, 0)",
+    "height": "44px",
+    "border-bottom": "1px solid #e0e0e0",
+    "font-family": "\"Helvetica Neue\", Helvetica, Arial, sans-serif"
+  }
+}
