@@ -316,13 +316,12 @@ For each overlay entry, the LLM:
    ```
 5. Records the action
 
-After all overlays are handled, write the recipe in the format
-`capture-snapshot.js` expects — an object with a `selectors` array
+After all overlays are handled, write the overlay recipe — an object with a `selectors` array
 containing CSS selectors for elements to remove:
 
 ```bash
 # Collect all overlay selectors that were dismissed (clicked or removed)
-# into the format capture-snapshot.js reads: { selectors: [...], action: "remove" }
+# Format: { selectors: [...], action: "remove" }
 node --input-type=module -e "
   import { writeFileSync } from 'fs';
   const selectors = [/* all overlay CSS selectors that were dismissed */];
