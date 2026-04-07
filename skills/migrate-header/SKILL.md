@@ -424,7 +424,92 @@ it was provided). Log a warning:
 echo "Warning: Visual tree not available. Using default selector: $HEADER_SELECTOR"
 ```
 
-**Close the visual-tree session** (always, regardless of which path ran):
+#### 2.4 Row Identification
+
+Read the header subtree from `visual-tree.txt` and `visual-tree.json`
+(produced in step 2.1). Identify direct child rows within the header
+node identified in step 2.3.
+
+**How to identify rows:**
+
+Using the header's node ID from `header-detection.json`, find that
+node in `visual-tree.txt`. Its direct children that are vertically
+stacked (non-overlapping Y ranges) and have meaningful height (>15px)
+are the visual rows.
+
+For each row, extract from `visual-tree.json`'s nodeMap:
+- `nodeId` — the row node's ID in the visual tree
+- `selector` — CSS selector from `nodeMap[nodeId].selector`
+- `bounds` — `{ y, height }` from the visual tree spatial data
+
+Write a short description of each row's content based on what you see
+in the visual tree text (e.g., "Top bar: logo left, utility links right").
+
+Also extract the visual-tree text lines for each row node and its
+children — this is the `vtSubtree` field that gives downstream row
+agents context.
+
+**Save to** `$PROJECT_ROOT/autoresearch/source/rows.json`:
+
+```json
+{
+  "headerSelector": "<from header-detection.json>",
+  "headerHeight": 94,
+  "rows": [
+    {
+      "index": 0,
+      "nodeId": "<visual tree node ID>",
+      "selector": "<CSS selector from nodeMap>",
+      "bounds": { "y": 0, "height": 44 },
+      "vtSubtree": "<visual tree text for this node>",
+      "description": "Top bar: logo left, utility links right"
+    }
+  ]
+}
+```
+
+#### 2.5 Screenshot Capture
+
+Before closing the visual-tree session, capture the header screenshot
+for the evaluator and polish loop.
+
+**Full viewport screenshot:**
+
+```bash
+playwright-cli -s=visual-tree resize 1440 900
+sleep 1
+playwright-cli -s=visual-tree screenshot \
+  --filename=$PROJECT_ROOT/autoresearch/source/desktop-full.png
+```
+
+**Crop to header region** using bounds from `header-detection.json`.
+Use pngjs from the skill's scripts/node_modules:
+
+```bash
+node --input-type=module -e "
+  import { readFileSync, writeFileSync } from 'fs';
+  import { createRequire } from 'module';
+  const require = createRequire('$SKILL_HOME/scripts/package.json');
+  const { PNG } = require('pngjs');
+
+  const full = PNG.sync.read(readFileSync(
+    '$PROJECT_ROOT/autoresearch/source/desktop-full.png'));
+  const y = 0;
+  const h = Math.min(${HEADER_HEIGHT}, full.height);
+  const w = full.width;
+  const cropped = new PNG({ width: w, height: h });
+  PNG.bitblt(full, cropped, 0, y, w, h, 0, 0);
+  writeFileSync(
+    '$PROJECT_ROOT/autoresearch/source/desktop.png',
+    PNG.sync.write(cropped));
+  console.log('Cropped header: ' + w + 'x' + h);
+"
+```
+
+Where `${HEADER_HEIGHT}` is the `headerHeight` from `rows.json`
+(or `header-detection.json` bounds).
+
+#### 2.6 Close Visual-Tree Session
 
 ```bash
 playwright-cli -s=visual-tree close 2>/dev/null || true
