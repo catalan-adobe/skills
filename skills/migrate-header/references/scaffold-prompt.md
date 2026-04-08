@@ -191,5 +191,5 @@ handled by the polish loop instead.
 
 Stage and commit:
   cd <PROJECT_ROOT>
-  git add blocks/header/header.css nav.plain.html images/ icons/
+  git add blocks/header/header.js blocks/header/header.css nav.plain.html images/ icons/
   git commit -m "scaffold: customize header CSS and generate nav content"
