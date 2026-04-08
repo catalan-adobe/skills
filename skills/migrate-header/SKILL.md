@@ -645,6 +645,9 @@ playwright-cli -s=row-[INDEX] eval "<expression>"
 All elements are included regardless of role — nothing is filtered.
 The `suggestedSectionStyle` is your best guess for the section-metadata
 Style value based on the row's content.
+
+**URL hygiene:** Verify that `href` values don't have doubled extensions
+(e.g., `.html.html`). If the source DOM has this, fix it in the output.
 ```
 
 After all row agents complete, verify the output files:

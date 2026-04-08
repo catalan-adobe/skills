@@ -114,7 +114,55 @@ When generating nav.plain.html markup for each element:
 
 Elements with role "nav-link" may have `contentHtml` containing full
 dropdown panel markup — nested lists, promotional cards, and images.
-Render them as nested `<ul>` structures per the content-mapping guide.
+
+**Do NOT use `content.children` to build submenus.** The `children`
+array only has text/href pairs and misses images, promotional cards,
+and rich content. Always convert `contentHtml` for submenu markup.
+
+**Example — mega menu with promotional cards:**
+
+Source `contentHtml` (from row-1.json, a nav-link element):
+```html
+<ul>
+  <li><a href="/r-d/our-approach.html">Our approach</a></li>
+  <li><a href="/r-d/precision-medicine.html">Precision medicine</a></li>
+</ul>
+<div class="spotlight">
+  <a href="https://www.astrazenecaclinicaltrials.com">
+    <span>Featured website</span>
+    <span>AstraZeneca Clinical Trials</span>
+    <img src="/content/dam/az/.../AZ2986.webp" alt="Clinical trial thumbnail">
+  </a>
+</div>
+```
+
+Converted to nav.plain.html:
+```html
+<li><a href="/r-d.html">R&amp;D</a>
+  <ul>
+    <li><a href="/r-d/our-approach.html">Our approach</a></li>
+    <li><a href="/r-d/precision-medicine.html">Precision medicine</a></li>
+    <li>
+      <a href="https://www.astrazenecaclinicaltrials.com">
+        <img src="./images/az-clinical-trials.webp" alt="Clinical trial thumbnail">
+        AstraZeneca Clinical Trials
+      </a>
+    </li>
+  </ul>
+</li>
+```
+
+Key conversions:
+- The `<div class="spotlight">` wrapper is removed — its children
+  become `<li>` items in the same `<ul>` as the nav links
+- Each promotional `<a>` with an `<img>` becomes a `<li>` entry
+- Images are downloaded to `<PROJECT_ROOT>/images/` with local paths
+- `<span>` labels like "Featured website" are dropped — keep only
+  the meaningful title text
+
+The header.js block detects `<img>` inside `<ul>` and applies mega
+menu layout automatically. See content-mapping.md "Promotional Cards"
+for more patterns.
 
 Each section needs a section-metadata block with Style property.
 See content-mapping.md for exact HTML patterns per section type.
