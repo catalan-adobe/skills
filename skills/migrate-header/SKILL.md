@@ -599,9 +599,18 @@ playwright-cli -s=row-[INDEX] eval "<expression>"
     ```
     Store the output as the element's `contentHtml` field.
 
-    For nav-link elements with dropdown/submenu panels, capture the
-    panel's innerHTML instead of just the link — this includes nested
-    lists, promotional cards, and images.
+    **For nav-link elements with dropdowns:** use the nav item's own
+    `<li>` as the selector — NOT a child container like a link list.
+    Dropdown panels often have sibling `<div>`s next to the link list
+    containing promotional cards, featured images, and CTAs. Selecting
+    only the link list `<ul>` misses these siblings. The `<li>` is the
+    common ancestor that contains everything:
+    - The main link
+    - The nested `<ul>` of submenu links
+    - Spotlight/promotional `<div>`s with images
+
+    Example: if the nav item is `li.menu-item:nth-child(3)`, query
+    that `<li>` directly — do not drill into its children.
 
 4. Query CSS values for each element type via css-query:
    ```bash
