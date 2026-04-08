@@ -589,6 +589,20 @@ playwright-cli -s=row-[INDEX] eval "<expression>"
    including items in hidden submenus (display:none panels). These are
    real navigation links that belong in the output.
 
+3b. For each element, capture its cleaned innerHTML:
+    ```bash
+    playwright-cli -s=row-[INDEX] eval "
+      const el = document.querySelector('<element-selector>').cloneNode(true);
+      el.querySelectorAll('script,style,noscript').forEach(n => n.remove());
+      el.innerHTML.trim()
+    "
+    ```
+    Store the output as the element's `contentHtml` field.
+
+    For nav-link elements with dropdown/submenu panels, capture the
+    panel's innerHTML instead of just the link — this includes nested
+    lists, promotional cards, and images.
+
 4. Query CSS values for each element type via css-query:
    ```bash
    node [CSS_QUERY_PATH] query "[SELECTOR]" "background-color, height, padding, font-family"
@@ -616,6 +630,7 @@ playwright-cli -s=row-[INDEX] eval "<expression>"
       "role": "<logo|nav-link|utility-link|cta|search|icon|text>",
       "position": "<left|right|center>",
       "content": { "text": "...", "href": "...", "children": [...] },
+      "contentHtml": "<a href=\"...\">...</a><ul>...</ul>",
       "styles": { "font-size": "15px", "color": "rgb(60, 66, 66)" }
     }
   ],

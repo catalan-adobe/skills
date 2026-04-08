@@ -90,11 +90,31 @@ with a tag, src, alt, and href.
 
 If no logo element exists, use text: `<p><a href="/">Company Name</a></p>`
 
+### Content Source Priority
+
+When generating nav.plain.html markup for each element:
+
+1. **Use `contentHtml`** as the primary content source. It contains the
+   complete DOM of each element including images, nested lists, and
+   promotional content. Convert it to EDS-compatible markup:
+   - Keep `<a>`, `<img>`, `<ul>`, `<li>`, `<h1-h6>`, `<p>` as-is
+   - Download referenced images to <PROJECT_ROOT>/images/ and
+     update `src` to local paths (same as logo handling)
+   - Remove any remaining source-specific structure (`<div>` wrappers)
+     that doesn't map to EDS patterns
+
+2. **Use structured `content` fields** as a fallback when `contentHtml`
+   is missing or empty. Also use `content.text` and `content.href` for
+   the top-level link of each nav item.
+
+3. **Use `role`** to determine layout position and section structure,
+   not to filter content.
+
 ### Nav links with submenus
 
-Elements with role "nav-link" may have `content.children` — these are
-submenu items (possibly from hidden dropdown panels). Render them as
-nested `<ul>` structures per the content-mapping guide.
+Elements with role "nav-link" may have `contentHtml` containing full
+dropdown panel markup — nested lists, promotional cards, and images.
+Render them as nested `<ul>` structures per the content-mapping guide.
 
 Each section needs a section-metadata block with Style property.
 See content-mapping.md for exact HTML patterns per section type.
