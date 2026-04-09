@@ -5,7 +5,8 @@ description: >
   fidelity using an automated extraction + scaffold + visual polish pipeline.
   Takes a URL, captures a visual tree for spatial analysis, detects and
   dismisses overlays via LLM, identifies the header element from the spatial
-  map, captures DOM snapshots, extracts layout and branding, generates scaffold
+  map, identifies visual rows, dispatches parallel LLM agents to extract content
+  and styles per row, generates scaffold
   code, then launches an autonomous visual polish loop. Requires being in an
   EDS git repository. Works in the current directory — the caller is
   responsible for worktree/branch setup if isolation is needed. Triggers on:
@@ -25,7 +26,7 @@ to converge on pixel-accurate fidelity.
 ```
 Phase 1: Setup & Validation     │ Parse args → Validate EDS → Probe CDN → Prepare dirs
 Phase 2: Page Analysis          │ Visual tree → Overlay detection → Header identification
-Phase 3: Source Extraction      │ Snapshot → Layout/styles → Icons → Fonts
+Phase 3: Source Extraction      │ Row agents (parallel) → Icons → Fonts
 Phase 4: Scaffold Generation    │ Copy base block → Customize CSS → Generate nav
 Phase 5: Visual Polish          │ Setup loop infra → Run autonomous polish loop
 Phase 6: Wrap-up                │ Report results → Generate retrospective
@@ -43,10 +44,7 @@ SKILL_HOME="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/migrate-header}"
 Scripts:
 - `node $SKILL_HOME/scripts/capture-visual-tree.js <url> <output-dir> [--browser-recipe=path] [--session=visual-tree]`
 - `node $SKILL_HOME/scripts/detect-overlays-fallback.js <url> <output-dir> [--browser-recipe=path]`
-- `node $SKILL_HOME/scripts/capture-snapshot.js <url> <output-dir> [--header-selector=header] [--overlay-recipe=path] [--browser-recipe=path]`
-- `node $SKILL_HOME/scripts/extract-layout.js <snapshot.json>` (stdout JSON)
-- `node $SKILL_HOME/scripts/extract-styles.js <snapshot.json> <url> [--browser-recipe=path]` (stdout JSON)
-- `node $SKILL_HOME/scripts/setup-polish-loop.js --layout=... --styles=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
+- `node $SKILL_HOME/scripts/setup-polish-loop.js --rows-dir=... --url=... --source-dir=... --target-dir=... --port=3000 --max-iterations=N`
 - `node $SKILL_HOME/scripts/css-query.js open <url> [--browser-recipe=path] [--session=name]`
 - `node $SKILL_HOME/scripts/css-query.js query <selector|node:N> <properties>`
 - `node $SKILL_HOME/scripts/css-query.js cascade <selector|node:N>`
@@ -67,7 +65,7 @@ progress through all 6 phases:
 
 1. **Phase 1: Setup & Validation** — Parse args, validate EDS repo, probe CDN, prepare dirs
 2. **Phase 2: Page Analysis** — Visual tree, overlay detection, header identification
-3. **Phase 3: Source Extraction** — Snapshot, layout/styles, icons, fonts
+3. **Phase 3: Source Extraction** — Row agents (parallel), icons, fonts
 4. **Phase 4: Scaffold Generation** — Copy base block, customize CSS, generate nav
 5. **Phase 5: Visual Polish** — Setup loop infrastructure, run autonomous polish
 6. **Phase 6: Wrap-up** — Report results, generate retrospective
@@ -319,13 +317,12 @@ For each overlay entry, the LLM:
    ```
 5. Records the action
 
-After all overlays are handled, write the recipe in the format
-`capture-snapshot.js` expects — an object with a `selectors` array
+After all overlays are handled, write the overlay recipe — an object with a `selectors` array
 containing CSS selectors for elements to remove:
 
 ```bash
 # Collect all overlay selectors that were dismissed (clicked or removed)
-# into the format capture-snapshot.js reads: { selectors: [...], action: "remove" }
+# Format: { selectors: [...], action: "remove" }
 node --input-type=module -e "
   import { writeFileSync } from 'fs';
   const selectors = [/* all overlay CSS selectors that were dismissed */];
@@ -424,7 +421,99 @@ it was provided). Log a warning:
 echo "Warning: Visual tree not available. Using default selector: $HEADER_SELECTOR"
 ```
 
-**Close the visual-tree session** (always, regardless of which path ran):
+#### 2.4 Row Identification
+
+Read the header subtree from `visual-tree.txt` and `visual-tree.json`
+(produced in step 2.1). Identify direct child rows within the header
+node identified in step 2.3.
+
+**How to identify rows:**
+
+Using the header's node ID from `header-detection.json`, find that
+node in `visual-tree.txt`. Its direct children that are vertically
+stacked (non-overlapping Y ranges) and have meaningful height (>15px)
+are the visual rows.
+
+For each row, extract from `visual-tree.json`'s nodeMap:
+- `nodeId` — the row node's ID in the visual tree
+- `selector` — CSS selector from `nodeMap[nodeId].selector`
+- `bounds` — `{ y, height }` from the visual tree spatial data
+
+Write a short description of each row's content based on what you see
+in the visual tree text (e.g., "Top bar: logo left, utility links right").
+
+Also extract the visual-tree text lines for each row node and its
+children — this is the `vtSubtree` field that gives downstream row
+agents context.
+
+**Save to** `$PROJECT_ROOT/autoresearch/source/rows.json`:
+
+```json
+{
+  "headerSelector": "<from header-detection.json>",
+  "headerHeight": 94,
+  "rows": [
+    {
+      "index": 0,
+      "nodeId": "<visual tree node ID>",
+      "selector": "<CSS selector from nodeMap>",
+      "bounds": { "y": 0, "height": 44 },
+      "vtSubtree": "<visual tree text for this node>",
+      "description": "Top bar: logo left, utility links right"
+    }
+  ]
+}
+```
+
+#### 2.5 Screenshot Capture
+
+Before closing the visual-tree session, capture the header screenshot
+for the evaluator and polish loop.
+
+**Full viewport screenshot:**
+
+```bash
+playwright-cli -s=visual-tree resize 1440 900
+sleep 1
+playwright-cli -s=visual-tree screenshot \
+  --filename=$PROJECT_ROOT/autoresearch/source/desktop-full.png
+```
+
+**Extract header height** from the rows.json produced in step 2.4:
+
+```bash
+HEADER_HEIGHT=$(node --input-type=module -e "
+  import { readFileSync } from 'fs';
+  const rows = JSON.parse(readFileSync(
+    '$PROJECT_ROOT/autoresearch/source/rows.json', 'utf-8'));
+  console.log(rows.headerHeight);
+")
+```
+
+**Crop to header region** using pngjs from the skill's scripts/node_modules:
+
+```bash
+node --input-type=module -e "
+  import { readFileSync, writeFileSync } from 'fs';
+  import { createRequire } from 'module';
+  const require = createRequire('$SKILL_HOME/scripts/package.json');
+  const { PNG } = require('pngjs');
+
+  const full = PNG.sync.read(readFileSync(
+    '$PROJECT_ROOT/autoresearch/source/desktop-full.png'));
+  const y = 0;
+  const h = Math.min(${HEADER_HEIGHT}, full.height);
+  const w = full.width;
+  const cropped = new PNG({ width: w, height: h });
+  PNG.bitblt(full, cropped, 0, y, w, h, 0, 0);
+  writeFileSync(
+    '$PROJECT_ROOT/autoresearch/source/desktop.png',
+    PNG.sync.write(cropped));
+  console.log('Cropped header: ' + w + 'x' + h);
+"
+```
+
+#### 2.6 Close Visual-Tree Session
 
 ```bash
 playwright-cli -s=visual-tree close 2>/dev/null || true
@@ -436,110 +525,154 @@ Mark Phase 2 as completed.
 
 Mark Phase 3 as in_progress.
 
-#### 3.1 Snapshot Capture
+#### 3.1 Row Agent Dispatch
 
-Run the capture script via Bash:
+Read `$PROJECT_ROOT/autoresearch/source/rows.json` (produced in step 2.4).
+Dispatch one subagent per row **in parallel** using the Agent tool.
 
+**Placeholder resolution** for the row agent prompt:
+
+| Placeholder | Value |
+|-------------|-------|
+| `[INDEX]` | Row index from `rows.json` (0, 1, ...) |
+| `[TOTAL_ROWS]` | Length of `rows.json` rows array |
+| `[DESCRIPTION]` | Row description from `rows.json` |
+| `[SELECTOR]` | Row CSS selector from `rows.json` |
+| `[VT_SUBTREE]` | Row vtSubtree text from `rows.json` |
+| `[CSS_QUERY_PATH]` | `$SKILL_HOME/scripts/css-query.js` |
+| `[URL]` | `$URL` (from step 1.1) |
+| `[BROWSER_RECIPE_FLAG]` | `--browser-recipe=$BROWSER_RECIPE` if set, empty otherwise |
+| `[PROJECT_ROOT]` | `$PROJECT_ROOT` |
+| `[Y]`, `[HEIGHT]` | Row bounds from `rows.json` |
+
+**Row agent prompt** (customize per row — replace bracketed values):
+
+```
+You are extracting content and styles from one row of a website header.
+
+## Your Row
+
+- **Row [INDEX]** of [TOTAL_ROWS]: [DESCRIPTION]
+- **CSS selector:** [SELECTOR]
+- **Visual tree context:**
+[VT_SUBTREE]
+
+## Tools
+
+css-query.js for browser CSS queries:
 ```bash
-RECIPE_FLAG=""
-if [[ -n "$BROWSER_RECIPE" ]]; then
-  RECIPE_FLAG="--browser-recipe=$BROWSER_RECIPE"
-fi
-
-node "$SKILL_HOME/scripts/capture-snapshot.js" \
-  "$URL" \
-  "$PROJECT_ROOT/autoresearch/source" \
-  "--header-selector=$HEADER_SELECTOR" \
-  "--overlay-recipe=$PROJECT_ROOT/autoresearch/overlay-recipe.json" \
-  $RECIPE_FLAG
+node [CSS_QUERY_PATH] open [URL] --session=row-[INDEX] [BROWSER_RECIPE_FLAG]
+node [CSS_QUERY_PATH] query "<selector>" "<properties>"
+node [CSS_QUERY_PATH] close --session=row-[INDEX]
 ```
 
-Verify output files exist:
+playwright-cli for DOM reads:
+```bash
+playwright-cli -s=row-[INDEX] eval "<expression>"
+```
+
+## Steps
+
+1. Open a css-query session:
+   ```bash
+   node [CSS_QUERY_PATH] open [URL] --session=row-[INDEX] [BROWSER_RECIPE_FLAG]
+   ```
+
+2. Read the row's DOM content:
+   ```bash
+   playwright-cli -s=row-[INDEX] eval "document.querySelector('[SELECTOR]').innerHTML"
+   ```
+
+3. Analyze the DOM to classify elements. Assign each a role:
+   logo, nav-link, utility-link, promotional-card, search, icon, cta, text.
+   For nav-link elements, also extract children from nested <ul>s —
+   including items in hidden submenus (display:none panels). These are
+   real navigation links that belong in the output.
+
+3b. For each element, capture its cleaned innerHTML:
+    ```bash
+    playwright-cli -s=row-[INDEX] eval "
+      const el = document.querySelector('<element-selector>').cloneNode(true);
+      el.querySelectorAll('script,style,noscript').forEach(n => n.remove());
+      el.innerHTML.trim()
+    "
+    ```
+    Store the output as the element's `contentHtml` field.
+
+    **For nav-link elements with dropdowns:** use the nav item's own
+    `<li>` as the selector — NOT a child container like a link list.
+    Dropdown panels often have sibling `<div>`s next to the link list
+    containing promotional cards, featured images, and CTAs. Selecting
+    only the link list `<ul>` misses these siblings. The `<li>` is the
+    common ancestor that contains everything:
+    - The main link
+    - The nested `<ul>` of submenu links
+    - Spotlight/promotional `<div>`s with images
+
+    Example: if the nav item is `li.menu-item:nth-child(3)`, query
+    that `<li>` directly — do not drill into its children.
+
+4. Query CSS values for each element type via css-query:
+   ```bash
+   node [CSS_QUERY_PATH] query "[SELECTOR]" "background-color, height, padding, font-family"
+   node [CSS_QUERY_PATH] query "[SELECTOR] a" "font-size, color, font-weight, letter-spacing"
+   ```
+   Query each distinct element type separately to avoid mixing styles.
+
+5. Close the session:
+   ```bash
+   node [CSS_QUERY_PATH] close --session=row-[INDEX]
+   ```
+
+6. Write output to [PROJECT_ROOT]/autoresearch/extraction/row-[INDEX].json
+
+## Output Schema
+
+```json
+{
+  "index": [INDEX],
+  "description": "[DESCRIPTION]",
+  "bounds": { "y": [Y], "height": [HEIGHT] },
+  "suggestedSectionStyle": "<brand|main-nav|utility|top-bar>",
+  "elements": [
+    {
+      "role": "<logo|nav-link|utility-link|cta|search|icon|text>",
+      "position": "<left|right|center>",
+      "content": { "text": "...", "href": "...", "children": [...] },
+      "contentHtml": "<a href=\"...\">...</a><ul>...</ul>",
+      "styles": { "font-size": "15px", "color": "rgb(60, 66, 66)" }
+    }
+  ],
+  "rowStyles": {
+    "background-color": "...",
+    "height": "...",
+    "font-family": "..."
+  }
+}
+```
+
+All elements are included regardless of role — nothing is filtered.
+The `suggestedSectionStyle` is your best guess for the section-metadata
+Style value based on the row's content.
+
+**URL hygiene:** Verify that `href` values don't have doubled extensions
+(e.g., `.html.html`). If the source DOM has this, fix it in the output.
+```
+
+After all row agents complete, verify the output files:
 
 ```bash
-for f in snapshot.json desktop.png; do
-  if [[ ! -f "$PROJECT_ROOT/autoresearch/source/$f" ]]; then
-    echo "ERROR: Snapshot capture failed -- missing $f"
+for f in $PROJECT_ROOT/autoresearch/extraction/row-*.json; do
+  if [[ ! -f "$f" ]]; then
+    echo "ERROR: Row agent failed — missing $f"
     exit 1
   fi
 done
-echo "Snapshot capture complete."
+ROW_COUNT=$(ls -1 $PROJECT_ROOT/autoresearch/extraction/row-*.json | wc -l)
+echo "Row extraction complete: $ROW_COUNT rows"
 ```
 
-If capture fails, suggest: different `--header-selector`, manual `--overlay-recipe`, or retry.
-
-#### 3.1b Nav Item Classification
-
-The snapshot contains raw nav items with a `visible` flag. Visible items
-are the primary nav (shown when the page loads). Hidden items come from
-dropdown/mega-menu panels and need LLM classification — some are real
-submenu items, others are promotional content (e.g., "Featured website...",
-"Annual Report 2025").
-
-Read `$PROJECT_ROOT/autoresearch/source/snapshot.json` and extract the
-`navItems` array. Classify each hidden item as either:
-- **`submenu`** — a real navigation link that belongs under a primary nav
-  item (e.g., "Clinical Trials" under "R&D")
-- **`promotional`** — a featured/promotional link that should be excluded
-  from the nav structure (e.g., "Featured website AstraZeneca Clinical Trials")
-
-Use this classification logic:
-1. Visible items (`visible: true`) are always **primary nav** — keep as-is
-2. For hidden items (`visible: false`), determine if the item is a genuine
-   submenu link or promotional content based on:
-   - Text pattern: "Featured...", "Annual Report...", promotional language → promotional
-   - The item's `parent` field (if present) suggests it belongs under a nav item → submenu
-   - URL structure: matches the site's nav URL pattern → submenu
-   - Duplicates a visible item's text → promotional
-3. Assign `role: "primary"`, `role: "submenu"`, or `role: "promotional"`
-
-Write the classified array back to `snapshot.json` (update the `navItems`
-field in place). Downstream scripts (`extract-layout.js`) will use the
-`role` field to build the nav hierarchy — items with `role: "promotional"`
-are excluded.
-
-Example classification:
-```json
-{"text": "R&D", "href": "/r-and-d", "level": 1, "visible": true, "role": "primary"}
-{"text": "Clinical Trials", "href": "/clinical-trials", "level": 2, "visible": false, "parent": "R&D", "role": "submenu"}
-{"text": "Featured website AstraZeneca Clinical Trials", "href": "/featured/trials", "level": 2, "visible": false, "parent": "R&D", "role": "promotional"}
-```
-
-#### 3.2 Layout & Style Extraction
-
-Run layout extraction (from snapshot, no browser needed):
-
-```bash
-node "$SKILL_HOME/scripts/extract-layout.js" \
-  "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
-  > "$PROJECT_ROOT/autoresearch/extraction/layout.json"
-```
-
-Run style extraction (opens a css-query session on the source URL):
-
-```bash
-RECIPE_FLAG=""
-if [[ -n "$BROWSER_RECIPE" ]]; then
-  RECIPE_FLAG="--browser-recipe=$BROWSER_RECIPE"
-fi
-
-node "$SKILL_HOME/scripts/extract-styles.js" \
-  "$PROJECT_ROOT/autoresearch/source/snapshot.json" \
-  "$URL" \
-  $RECIPE_FLAG \
-  > "$PROJECT_ROOT/autoresearch/extraction/styles.json" 2>/dev/null
-```
-
-After extraction, read both JSON files and log a summary:
-
-```
-Extracted layout: <N> rows, <height>px total header height, <N> nav items
-Extracted styles: font-family: <family>, nav color: <color>, <N> custom properties
-```
-
-If either script fails, report the error and stop.
-
-#### 3.3 Icon Collection
+#### 3.2 Icon Collection
 
 Extract and classify icons from the source header using page-collect:
 
@@ -582,7 +715,7 @@ If icon extraction succeeds, Phase 4 (Scaffold) will use the output.
 If it fails or page-collect is not installed, the migration continues
 without pre-extracted icons (the polish loop handles icons manually).
 
-#### 3.4 Font Detection & Installation
+#### 3.3 Font Detection & Installation
 
 Detect fonts used on the source page and install them in the EDS
 project so the AEM dev server renders correct fonts from iteration 1.
@@ -697,8 +830,8 @@ Run the setup script to generate the polish loop infrastructure:
 
 ```bash
 node "$SKILL_HOME/scripts/setup-polish-loop.js" \
-  "--layout=$PROJECT_ROOT/autoresearch/extraction/layout.json" \
-  "--styles=$PROJECT_ROOT/autoresearch/extraction/styles.json" \
+  "--rows-dir=$PROJECT_ROOT/autoresearch/extraction" \
+  "--url=$URL" \
   "--source-dir=$PROJECT_ROOT/autoresearch/source" \
   "--target-dir=$PROJECT_ROOT" \
   "--port=3000" \
@@ -842,14 +975,14 @@ If any step fails, follow this cleanup procedure:
 Example failure report:
 
 ```
-## Header Migration Failed at Step 3.1 (Snapshot Capture)
+## Header Migration Failed at Step 3.1 (Row Agent Dispatch)
 
-**Error:** Header selector '.site-header' not found in page DOM.
+**Error:** Row agent for row-0 failed — css-query session timed out.
 
 **Phase status:**
 - [x] Phase 1: Setup & Validation — completed
 - [x] Phase 2: Page Analysis — completed (N nodes, M overlays, header detected)
-- [ ] Phase 3: Source Extraction — FAILED at step 3.1 (Snapshot Capture)
+- [ ] Phase 3: Source Extraction — FAILED at step 3.1 (Row Agent Dispatch)
 - [ ] Phase 4: Scaffold Generation — not started
 - [ ] Phase 5: Visual Polish — not started
 - [ ] Phase 6: Wrap-up — not started

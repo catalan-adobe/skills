@@ -14,13 +14,13 @@ header.js is already in place and must NOT be modified. You will:
 ## Input Data
 
 Read these files:
-- Layout: <PROJECT_ROOT>/autoresearch/extraction/layout.json
-- Styles: <PROJECT_ROOT>/autoresearch/extraction/styles.json
+- Row extractions: <PROJECT_ROOT>/autoresearch/extraction/row-*.json
+  (one file per visual row — row-0.json is topmost, row-1.json below, etc.)
 - Fonts (if exists): <PROJECT_ROOT>/autoresearch/extraction/fonts-detected.json
 
-styles.json contains CDP-queried CSS values with provenance (which
-rule, which file, whether inherited). Use these directly — they are
-the source of truth for all styling decisions.
+Each row-N.json contains classified elements with per-element CSS styles
+queried from the source page via CDP. These are the source of truth for
+all styling decisions. See the design spec for the full schema.
 
 If fonts-detected.json exists, use its `fonts.heading.stack` and
 `fonts.body.stack` values for `font-family` in header.css. These
@@ -39,57 +39,133 @@ Read ALL of these for patterns and mapping guidance:
 
 Open <PROJECT_ROOT>/blocks/header/header.css and update ONLY the CSS
 custom properties block at the top (.header.block { ... }) to match the
-source site's styles from styles.json.
+source site's styles from the row extraction files.
 
-**Properties to set (all from styles.json):**
-- --header-background: from styles.header["background-color"].value
-- --header-nav-gap: from styles.navSpacing.value (spatially measured)
-- --header-nav-font-size: from styles.navLinks["font-size"].value
-- --header-nav-font-weight: from styles.navLinks["font-weight"].value
-- font-family: from styles.navLinks["font-family"].value
-- --header-text-color: from styles.navLinks.color.value
-- --header-section-padding: from styles.header.padding.value
-- For multi-row headers: styles.rows[N]["background-color"].value
-- For CTA buttons: styles.cta (background-color, color, border-radius)
-- Accent/hover color: styles.navLinksHover.color.value
+**How to read styles from row files:**
+
+Each row file has `rowStyles` (row-level CSS) and per-element `styles`.
+Use element styles matching the role for each property:
+
+- --header-background: from row-0.json rowStyles["background-color"]
+- --header-nav-font-size: from the first nav-link element's styles["font-size"]
+- --header-nav-font-weight: from the first nav-link element's styles["font-weight"]
+- font-family: from the first nav-link element's styles["font-family"]
+  (or rowStyles["font-family"] if not on the element)
+- --header-text-color: from the first nav-link element's styles.color
+- --header-section-padding: from row rowStyles padding (if present)
+- For multi-row headers: each row's rowStyles["background-color"]
+- For CTA buttons: from elements with role "cta" (background-color, color, border-radius)
+
+**Important:** Use the font-size from nav-link elements for nav styling,
+utility-link elements for utility styling. Do not mix them.
 
 Do NOT modify the structural CSS (layout, dropdowns, etc.).
 
 ## Task 2: Generate nav.plain.html
 
 Create <PROJECT_ROOT>/nav.plain.html following the content-mapping
-guide patterns. Use the extraction data:
+guide patterns. Use the row extraction data:
 
-- layout.rows tells you the section structure (brand, main-nav, etc.)
-- layout.navItems.primary are the main nav links
-- layout.navItems.secondary are secondary/utility links
-- layout.rows[].elements tells you what each section contains
-- layout.logo has the logo image data (src, alt, width, height, href)
-- branding.logo also has the logo image data (src, alt, width, height)
+**Key rule: one section per row file.** Each row-N.json represents one
+visual row of the header. Generate exactly one nav.plain.html `<div>`
+section per row file.
+
+- Use `suggestedSectionStyle` from each row file for the section-metadata
+  Style property
+- Element roles tell you what each element is: logo, nav-link (with
+  children for submenus), utility-link, cta, search, icon, text
+- All elements are included regardless of role — do not filter any out.
+  Promotional cards, featured links, etc. should appear in nav.plain.html
+- Element `position` (left/right/center) guides layout within the section
 
 ### Logo Handling
 
-If layout.logo or branding.logo has a src URL:
-
-Use `layout.logo` as the primary source (it includes `href`).
-Fall back to `branding.logo` only if `layout.logo` is null;
-use `href="/"` in that case since `branding.logo` has no link.
+Find the element with role "logo" in the row files. It will have content
+with a tag, src, alt, and href.
 
 1. Download the logo image to <PROJECT_ROOT>/images/logo.png (or
    matching extension). Use curl or fetch.
 2. In nav.plain.html, use the local path:
-   `<p><a href="<logo.href>"><img src="./images/logo.png" alt="<logo.alt>"></a></p>`
+   `<p><a href="<href>"><img src="./images/logo.png" alt="<alt>"></a></p>`
 
-If no logo URL is available, use text: `<p><a href="/">Company Name</a></p>`
+If no logo element exists, use text: `<p><a href="/">Company Name</a></p>`
+
+### Content Source Priority
+
+When generating nav.plain.html markup for each element:
+
+1. **Use `contentHtml`** as the primary content source. It contains the
+   complete DOM of each element including images, nested lists, and
+   promotional content. Convert it to EDS-compatible markup:
+   - Keep `<a>`, `<img>`, `<ul>`, `<li>`, `<h1-h6>`, `<p>` as-is
+   - Download referenced images to <PROJECT_ROOT>/images/ and
+     update `src` to local paths (same as logo handling)
+   - Remove any remaining source-specific structure (`<div>` wrappers)
+     that doesn't map to EDS patterns
+
+2. **Use structured `content` fields** as a fallback when `contentHtml`
+   is missing or empty. Also use `content.text` and `content.href` for
+   the top-level link of each nav item.
+
+3. **Use `role`** to determine layout position and section structure,
+   not to filter content.
+
+### Nav links with submenus
+
+Elements with role "nav-link" may have `contentHtml` containing full
+dropdown panel markup — nested lists, promotional cards, and images.
+
+**Do NOT use `content.children` to build submenus.** The `children`
+array only has text/href pairs and misses images, promotional cards,
+and rich content. Always convert `contentHtml` for submenu markup.
+
+**Example — mega menu with promotional cards:**
+
+Source `contentHtml` (from row-1.json, a nav-link element):
+```html
+<ul>
+  <li><a href="/r-d/our-approach.html">Our approach</a></li>
+  <li><a href="/r-d/precision-medicine.html">Precision medicine</a></li>
+</ul>
+<div class="spotlight">
+  <a href="https://www.astrazenecaclinicaltrials.com">
+    <span>Featured website</span>
+    <span>AstraZeneca Clinical Trials</span>
+    <img src="/content/dam/az/.../AZ2986.webp" alt="Clinical trial thumbnail">
+  </a>
+</div>
+```
+
+Converted to nav.plain.html:
+```html
+<li><a href="/r-d.html">R&amp;D</a>
+  <ul>
+    <li><a href="/r-d/our-approach.html">Our approach</a></li>
+    <li><a href="/r-d/precision-medicine.html">Precision medicine</a></li>
+    <li>
+      <a href="https://www.astrazenecaclinicaltrials.com">
+        <img src="./images/az-clinical-trials.webp" alt="Clinical trial thumbnail">
+        AstraZeneca Clinical Trials
+      </a>
+    </li>
+  </ul>
+</li>
+```
+
+Key conversions:
+- The `<div class="spotlight">` wrapper is removed — its children
+  become `<li>` items in the same `<ul>` as the nav links
+- Each promotional `<a>` with an `<img>` becomes a `<li>` entry
+- Images are downloaded to `<PROJECT_ROOT>/images/` with local paths
+- `<span>` labels like "Featured website" are dropped — keep only
+  the meaningful title text
+
+The header.js block detects `<img>` inside `<ul>` and applies mega
+menu layout automatically. See content-mapping.md "Promotional Cards"
+for more patterns.
 
 Each section needs a section-metadata block with Style property.
 See content-mapping.md for exact HTML patterns per section type.
-
-For single-row headers (1 row): use a single main-nav section with
-inline brand and tools.
-
-For multi-row headers: use separate sections (brand, main-nav, utility)
-each with their own section-metadata.
 
 ## Task 3: Wire extracted icons into EDS
 
@@ -115,5 +191,5 @@ handled by the polish loop instead.
 
 Stage and commit:
   cd <PROJECT_ROOT>
-  git add blocks/header/header.css nav.plain.html images/ icons/
+  git add blocks/header/header.js blocks/header/header.css nav.plain.html images/ icons/
   git commit -m "scaffold: customize header CSS and generate nav content"

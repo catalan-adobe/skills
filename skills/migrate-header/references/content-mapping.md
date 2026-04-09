@@ -149,6 +149,33 @@ Key transformations:
 - Keep paragraphs and CTAs together in each `<li>`
 - Remove CTA classes
 
+### Promotional Cards / Featured Items
+
+Source mega menu panels often contain promotional cards with images
+alongside regular nav links. These appear in `contentHtml` as
+`<a>` elements wrapping `<img>` tags.
+
+**Source (from contentHtml):**
+```html
+<a href="https://www.astrazenecaclinicaltrials.com">
+  <img src="https://.../.webp" alt="Clinical trial thumbnail">
+  AstraZeneca Clinical Trials
+</a>
+```
+
+**nav.plain.html:**
+```html
+<li>
+  <a href="https://www.astrazenecaclinicaltrials.com">
+    <img src="./images/clinical-trials-promo.webp" alt="Clinical trial thumbnail">
+    AstraZeneca Clinical Trials
+  </a>
+</li>
+```
+
+Download images to `./images/` and reference locally. The header.js
+mega menu renderer handles `<img>` inside `<li>` elements natively.
+
 ### Announcement/Top Bar
 
 **Source pattern:**

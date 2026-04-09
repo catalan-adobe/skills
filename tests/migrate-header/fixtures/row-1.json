@@ -1,0 +1,83 @@
+{
+  "index": 1,
+  "description": "Main navigation with 4 top-level links and submenus",
+  "bounds": { "y": 44, "height": 50 },
+  "suggestedSectionStyle": "main-nav",
+  "elements": [
+    {
+      "role": "nav-link",
+      "position": "left",
+      "content": {
+        "text": "Products",
+        "href": "/products",
+        "children": [
+          { "text": "All Products", "href": "/products/all" },
+          { "text": "New Arrivals", "href": "/products/new" }
+        ]
+      },
+      "styles": {
+        "font-size": "15px",
+        "font-weight": "400",
+        "color": "rgb(60, 66, 66)"
+      }
+    },
+    {
+      "role": "nav-link",
+      "position": "left",
+      "content": {
+        "text": "Solutions",
+        "href": "/solutions"
+      },
+      "styles": {
+        "font-size": "15px",
+        "font-weight": "400",
+        "color": "rgb(60, 66, 66)"
+      }
+    },
+    {
+      "role": "nav-link",
+      "position": "left",
+      "content": {
+        "text": "About",
+        "href": "/about"
+      },
+      "styles": {
+        "font-size": "15px",
+        "font-weight": "400",
+        "color": "rgb(60, 66, 66)"
+      }
+    },
+    {
+      "role": "nav-link",
+      "position": "left",
+      "content": {
+        "text": "Careers",
+        "href": "/careers"
+      },
+      "styles": {
+        "font-size": "15px",
+        "font-weight": "400",
+        "color": "rgb(60, 66, 66)"
+      }
+    },
+    {
+      "role": "cta",
+      "position": "right",
+      "content": {
+        "text": "Get Started",
+        "href": "/signup"
+      },
+      "styles": {
+        "background-color": "rgb(0, 120, 212)",
+        "color": "rgb(255, 255, 255)",
+        "border-radius": "4px",
+        "font-size": "14px"
+      }
+    }
+  ],
+  "rowStyles": {
+    "background-color": "rgb(255, 255, 255)",
+    "height": "50px",
+    "font-family": "\"Helvetica Neue\", Helvetica, Arial, sans-serif"
+  }
+}
