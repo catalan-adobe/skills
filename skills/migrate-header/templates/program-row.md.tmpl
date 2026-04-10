@@ -169,13 +169,18 @@ node "{{SKILL_HOME}}/scripts/css-query.js" open "{{URL}}" --session=row-{{ROW_IN
 ```
 Use it to get exact values before making changes. Close before committing.
 
-### Phase 1: Dimensions (score < 40)
+### Phase 1: Structure (score < 30)
+Get all elements rendering in the correct positions within the row.
+Elements should appear on the correct side (left/center/right) in the
+correct order.
+
+### Phase 2: Dimensions (score 30-50)
 Match the source row height (~{{ROW_HEIGHT}}px). Query the source to get exact values:
 ```bash
 node "{{SKILL_HOME}}/scripts/css-query.js" query "nav" height,padding-top,padding-bottom --session=row-{{ROW_INDEX}}-css-src
 ```
 
-### Phase 2: Colors and layout (score 40-65)
+### Phase 3: Colors and layout (score 50-70)
 Query exact colors — don't guess from the screenshot:
 ```bash
 node "{{SKILL_HOME}}/scripts/css-query.js" query "nav" background-color --session=row-{{ROW_INDEX}}-css-src
@@ -183,7 +188,7 @@ node "{{SKILL_HOME}}/scripts/css-query.js" query "nav a" color --session=row-{{R
 ```
 Match horizontal layout: element alignment, spacing, gap values.
 
-### Phase 3: Visual polish (score > 65)
+### Phase 4: Visual polish (score > 70)
 Query specific properties for pixel-accurate matching:
 ```bash
 node "{{SKILL_HOME}}/scripts/css-query.js" query "nav a" font-size,font-weight,letter-spacing,text-transform --session=row-{{ROW_INDEX}}-css-src
@@ -195,3 +200,7 @@ specific source elements to find the exact target values.
 - Use `css-query.js cascade` to see ALL CSS rules affecting the problem element
 - Look at the diff image to find the largest red areas
 - Query the exact source values for that area and compare against your CSS
+
+## NEVER STOP
+
+Continue working until you have made your changes and committed them. Then exit cleanly. The outer loop will evaluate and decide whether to keep your work. Do not second-guess the evaluator — just make your best change and commit.
