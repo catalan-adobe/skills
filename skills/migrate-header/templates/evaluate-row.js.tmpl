@@ -1,0 +1,173 @@
+/** IMMUTABLE EVALUATOR — the agent must not modify this file.
+ *
+ * Captures a single header row element, compares against cropped source,
+ * and outputs a pixelmatch score. Used by loop-row-N.sh for keep/discard.
+ *
+ * Usage: node autoresearch/evaluate-row-{{ROW_INDEX}}.js <port> <iteration>
+ * Output: JSON to stdout with score and breakdown
+ */
+import {
+  readFileSync, writeFileSync, existsSync, mkdirSync,
+} from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { PNG } from 'pngjs';
+import pixelmatch from 'pixelmatch';
+import { parseEvalOutput } from '{{SKILL_HOME}}/scripts/cdp-helpers.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SOURCE_DIR = join(__dirname, 'source');
+const RESULTS_DIR = join(__dirname, 'results', 'row-{{ROW_INDEX}}');
+const PORT = process.argv[2] || '{{PORT}}';
+const PAGE_PATH = '{{PAGE_PATH}}';
+const ITERATION = process.argv[3] || 'latest';
+const BASE_URL = `http://localhost:${PORT}${PAGE_PATH}`;
+const SESSION = '{{ROW_SESSION}}';
+const ROW_SELECTOR = '{{ROW_SELECTOR}}';
+
+mkdirSync(RESULTS_DIR, { recursive: true });
+
+const EXEC_OPTS = { encoding: 'utf-8', timeout: 30000 };
+
+function cli(...args) {
+  return execFileSync(
+    'playwright-cli', [`-s=${SESSION}`, ...args], EXEC_OPTS,
+  ).trim();
+}
+
+function cliEval(js) {
+  return parseEvalOutput(cli('eval', js));
+}
+
+function compareImages(sourcePath, renderedPath, diffPath) {
+  if (!existsSync(sourcePath)) return { similarity: 0, error: 'source missing' };
+  if (!existsSync(renderedPath)) return { similarity: 0, error: 'rendered missing' };
+
+  const sourceImg = PNG.sync.read(readFileSync(sourcePath));
+  const renderedImg = PNG.sync.read(readFileSync(renderedPath));
+
+  const width = Math.max(sourceImg.width, renderedImg.width);
+  const height = Math.max(sourceImg.height, renderedImg.height);
+
+  const padPng = (img, w, h) => {
+    const padded = new PNG({ width: w, height: h });
+    for (let i = 0; i < padded.data.length; i += 4) {
+      padded.data[i] = 255;
+      padded.data[i + 1] = 255;
+      padded.data[i + 2] = 255;
+      padded.data[i + 3] = 255;
+    }
+    for (let y = 0; y < img.height && y < h; y++) {
+      for (let x = 0; x < img.width && x < w; x++) {
+        const srcIdx = (y * img.width + x) * 4;
+        const dstIdx = (y * w + x) * 4;
+        padded.data[dstIdx] = img.data[srcIdx];
+        padded.data[dstIdx + 1] = img.data[srcIdx + 1];
+        padded.data[dstIdx + 2] = img.data[srcIdx + 2];
+        padded.data[dstIdx + 3] = img.data[srcIdx + 3];
+      }
+    }
+    return padded;
+  };
+
+  const src = sourceImg.width === width && sourceImg.height === height
+    ? sourceImg : padPng(sourceImg, width, height);
+  const ren = renderedImg.width === width && renderedImg.height === height
+    ? renderedImg : padPng(renderedImg, width, height);
+
+  const diff = new PNG({ width, height });
+  const mismatchedPixels = pixelmatch(
+    src.data,
+    ren.data,
+    diff.data,
+    width,
+    height,
+    { threshold: 0.15, alpha: 0.5 },
+  );
+
+  writeFileSync(diffPath, PNG.sync.write(diff));
+
+  const totalPixels = width * height;
+  const similarity = ((totalPixels - mismatchedPixels) / totalPixels) * 100;
+  return {
+    similarity: Math.round(similarity * 100) / 100,
+    mismatchedPixels,
+    totalPixels,
+    width,
+    height,
+    sourceHeight: sourceImg.height,
+    renderedHeight: renderedImg.height,
+  };
+}
+
+function takeElementScreenshot(outputPath) {
+  try {
+    cli('screenshot', `--selector=${ROW_SELECTOR}`, `--filename=${outputPath}`);
+    if (existsSync(outputPath) && readFileSync(outputPath).length > 0) {
+      return true;
+    }
+  } catch {
+    // Fall through to retry
+  }
+  // Retry once after settling
+  execFileSync('sleep', ['2']);
+  try {
+    cli('screenshot', `--selector=${ROW_SELECTOR}`, `--filename=${outputPath}`);
+    return existsSync(outputPath) && readFileSync(outputPath).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// Main evaluation
+const results = { viewports: {}, compositeScore: 0 };
+
+try {
+  cli('open', BASE_URL);
+} catch (err) {
+  console.error(JSON.stringify({ error: `Failed to open ${BASE_URL}: ${err.message}` }));
+  process.exit(1);
+}
+
+const sourcePath = join(SOURCE_DIR, `desktop-row-{{ROW_INDEX}}.png`);
+const renderedPath = join(RESULTS_DIR, 'desktop-rendered.png');
+const diffPath = join(RESULTS_DIR, 'desktop-diff.png');
+
+try {
+  cli('resize', '1440', '900');
+  execFileSync('sleep', ['2']);
+
+  const captured = takeElementScreenshot(renderedPath);
+
+  if (captured) {
+    const iterPath = join(RESULTS_DIR, `desktop-rendered-${ITERATION}.png`);
+    writeFileSync(iterPath, readFileSync(renderedPath));
+
+    const comparison = compareImages(sourcePath, renderedPath, diffPath);
+    results.viewports.desktop = { ...comparison, weight: 1.0 };
+  } else {
+    results.viewports.desktop = {
+      similarity: 0, error: 'element screenshot failed', weight: 1.0,
+    };
+  }
+} catch (err) {
+  results.viewports.desktop = {
+    similarity: 0, error: err.message, weight: 1.0,
+  };
+}
+
+try {
+  cli('close');
+} catch {
+  // Session may already be closed
+}
+
+results.compositeScore = results.viewports.desktop?.similarity || 0;
+
+console.log(JSON.stringify(results, null, 2));
+
+writeFileSync(
+  join(RESULTS_DIR, 'latest-evaluation.json'),
+  JSON.stringify(results, null, 2),
+);
