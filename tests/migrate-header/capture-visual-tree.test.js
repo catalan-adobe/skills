@@ -39,8 +39,9 @@ describe('parseArgs', () => {
 
 describe('buildConfig', () => {
   it('creates config with bundle in initScript', () => {
-    const config = buildConfig('/path/to/bundle.js', null);
+    const { config, stealthTmpFile } = buildConfig('/path/to/bundle.js', null);
     expect(config.browser.initScript).toEqual(['/path/to/bundle.js']);
+    expect(stealthTmpFile).toBeNull();
   });
 
   it('merges browser-recipe settings with bundle appended', () => {
@@ -56,16 +57,36 @@ describe('buildConfig', () => {
       },
     }));
 
-    const config = buildConfig('/path/to/bundle.js', recipePath);
+    const { config, stealthTmpFile } = buildConfig('/path/to/bundle.js', recipePath);
     expect(config.browser.initScript).toEqual(['stealth.js', '/path/to/bundle.js']);
     expect(config.browser.headless).toBe(false);
+    expect(stealthTmpFile).toBeNull();
 
     rmSync(tmpDir, { recursive: true });
   });
 
   it('handles missing browser-recipe file gracefully', () => {
-    const config = buildConfig('/path/to/bundle.js', '/nonexistent/recipe.json');
+    const { config } = buildConfig('/path/to/bundle.js', '/nonexistent/recipe.json');
     expect(config.browser.initScript).toEqual(['/path/to/bundle.js']);
+  });
+
+  it('writes stealthInitScript to temp file and prepends to initScript', () => {
+    const tmpDir = join(tmpdir(), `vt-test-stealth-${process.pid}`);
+    mkdirSync(tmpDir, { recursive: true });
+    const recipePath = join(tmpDir, 'recipe.json');
+    writeFileSync(recipePath, JSON.stringify({
+      cliConfig: { browser: {} },
+      stealthInitScript: 'console.log("stealth");',
+    }));
+
+    const { config, stealthTmpFile } = buildConfig('/path/to/bundle.js', recipePath);
+    expect(stealthTmpFile).toBeTruthy();
+    expect(readFileSync(stealthTmpFile, 'utf-8')).toBe('console.log("stealth");');
+    expect(config.browser.initScript[0]).toBe(stealthTmpFile);
+    expect(config.browser.initScript[1]).toBe('/path/to/bundle.js');
+
+    rmSync(tmpDir, { recursive: true });
+    try { rmSync(stealthTmpFile); } catch { /* noop */ }
   });
 });
 

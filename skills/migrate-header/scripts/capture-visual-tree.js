@@ -102,20 +102,33 @@ function cli(session, ...args) {
 
 export function buildConfig(bundlePath, browserRecipePath) {
   const config = { browser: {} };
+  let stealthTmpFile = null;
 
   if (browserRecipePath && existsSync(browserRecipePath)) {
     const recipe = JSON.parse(readFileSync(browserRecipePath, 'utf-8'));
     const cliConf = recipe.cliConfig || {};
     Object.assign(config.browser, cliConf.browser || {});
+
+    // Write stealth script to temp file if present in recipe
+    if (recipe.stealthInitScript) {
+      stealthTmpFile = join(
+        tmpdir(), `vt-stealth-${process.pid}.js`,
+      );
+      writeFileSync(stealthTmpFile, recipe.stealthInitScript);
+    }
   }
 
   const existing = config.browser.initScript;
   const scripts = Array.isArray(existing)
     ? existing
     : existing ? [existing] : [];
-  config.browser.initScript = [...scripts, bundlePath];
 
-  return config;
+  // Stealth first (must run before page scripts), then bundle last
+  if (stealthTmpFile) scripts.unshift(stealthTmpFile);
+  scripts.push(bundlePath);
+  config.browser.initScript = scripts;
+
+  return { config, stealthTmpFile };
 }
 
 function main() {
@@ -132,7 +145,7 @@ function main() {
 
   const configPath = join(tmpdir(), `vt-config-${process.pid}.json`);
   const rawPath = join(tmpdir(), `vt-raw-${process.pid}.txt`);
-  const config = buildConfig(bundle, args.browserRecipe);
+  const { config, stealthTmpFile } = buildConfig(bundle, args.browserRecipe);
   writeFileSync(configPath, JSON.stringify(config, null, 2));
 
   try {
@@ -180,7 +193,7 @@ function main() {
     log(`ERROR: Visual tree capture failed: ${err.message}`);
     process.exit(2);
   } finally {
-    for (const f of [configPath, rawPath]) {
+    for (const f of [configPath, rawPath, stealthTmpFile].filter(Boolean)) {
       try { unlinkSync(f); } catch { /* noop */ }
     }
   }
