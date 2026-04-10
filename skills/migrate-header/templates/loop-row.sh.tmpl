@@ -230,13 +230,7 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
     css_changed=true
   fi
 
-  # Check for staged/unstaged changes too (agent may not have touched row CSS directly)
-  has_uncommitted=false
-  git -C "${PROJECT_DIR}" diff --quiet 2>/dev/null || has_uncommitted=true
-  git -C "${PROJECT_DIR}" diff --cached --quiet 2>/dev/null \
-    || has_uncommitted=true
-
-  if [[ "${css_changed}" == "false" ]] && [[ "${has_uncommitted}" == "false" ]]; then
+  if [[ "${css_changed}" == "false" ]]; then
     warn "No changes to ${ROW_CSS} detected, skipping evaluation"
     printf "%d\t-\t%s\t-\t-\tno_changes\tAgent made no modifications\n" \
       "${ITERATION}" "${BEST_SCORE}" >> "${RESULTS_FILE}"
@@ -249,11 +243,10 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
     continue
   fi
 
-  # Stage and commit the row CSS (and any other uncommitted changes)
-  if [[ "${has_uncommitted}" == "true" ]] || [[ "${css_changed}" == "true" ]]; then
+  # Stage and commit ONLY this row's CSS — never stage other files
+  # to avoid capturing concurrent changes from parallel row agents
+  if [[ "${css_changed}" == "true" ]]; then
     git -C "${PROJECT_DIR}" add "${ROW_CSS}" 2>/dev/null || true
-    # Stage any other modified files the agent touched
-    git -C "${PROJECT_DIR}" add -u 2>/dev/null || true
     git -C "${PROJECT_DIR}" commit \
       -m "row-{{ROW_INDEX}}-iteration-${ITERATION}: agent modifications" \
       2>/dev/null || true
@@ -301,12 +294,15 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
     iteration_status="reverted"
     warn "NO IMPROVEMENT: ${score} <= ${BEST_SCORE} (judge=${judge_score}) — reverting"
     # Save the diff before reverting
-    git -C "${PROJECT_DIR}" diff HEAD~1 HEAD -- "${ROW_CSS}" \
+    diff "${css_backup}" "${PROJECT_DIR}/${ROW_CSS}" \
       > "${ROW_RESULTS_DIR}/last-reverted.diff" \
       2>/dev/null || true
-    # Undo commit and restore file (no reset --hard — file-scoped only)
-    git -C "${PROJECT_DIR}" reset --soft HEAD~1 2>/dev/null || true
-    git -C "${PROJECT_DIR}" checkout -- "${ROW_CSS}" 2>/dev/null || true
+    # Restore from backup and commit (forward-only — safe for parallel agents)
+    cp "${css_backup}" "${PROJECT_DIR}/${ROW_CSS}"
+    git -C "${PROJECT_DIR}" add "${ROW_CSS}" 2>/dev/null || true
+    git -C "${PROJECT_DIR}" commit \
+      -m "row-{{ROW_INDEX}}-iteration-${ITERATION}: reverted" \
+      2>/dev/null || true
     CONSECUTIVE_REVERTS=$((CONSECUTIVE_REVERTS + 1))
     printf "%d\t%s\t%s\t%s\t%s\treverted\t%s\n" \
       "${ITERATION}" "${local_commit}" "${score}" \

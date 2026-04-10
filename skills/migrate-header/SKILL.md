@@ -839,7 +839,7 @@ node "$SKILL_HOME/scripts/setup-polish-loop.js" \
 
 ```bash
 ROWS_JSON="$PROJECT_ROOT/autoresearch/source/rows.json"
-ROW_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$ROWS_JSON','utf-8')).length)")
+ROW_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$ROWS_JSON','utf-8')).rows.length)")
 
 for i in $(seq 0 $((ROW_COUNT - 1))); do
   node "$SKILL_HOME/scripts/setup-polish-loop.js" \
@@ -871,7 +871,7 @@ node "$SKILL_HOME/scripts/setup-polish-loop.js" \
 
 ```bash
 ROWS_JSON="$PROJECT_ROOT/autoresearch/source/rows.json"
-ROW_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$ROWS_JSON','utf-8')).length)")
+ROW_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$ROWS_JSON','utf-8')).rows.length)")
 
 for i in $(seq 0 $((ROW_COUNT - 1))); do
   for f in "autoresearch/evaluate-row-${i}.js" "program-row-${i}.md" "loop-row-${i}.sh"; do
@@ -991,10 +991,15 @@ if [[ -n "$AEM_PID" ]]; then
 fi
 ```
 
-**Read results** from `$PROJECT_ROOT/results.tsv`
-and `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json`.
+**Read results** from `$PROJECT_ROOT/autoresearch/results/latest-evaluation.json`
+(always present — written by Phase 5.3 full-header evaluation).
+
+For iteration details, read per-row results:
+- `$PROJECT_ROOT/results-row-0.tsv`, `results-row-1.tsv`, etc. (one per row)
+- `$PROJECT_ROOT/results.tsv` (only exists if reconciliation ran)
+
 Extract: composite score, desktop score, nav completeness,
-iteration count (kept vs reverted).
+iteration count (kept vs reverted) across all row TSVs.
 
 **Report to user** with this format:
 
