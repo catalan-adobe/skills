@@ -525,6 +525,41 @@ Mark Phase 2 as completed.
 
 Mark Phase 3 as in_progress.
 
+#### 3.0 Pre-Extract Row Content
+
+Before dispatching row agents, extract complete DOM content for each row
+deterministically. This prevents LLM truncation of large dropdown menus.
+
+The visual-tree session from Phase 2 is still open. For each row in
+`rows.json`, run the extraction script:
+
+```bash
+ROWS_JSON="$PROJECT_ROOT/autoresearch/source/rows.json"
+ROW_COUNT=$(node -e "
+  const rows = JSON.parse(require('fs').readFileSync('$ROWS_JSON','utf-8'));
+  console.log(rows.rows.length);
+")
+EXTRACT_DIR="$PROJECT_ROOT/autoresearch/extraction/content"
+mkdir -p "$EXTRACT_DIR"
+
+for i in $(seq 0 $((ROW_COUNT - 1))); do
+  ROW_SELECTOR=$(node -e "
+    const rows = JSON.parse(require('fs').readFileSync('$ROWS_JSON','utf-8'));
+    console.log(rows.rows[$i].selector);
+  ")
+  node "$SKILL_HOME/scripts/extract-row-content.js" \
+    "$VT_SESSION" \
+    "$ROW_SELECTOR" \
+    "$EXTRACT_DIR/row-${i}-content.json"
+done
+echo "Pre-extracted content for $ROW_COUNT rows"
+```
+
+Each `row-N-content.json` contains a complete array of elements with:
+- `cleanHtml` — full cleaned innerHTML (no truncation, no size limit)
+- `links` — structured link array with text, href, images
+- `topText`, `topHref` — top-level element text and link
+
 #### 3.1 Row Agent Dispatch
 
 Read `$PROJECT_ROOT/autoresearch/source/rows.json` (produced in step 2.4).
@@ -578,39 +613,32 @@ playwright-cli -s=row-[INDEX] eval "<expression>"
    node [CSS_QUERY_PATH] open [URL] --session=row-[INDEX] [BROWSER_RECIPE_FLAG]
    ```
 
-2. Read the row's DOM content:
+2. Read the pre-extracted row content (complete DOM, no truncation):
    ```bash
-   playwright-cli -s=row-[INDEX] eval "document.querySelector('[SELECTOR]').innerHTML"
+   cat [PROJECT_ROOT]/autoresearch/extraction/content/row-[INDEX]-content.json
    ```
+   This JSON array has one entry per direct child element of the row, each with:
+   - `cleanHtml` — full cleaned innerHTML
+   - `links` — structured array of all links (including hidden dropdown children)
+   - `topText`, `topHref` — top-level text and link
 
-3. Analyze the DOM to classify elements. Assign each a role:
+3. Classify each element from the pre-extracted content. Assign each a role:
    logo, nav-link, utility-link, promotional-card, search, icon, cta, text.
-   For nav-link elements, also extract children from nested <ul>s —
-   including items in hidden submenus (display:none panels). These are
-   real navigation links that belong in the output.
+   For nav-link elements, the `links` array contains ALL children from nested
+   `<ul>`s — including items in hidden submenus (display:none panels). These
+   are real navigation links that belong in the output.
 
-3b. For each element, capture its cleaned innerHTML:
-    ```bash
-    playwright-cli -s=row-[INDEX] eval "
-      const el = document.querySelector('<element-selector>').cloneNode(true);
-      el.querySelectorAll('script,style,noscript').forEach(n => n.remove());
-      el.innerHTML.trim()
-    "
-    ```
-    Store the output as the element's `contentHtml` field.
+3b. Use the `cleanHtml` field from the pre-extracted content as the element's
+    `contentHtml` field in your output. Do NOT re-extract innerHTML via eval —
+    the pre-extracted content is complete and avoids truncation of large
+    dropdown menus.
 
-    **For nav-link elements with dropdowns:** use the nav item's own
-    `<li>` as the selector — NOT a child container like a link list.
-    Dropdown panels often have sibling `<div>`s next to the link list
-    containing promotional cards, featured images, and CTAs. Selecting
-    only the link list `<ul>` misses these siblings. The `<li>` is the
-    common ancestor that contains everything:
+    **For nav-link elements with dropdowns:** the `cleanHtml` captures the
+    entire `<li>` content — NOT just a child container like a link list.
+    This includes:
     - The main link
     - The nested `<ul>` of submenu links
     - Spotlight/promotional `<div>`s with images
-
-    Example: if the nav item is `li.menu-item:nth-child(3)`, query
-    that `<li>` directly — do not drill into its children.
 
 4. Query CSS values for each element type via css-query:
    ```bash
