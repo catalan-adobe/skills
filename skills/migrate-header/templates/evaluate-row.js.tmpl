@@ -97,8 +97,21 @@ function compareImages(sourcePath, renderedPath, diffPath) {
 }
 
 function takeElementScreenshot(outputPath) {
+  // Use run-code with locator.screenshot() — screenshot [ref] only accepts
+  // snapshot refs (e5), not CSS selectors. locator.screenshot() is the
+  // proper Playwright API for element-level screenshots.
+  const escapedSelector = ROW_SELECTOR.replace(/'/g, "\\'");
+  const escapedPath = outputPath.replace(/'/g, "\\'");
+  const code = `async page => {`
+    + ` await page.locator('${escapedSelector}').screenshot({ path: '${escapedPath}' });`
+    + ` return 'ok';`
+    + ` }`;
   try {
-    cli('screenshot', ROW_SELECTOR, `--filename=${outputPath}`);
+    execFileSync(
+      'playwright-cli',
+      [`-s=${SESSION}`, '--raw', 'run-code', code],
+      EXEC_OPTS,
+    );
     if (existsSync(outputPath) && readFileSync(outputPath).length > 0) {
       return true;
     }
@@ -108,7 +121,11 @@ function takeElementScreenshot(outputPath) {
   // Retry once after settling
   execFileSync('sleep', ['2']);
   try {
-    cli('screenshot', ROW_SELECTOR, `--filename=${outputPath}`);
+    execFileSync(
+      'playwright-cli',
+      [`-s=${SESSION}`, '--raw', 'run-code', code],
+      EXEC_OPTS,
+    );
     return existsSync(outputPath) && readFileSync(outputPath).length > 0;
   } catch {
     return false;

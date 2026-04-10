@@ -4,19 +4,29 @@
 
 When using any playwright-cli command — especially unfamiliar flags, subcommands, or argument syntax — look up the current docs via Context7 before writing code. Library ID: `/microsoft/playwright-cli`. Do not guess from codebase patterns or memory; the CLI evolves and has non-obvious conventions (e.g., `screenshot` takes a ref not a CSS selector, `eval` is expression-only, `--raw` strips envelope formatting).
 
-## screenshot takes selector as positional argument
+## screenshot only accepts snapshot refs, not CSS selectors
 
-`playwright-cli screenshot` takes the element selector as a **positional argument**, not a `--selector` flag:
+`playwright-cli screenshot [ref]` takes a **snapshot ref** (e.g., `e5` from a prior `snapshot` command), NOT a CSS selector:
 
 ```bash
-# Element screenshot — selector is positional
-playwright-cli screenshot "header .header > :nth-child(1)" --filename=/tmp/row.png
+# Full-page screenshot
+playwright-cli screenshot --filename=page.png
 
-# Full-page screenshot — no selector
-playwright-cli screenshot --filename=/tmp/full.png
+# Element screenshot by snapshot ref
+playwright-cli snapshot          # get refs first
+playwright-cli screenshot e5 --filename=element.png
 ```
 
-Do NOT use `--selector=` — it is not a valid flag.
+**For element screenshots by CSS selector**, use `run-code` with Playwright's `locator.screenshot()`:
+
+```bash
+playwright-cli --raw run-code "async page => {
+  await page.locator('header .header > :nth-child(1)').screenshot({ path: '/tmp/row.png' });
+  return 'ok';
+}"
+```
+
+Do NOT pass CSS selectors to `screenshot` — it only accepts refs.
 
 ## run-code for multi-statement logic
 
