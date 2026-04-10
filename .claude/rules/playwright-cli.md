@@ -1,5 +1,19 @@
 # playwright-cli Rules
 
+## screenshot takes selector as positional argument
+
+`playwright-cli screenshot` takes the element selector as a **positional argument**, not a `--selector` flag:
+
+```bash
+# Element screenshot — selector is positional
+playwright-cli screenshot "header .header > :nth-child(1)" --filename=/tmp/row.png
+
+# Full-page screenshot — no selector
+playwright-cli screenshot --filename=/tmp/full.png
+```
+
+Do NOT use `--selector=` — it is not a valid flag.
+
 ## eval only accepts pure expressions
 
 `playwright-cli eval "EXPR"` wraps the argument as `page.evaluate(() => (EXPR))`. This means:

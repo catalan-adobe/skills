@@ -109,10 +109,11 @@ export function buildConfig(bundlePath, browserRecipePath) {
     Object.assign(config.browser, cliConf.browser || {});
   }
 
-  config.browser.initScript = [
-    ...(config.browser.initScript || []),
-    bundlePath,
-  ];
+  const existing = config.browser.initScript;
+  const scripts = Array.isArray(existing)
+    ? existing
+    : existing ? [existing] : [];
+  config.browser.initScript = [...scripts, bundlePath];
 
   return config;
 }
