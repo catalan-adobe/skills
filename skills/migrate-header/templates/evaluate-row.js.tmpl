@@ -14,7 +14,6 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
-import { parseEvalOutput } from '{{SKILL_HOME}}/scripts/cdp-helpers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SOURCE_DIR = join(__dirname, 'source');
@@ -34,10 +33,6 @@ function cli(...args) {
   return execFileSync(
     'playwright-cli', [`-s=${SESSION}`, ...args], EXEC_OPTS,
   ).trim();
-}
-
-function cliEval(js) {
-  return parseEvalOutput(cli('eval', js));
 }
 
 function compareImages(sourcePath, renderedPath, diffPath) {
