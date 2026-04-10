@@ -12,7 +12,6 @@ import {
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 
@@ -100,7 +99,10 @@ function compareImages(sourcePath, renderedPath, diffPath) {
 function takeElementScreenshot(outputPath) {
   // Use run-code --filename with locator.screenshot() — the screenshot
   // command only accepts snapshot refs (e5), not CSS selectors.
-  const scriptPath = join(tmpdir(), `row-screenshot-${process.pid}.js`);
+  // Write to .playwright-cli/ which is inside the sandbox's allowed roots
+  const pwDir = join(dirname(__dirname), '.playwright-cli');
+  mkdirSync(pwDir, { recursive: true });
+  const scriptPath = join(pwDir, `row-screenshot-${process.pid}.js`);
   writeFileSync(scriptPath, `async page => {
   await page.locator(${JSON.stringify(ROW_SELECTOR)})
     .screenshot({ path: ${JSON.stringify(outputPath)} });

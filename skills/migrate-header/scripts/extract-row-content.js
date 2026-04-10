@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Deterministic row content extraction via playwright-cli run-code --filename.
+ * Deterministic row content extraction via playwright-cli --raw run-code --filename.
  *
  * Extracts complete DOM content for each direct child of a header row,
  * bypassing LLM truncation. Produces a JSON file per row with cleaned
@@ -15,9 +15,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 
 const EXEC_OPTS = {
   encoding: 'utf-8',
@@ -38,9 +37,11 @@ const outputPath = process.argv[4];
 
 if (!session || !rowSelector || !outputPath) usage();
 
-// Write extraction code to a temp file — avoids shell quoting issues
-// with complex selectors and large inline strings.
-const scriptPath = join(tmpdir(), `extract-row-${process.pid}.js`);
+// Write extraction code to .playwright-cli/ (inside the sandbox's allowed roots)
+// — avoids shell quoting issues with complex selectors and large inline strings.
+const pwDir = join(process.cwd(), '.playwright-cli');
+mkdirSync(pwDir, { recursive: true });
+const scriptPath = join(pwDir, `extract-row-${process.pid}.js`);
 
 writeFileSync(scriptPath, `
 async page => {

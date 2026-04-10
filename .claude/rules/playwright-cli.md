@@ -46,16 +46,19 @@ playwright-cli -s=session --raw run-code "async page => {
 **Prefer `--filename=` over inline strings** for complex code — avoids shell quoting issues:
 
 ```bash
-# Write code to a temp file, then run it
-cat > /tmp/extract.js << 'SCRIPT'
+# Write code to .playwright-cli/ (inside sandbox allowed roots)
+mkdir -p .playwright-cli
+cat > .playwright-cli/extract.js << 'SCRIPT'
 async page => {
   return await page.evaluate(() => {
     return JSON.stringify(someComplexExtraction());
   });
 }
 SCRIPT
-playwright-cli -s=session --raw run-code --filename=/tmp/extract.js > /tmp/output.json
+playwright-cli -s=session --raw run-code --filename=.playwright-cli/extract.js
 ```
+
+**IMPORTANT: `--filename=` is sandboxed.** Files must be inside the project root or `.playwright-cli/`. `/tmp/` is blocked. Write temp scripts to `.playwright-cli/` and clean up after.
 
 **When to use `run-code` vs `eval`:**
 - `eval` — quick expressions: `document.title`, `el.getBoundingClientRect()`
