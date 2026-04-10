@@ -65,10 +65,10 @@ Ignore minor subpixel differences, antialiasing, and font rendering variations.
 
 **Respond with ONLY this JSON (no markdown fences, no other text):**
 
-{"improved": true, "layout_ok": false, "precision_ok": false, "active_gate": 1, "confidence": "high", "reasoning": "Logo is on the right but source has it on the left.", "structure_issues": ["logo on wrong side"], "precision_issues": [], "diagnosis": ["move logo to the left"]}
+{"improved": false, "layout_ok": false, "precision_ok": false, "active_gate": 1, "confidence": "high", "reasoning": "Logo is on the right but source has it on the left.", "structure_issues": ["logo on wrong side"], "precision_issues": [], "diagnosis": ["move logo to the left"]}
 
 Rules for the JSON:
-- "improved": true if the header renders with recognizable structure, false if it is broken or empty
+- "improved": true ONLY if layout_ok is true. A structurally broken render (missing elements, wrong positions, wrong sizes) is NEVER an improvement, even on the first iteration. Set false if layout_ok is false.
 - "layout_ok": false unless ALL Gate 1 checks pass
 - "precision_ok": false unless Gate 2 passes (always false if layout_ok is false)
 - "active_gate": 1, 2, or 3 — the gate that produced the diagnosis
