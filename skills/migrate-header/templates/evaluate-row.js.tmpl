@@ -98,7 +98,7 @@ function compareImages(sourcePath, renderedPath, diffPath) {
 
 function takeElementScreenshot(outputPath) {
   try {
-    cli('screenshot', `--selector=${ROW_SELECTOR}`, `--filename=${outputPath}`);
+    cli('screenshot', ROW_SELECTOR, `--filename=${outputPath}`);
     if (existsSync(outputPath) && readFileSync(outputPath).length > 0) {
       return true;
     }
@@ -108,7 +108,7 @@ function takeElementScreenshot(outputPath) {
   // Retry once after settling
   execFileSync('sleep', ['2']);
   try {
-    cli('screenshot', `--selector=${ROW_SELECTOR}`, `--filename=${outputPath}`);
+    cli('screenshot', ROW_SELECTOR, `--filename=${outputPath}`);
     return existsSync(outputPath) && readFileSync(outputPath).length > 0;
   } catch {
     return false;

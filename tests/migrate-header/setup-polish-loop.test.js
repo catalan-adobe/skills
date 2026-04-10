@@ -175,7 +175,7 @@ describe('buildRowReplacements', () => {
       url: 'https://example.com',
       skillHome: '/path/to/skill',
     });
-    expect(r['{{ROW_SELECTOR}}']).toBe('header > :nth-child(1)');
+    expect(r['{{ROW_SELECTOR}}']).toBe('header .header > :nth-child(1)');
   });
 
   it('uses row description from data', () => {

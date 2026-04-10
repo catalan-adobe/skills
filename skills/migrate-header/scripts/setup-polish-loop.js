@@ -22,6 +22,7 @@ import {
 import { dirname, join, resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(__dirname, '..', 'templates');
@@ -245,7 +246,7 @@ export function buildRowReplacements(row, opts) {
   return {
     '{{ROW_INDEX}}': String(row.index),
     '{{ROW_SELECTOR}}': row.selector
-      || `header > :nth-child(${row.index + 1})`,
+      || `header .header > :nth-child(${row.index + 1})`,
     '{{ROW_SESSION}}': `row-${row.index}-eval`,
     '{{ROW_HEIGHT}}': String(Math.round(row.bounds.height)),
     '{{ROW_SECTION_STYLE}}': row.suggestedSectionStyle
@@ -406,7 +407,7 @@ function mainInitCss(args) {
   log(`  ${rows.length} row stubs + header.css created`);
 }
 
-async function mainRow(args) {
+function mainRow(args) {
   const rows = loadRowFiles(args.rowsDir);
   const row = rows.find((r) => r.index === args.rowIndex);
   if (!row) {
@@ -425,10 +426,10 @@ async function mainRow(args) {
   // Crop source screenshot for this row using pngjs
   const desktopPath = join(sourceOutDir, 'desktop.png');
   if (existsSync(desktopPath)) {
-    const pngjsPath = join(
-      autoresearchDir, 'node_modules', 'pngjs', 'lib', 'pngjs.js',
+    const require = createRequire(
+      join(autoresearchDir, 'package.json'),
     );
-    const { PNG } = await import(pngjsPath);
+    const { PNG } = require('pngjs');
     const srcData = readFileSync(desktopPath);
     const srcPng = PNG.sync.read(srcData);
 
@@ -598,7 +599,7 @@ function mainFull(args) {
   log(`  Run: cd ${args.targetDir} && ./loop.sh`);
 }
 
-async function main() {
+function main() {
   const args = parseArgs(process.argv);
   if (args.mode === 'init-css') return mainInitCss(args);
   if (args.mode === 'row') return mainRow(args);
@@ -608,8 +609,5 @@ async function main() {
 const isDirectRun = process.argv[1]
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isDirectRun) {
-  main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+  main();
 }
