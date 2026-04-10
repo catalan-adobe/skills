@@ -826,7 +826,35 @@ Mark Phase 5 as in_progress.
 
 #### 5.1 Polish Loop Setup
 
-Run the setup script to generate the polish loop infrastructure:
+**Initialize per-row CSS structure:**
+
+```bash
+node "$SKILL_HOME/scripts/setup-polish-loop.js" \
+  "--init-css" \
+  "--rows-dir=$PROJECT_ROOT/autoresearch/extraction" \
+  "--target-dir=$PROJECT_ROOT"
+```
+
+**Generate per-row loop infrastructure** — run once for each row in `rows.json`:
+
+```bash
+ROWS_JSON="$PROJECT_ROOT/autoresearch/source/rows.json"
+ROW_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$ROWS_JSON','utf-8')).length)")
+
+for i in $(seq 0 $((ROW_COUNT - 1))); do
+  node "$SKILL_HOME/scripts/setup-polish-loop.js" \
+    "--row=$i" \
+    "--rows-dir=$PROJECT_ROOT/autoresearch/extraction" \
+    "--url=$URL" \
+    "--source-dir=$PROJECT_ROOT/autoresearch/source" \
+    "--target-dir=$PROJECT_ROOT" \
+    "--port=3000" \
+    "--max-iterations=$MAX_ITERATIONS" \
+    "--skill-home=$SKILL_HOME"
+done
+```
+
+**Generate full-header infrastructure for reconciliation:**
 
 ```bash
 node "$SKILL_HOME/scripts/setup-polish-loop.js" \
@@ -835,26 +863,37 @@ node "$SKILL_HOME/scripts/setup-polish-loop.js" \
   "--source-dir=$PROJECT_ROOT/autoresearch/source" \
   "--target-dir=$PROJECT_ROOT" \
   "--port=3000" \
-  "--max-iterations=$MAX_ITERATIONS" \
+  "--max-iterations=5" \
   "--skill-home=$SKILL_HOME"
 ```
 
-Verify the generated files exist:
+**Verify generated files:**
 
 ```bash
+ROWS_JSON="$PROJECT_ROOT/autoresearch/source/rows.json"
+ROW_COUNT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$ROWS_JSON','utf-8')).length)")
+
+for i in $(seq 0 $((ROW_COUNT - 1))); do
+  for f in "autoresearch/evaluate-row-${i}.js" "program-row-${i}.md" "loop-row-${i}.sh"; do
+    if [[ ! -f "$PROJECT_ROOT/$f" ]]; then
+      echo "ERROR: Missing $f"
+      exit 1
+    fi
+  done
+done
+
+# Reconciliation files
 for f in autoresearch/evaluate.js program.md loop.sh; do
   if [[ ! -f "$PROJECT_ROOT/$f" ]]; then
-    echo "ERROR: Polish loop setup failed -- missing $f"
+    echo "ERROR: Missing reconciliation file $f"
     exit 1
   fi
 done
-chmod +x "$PROJECT_ROOT/loop.sh"
+chmod +x "$PROJECT_ROOT"/loop-row-*.sh "$PROJECT_ROOT/loop.sh"
 echo "Polish loop infrastructure ready."
 ```
 
-#### 5.2 Dev Server + Polish Loop
-
-Start the AEM dev server in the background, then launch the polish loop.
+#### 5.2 Dev Server + Parallel Row Polish
 
 **Start dev server:**
 
@@ -880,23 +919,57 @@ done
 echo "AEM dev server ready on http://localhost:3000/"
 ```
 
-**Launch the polish loop** (this blocks until completion):
+**Dispatch parallel row agents** — read `rows.json` and launch one Agent per row in a single message. Each agent runs its row's loop script.
 
-```bash
-cd "$PROJECT_ROOT" && ./loop.sh 2>&1 | tee autoresearch/results/loop.log
-echo "Loop finished. Full log at autoresearch/results/loop.log"
+For each row (index `I`, description from `rows.json`), dispatch:
+
+```
+Agent({
+  description: "Polish row I (description)",
+  prompt: "Run the visual polish loop for row I of a header migration.\n\nExecute this command and wait for it to complete:\n\n```bash\ncd $PROJECT_ROOT && ./loop-row-I.sh 2>&1 | tee autoresearch/results/row-I/loop.log\n```\n\nThe loop runs autonomously — do not interfere with iterations.\nIt terminates on plateau (5 consecutive reverts) or max iterations.\nDo NOT wrap with timeout. Each iteration takes 8-12 minutes.\nWhen the loop finishes, report the final line of output.",
+  allowedTools: "Bash,Read"
+})
 ```
 
-The loop runs autonomously. It terminates on:
-- 5 consecutive reverted iterations (plateau)
-- Reaching `--max-iterations`
+**All row agents MUST be dispatched in a single message** so they run in parallel.
 
-Do NOT attempt to control individual iterations. The loop handles
+Wait for all agents to complete. Each row converges independently.
+
+Do NOT attempt to control individual iterations. The loops handle
 scoring, commit/revert decisions, and termination.
 
-Do NOT wrap the loop with `timeout` or any time limit. Each iteration
-takes 8-12 minutes, so 10 iterations needs ~90+ minutes. This is
-expected — let it run to completion.
+Do NOT wrap the loops with `timeout` or any time limit. Each iteration
+takes 8-12 minutes. This is expected — let them run to completion.
+
+#### 5.3 Adaptive Reconciliation
+
+After all row loops finish, evaluate the full header to decide if reconciliation is needed.
+
+**Run full-header evaluation:**
+
+```bash
+RECON_SCORE=$(node "$PROJECT_ROOT/autoresearch/evaluate.js" 3000 recon 2>/dev/null \
+  | node --input-type=commonjs -e "
+    const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));
+    const pm = d.viewports?.desktop?.similarity || 0;
+    const nav = d.navCompleteness?.score || 0;
+    console.log(Math.round((pm * 0.70 + nav * 0.30) * 100) / 100);
+  " 2>/dev/null || echo "0")
+echo "Full header score after row loops: ${RECON_SCORE}%"
+```
+
+**Decision gate:**
+
+```bash
+NEEDS_RECON=$(node -e "console.log(${RECON_SCORE} < 85 ? 'yes' : 'no')")
+if [[ "${NEEDS_RECON}" == "yes" ]]; then
+  echo "Score ${RECON_SCORE}% < 85% — running reconciliation loop..."
+  cd "$PROJECT_ROOT" && ./loop.sh 2>&1 | tee autoresearch/results/reconciliation.log
+  echo "Reconciliation finished."
+else
+  echo "Score ${RECON_SCORE}% >= 85% — rows converged cleanly, skipping reconciliation."
+fi
+```
 
 Mark Phase 5 as completed. Then proceed to Phase 6 — do NOT stop here.
 
