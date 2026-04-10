@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Deterministic row content extraction via playwright-cli --raw run-code.
+ * Deterministic row content extraction via playwright-cli run-code --filename.
  *
  * Extracts complete DOM content for each direct child of a header row,
  * bypassing LLM truncation. Produces a JSON file per row with cleaned
@@ -15,7 +15,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const EXEC_OPTS = {
   encoding: 'utf-8',
@@ -36,25 +38,25 @@ const outputPath = process.argv[4];
 
 if (!session || !rowSelector || !outputPath) usage();
 
-// The extraction code runs inside page.evaluate — no Node APIs, pure browser JS.
-// We pass rowSelector as a parameter to avoid shell quoting issues.
-const extractCode = `async page => {
+// Write extraction code to a temp file — avoids shell quoting issues
+// with complex selectors and large inline strings.
+const scriptPath = join(tmpdir(), `extract-row-${process.pid}.js`);
+
+writeFileSync(scriptPath, `
+async page => {
   return await page.evaluate((rowSel) => {
     const row = document.querySelector(rowSel);
     if (!row) return JSON.stringify({ error: 'Row not found: ' + rowSel });
 
-    // Find direct children that are actual content elements
     const children = Array.from(row.children).filter(el => {
       const tag = el.tagName.toLowerCase();
       return tag !== 'script' && tag !== 'style' && tag !== 'noscript';
     });
 
     return JSON.stringify(children.map((child, i) => {
-      // Clone to avoid mutating the page
       const clone = child.cloneNode(true);
       clone.querySelectorAll('script,style,noscript').forEach(n => n.remove());
 
-      // Extract all links (including hidden dropdown content)
       const links = Array.from(child.querySelectorAll('a[href]')).map(a => ({
         text: a.textContent.replace(/\\s+/g, ' ').trim(),
         href: a.getAttribute('href'),
@@ -63,7 +65,6 @@ const extractCode = `async page => {
         imgAlt: a.querySelector('img')?.getAttribute('alt') || null,
       })).filter(l => l.text.length > 0 || l.hasImage);
 
-      // Top-level link or text
       const topLink = child.querySelector(':scope > a');
       const topText = topLink
         ? topLink.textContent.replace(/\\s+/g, ' ').trim()
@@ -79,18 +80,16 @@ const extractCode = `async page => {
         cleanHtml: clone.innerHTML.replace(/\\s+/g, ' ').trim(),
       };
     }));
-  }, '${rowSelector.replace(/'/g, "\\'")}');
-}`;
+  }, ${JSON.stringify(rowSelector)});
+}
+`);
 
 try {
   const raw = execFileSync('playwright-cli', [
-    `-s=${session}`, '--raw', 'run-code', extractCode,
+    `-s=${session}`, '--raw', 'run-code', `--filename=${scriptPath}`,
   ], EXEC_OPTS);
 
-  // run-code with --raw returns the value directly (string-encoded JSON)
   const parsed = JSON.parse(raw);
-
-  // parsed is either the JSON string from page.evaluate or an error object
   const items = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
 
   if (items.error) {
@@ -107,4 +106,6 @@ try {
 } catch (err) {
   console.error(`extract-row-content failed: ${err.message}`);
   process.exit(1);
+} finally {
+  try { unlinkSync(scriptPath); } catch { /* noop */ }
 }

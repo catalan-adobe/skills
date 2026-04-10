@@ -43,9 +43,24 @@ playwright-cli -s=session --raw run-code "async page => {
 }" > /tmp/output.json
 ```
 
+**Prefer `--filename=` over inline strings** for complex code — avoids shell quoting issues:
+
+```bash
+# Write code to a temp file, then run it
+cat > /tmp/extract.js << 'SCRIPT'
+async page => {
+  return await page.evaluate(() => {
+    return JSON.stringify(someComplexExtraction());
+  });
+}
+SCRIPT
+playwright-cli -s=session --raw run-code --filename=/tmp/extract.js > /tmp/output.json
+```
+
 **When to use `run-code` vs `eval`:**
 - `eval` — quick expressions: `document.title`, `el.getBoundingClientRect()`
 - `run-code` — multi-statement extraction, large DOM reads, anything > 1 line
+- `run-code --filename=` — complex code with special characters, or scripts > 3 lines
 
 ## eval only accepts pure expressions
 

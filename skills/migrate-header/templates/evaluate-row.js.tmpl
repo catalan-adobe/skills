@@ -7,11 +7,12 @@
  * Output: JSON to stdout with score and breakdown
  */
 import {
-  readFileSync, writeFileSync, existsSync, mkdirSync,
+  readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 
@@ -97,38 +98,36 @@ function compareImages(sourcePath, renderedPath, diffPath) {
 }
 
 function takeElementScreenshot(outputPath) {
-  // Use run-code with locator.screenshot() — screenshot [ref] only accepts
-  // snapshot refs (e5), not CSS selectors. locator.screenshot() is the
-  // proper Playwright API for element-level screenshots.
-  const escapedSelector = ROW_SELECTOR.replace(/'/g, "\\'");
-  const escapedPath = outputPath.replace(/'/g, "\\'");
-  const code = `async page => {`
-    + ` await page.locator('${escapedSelector}').screenshot({ path: '${escapedPath}' });`
-    + ` return 'ok';`
-    + ` }`;
-  try {
+  // Use run-code --filename with locator.screenshot() — the screenshot
+  // command only accepts snapshot refs (e5), not CSS selectors.
+  const scriptPath = join(tmpdir(), `row-screenshot-${process.pid}.js`);
+  writeFileSync(scriptPath, `async page => {
+  await page.locator(${JSON.stringify(ROW_SELECTOR)})
+    .screenshot({ path: ${JSON.stringify(outputPath)} });
+  return 'ok';
+}`);
+
+  function runScreenshot() {
     execFileSync(
       'playwright-cli',
-      [`-s=${SESSION}`, '--raw', 'run-code', code],
-      EXEC_OPTS,
-    );
-    if (existsSync(outputPath) && readFileSync(outputPath).length > 0) {
-      return true;
-    }
-  } catch {
-    // Fall through to retry
-  }
-  // Retry once after settling
-  execFileSync('sleep', ['2']);
-  try {
-    execFileSync(
-      'playwright-cli',
-      [`-s=${SESSION}`, '--raw', 'run-code', code],
+      [`-s=${SESSION}`, '--raw', 'run-code', `--filename=${scriptPath}`],
       EXEC_OPTS,
     );
     return existsSync(outputPath) && readFileSync(outputPath).length > 0;
+  }
+
+  try {
+    if (runScreenshot()) return true;
+  } catch {
+    // Fall through to retry
+  }
+  execFileSync('sleep', ['2']);
+  try {
+    return runScreenshot();
   } catch {
     return false;
+  } finally {
+    try { unlinkSync(scriptPath); } catch { /* noop */ }
   }
 }
 
