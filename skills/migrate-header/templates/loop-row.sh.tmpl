@@ -6,9 +6,9 @@ set -euo pipefail
 # file-scoped git ratchet with plateau detection.
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-EVALUATE="node ${PROJECT_DIR}/autoresearch/evaluate.js"
+EVALUATE="node ${PROJECT_DIR}/autoresearch/evaluate-row-{{ROW_INDEX}}.js"
 RESULTS_FILE="${PROJECT_DIR}/results-row-{{ROW_INDEX}}.tsv"
-PROGRAM_FILE="${PROJECT_DIR}/program.md"
+PROGRAM_FILE="${PROJECT_DIR}/program-row-{{ROW_INDEX}}.md"
 PORT="${AEM_PORT:-{{PORT}}}"
 MAX_ITERATIONS="${MAX_ITERATIONS:-{{MAX_ITERATIONS}}}"
 MAX_CONSECUTIVE_REVERTS="${MAX_CONSECUTIVE_REVERTS:-{{MAX_CONSECUTIVE_REVERTS}}}"
@@ -42,7 +42,7 @@ cleanup() {
     log "Consecutive reverts at exit: ${CONSECUTIVE_REVERTS}"
   fi
   # Clean up any temp backups
-  rm -f "/tmp/row-{{ROW_INDEX}}-backup-$$.css"
+  rm -f /tmp/row-{{ROW_INDEX}}-backup-*-$$.css
   exit 0
 }
 trap cleanup SIGINT SIGTERM
