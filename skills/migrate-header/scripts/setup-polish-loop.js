@@ -28,9 +28,53 @@ const TEMPLATES_DIR = join(__dirname, '..', 'templates');
 
 function parseArgs(argv) {
   const named = {};
+  const booleans = new Set();
   for (const arg of argv.slice(2)) {
-    const m = arg.match(/^--([a-z-]+)=(.+)$/);
-    if (m) named[m[1]] = m[2];
+    const kvMatch = arg.match(/^--([a-z-]+)=(.+)$/);
+    if (kvMatch) {
+      named[kvMatch[1]] = kvMatch[2];
+      continue;
+    }
+    const boolMatch = arg.match(/^--([a-z-]+)$/);
+    if (boolMatch) booleans.add(boolMatch[1]);
+  }
+
+  if (booleans.has('init-css')) {
+    const required = ['rows-dir', 'target-dir'];
+    const missing = required.filter((k) => !named[k]);
+    if (missing.length > 0) {
+      console.error(
+        `Missing required arguments: ${missing.map((k) => `--${k}`).join(', ')}`,
+      );
+      process.exit(1);
+    }
+    return {
+      mode: 'init-css',
+      rowsDir: resolve(named['rows-dir']),
+      targetDir: resolve(named['target-dir']),
+    };
+  }
+
+  if (named['row'] != null) {
+    const required = ['rows-dir', 'url', 'source-dir', 'target-dir'];
+    const missing = required.filter((k) => !named[k]);
+    if (missing.length > 0) {
+      console.error(
+        `Missing required arguments: ${missing.map((k) => `--${k}`).join(', ')}`,
+      );
+      process.exit(1);
+    }
+    return {
+      mode: 'row',
+      rowIndex: parseInt(named['row'], 10),
+      rowsDir: resolve(named['rows-dir']),
+      url: named['url'],
+      sourceDir: resolve(named['source-dir']),
+      targetDir: resolve(named['target-dir']),
+      explicitPort: named['port'] || null,
+      maxIterations: named['max-iterations'] || '30',
+      skillHome: named['skill-home'] || join(__dirname, '..'),
+    };
   }
 
   const required = ['rows-dir', 'url', 'source-dir', 'target-dir'];
@@ -49,6 +93,7 @@ function parseArgs(argv) {
   }
 
   return {
+    mode: 'full',
     rowsDir: resolve(named['rows-dir']),
     url: named['url'],
     sourceDir: resolve(named['source-dir']),
@@ -192,6 +237,32 @@ export function synthesizeStyles(rows) {
   return styles;
 }
 
+export function generateInitCss(rows) {
+  return rows.map((_, i) => `@import url('row-${i}.css');`).join('\n') + '\n';
+}
+
+export function buildRowReplacements(row, opts) {
+  return {
+    '{{ROW_INDEX}}': String(row.index),
+    '{{ROW_SELECTOR}}': row.selector
+      || `header > :nth-child(${row.index + 1})`,
+    '{{ROW_SESSION}}': `row-${row.index}-eval`,
+    '{{ROW_HEIGHT}}': String(Math.round(row.bounds.height)),
+    '{{ROW_SECTION_STYLE}}': row.suggestedSectionStyle
+      || `row-${row.index}`,
+    '{{ROW_DESCRIPTION}}': row.description || `Row ${row.index}`,
+    '{{ROW_VISUAL_TREE}}': row.vtSubtree
+      || 'Visual tree not available.',
+    '{{PORT}}': opts.port,
+    '{{PAGE_PATH}}': '/',
+    '{{MAX_ITERATIONS}}': opts.maxIterations,
+    '{{MAX_CONSECUTIVE_REVERTS}}': '5',
+    '{{URL}}': opts.url,
+    '{{SKILL_HOME}}': opts.skillHome,
+    '{{ICON_GUIDANCE}}': opts.iconGuidance || '',
+  };
+}
+
 function buildIconGuidance(targetDir) {
   const manifestPath = join(
     targetDir, 'autoresearch', 'extraction', 'icons', 'icons.json'
@@ -257,10 +328,174 @@ function log(msg) {
   console.error(msg);
 }
 
-function main() {
-  const args = parseArgs(process.argv);
+function applyReplacements(template, replacements) {
+  let result = template;
+  for (const [key, value] of Object.entries(replacements)) {
+    while (result.includes(key)) {
+      result = result.replace(key, value);
+    }
+  }
+  return result;
+}
 
-  // Load row extraction data
+function installEvaluatorDeps(autoresearchDir) {
+  log('Installing evaluator dependencies...');
+  execSync('npm init -y', { cwd: autoresearchDir, stdio: 'pipe' });
+  const pkgPath = join(autoresearchDir, 'package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+  pkg.type = 'module';
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+  execSync('npm install pixelmatch pngjs', {
+    cwd: autoresearchDir,
+    stdio: 'pipe',
+  });
+  log('  Installed pixelmatch + pngjs');
+}
+
+function ensureEvaluatorDeps(autoresearchDir) {
+  const pngjsDir = join(autoresearchDir, 'node_modules', 'pngjs');
+  if (existsSync(pngjsDir)) return;
+  installEvaluatorDeps(autoresearchDir);
+}
+
+function mainInitCss(args) {
+  const rows = loadRowFiles(args.rowsDir);
+  if (rows.length === 0) {
+    console.error(`No row-*.json files found in: ${args.rowsDir}`);
+    process.exit(1);
+  }
+  log(`Loaded ${rows.length} row files from ${args.rowsDir}`);
+
+  const headerDir = join(args.targetDir, 'blocks', 'header');
+  mkdirSync(headerDir, { recursive: true });
+
+  // Create empty row-N.css stubs
+  for (let i = 0; i < rows.length; ++i) {
+    const stubPath = join(headerDir, `row-${i}.css`);
+    if (!existsSync(stubPath)) {
+      writeFileSync(stubPath, '');
+      log(`  Created blocks/header/row-${i}.css`);
+    }
+  }
+
+  // Write header.css with @import rules, preserving non-import content
+  const headerCssPath = join(headerDir, 'header.css');
+  let existingNonImport = '';
+  if (existsSync(headerCssPath)) {
+    const existing = readFileSync(headerCssPath, 'utf-8');
+    existingNonImport = existing
+      .split('\n')
+      .filter((line) => !line.startsWith('@import'))
+      .join('\n')
+      .trim();
+  }
+  const importBlock = generateInitCss(rows);
+  const cssContent = existingNonImport
+    ? importBlock + '\n' + existingNonImport + '\n'
+    : importBlock;
+  writeFileSync(headerCssPath, cssContent);
+  log(`  Wrote blocks/header/header.css (${rows.length} @import rules)`);
+
+  // Install npm deps so --row mode can use pngjs for cropping
+  const autoresearchDir = join(args.targetDir, 'autoresearch');
+  mkdirSync(autoresearchDir, { recursive: true });
+  installEvaluatorDeps(autoresearchDir);
+
+  log('');
+  log('Init CSS complete.');
+  log(`  ${rows.length} row stubs + header.css created`);
+}
+
+async function mainRow(args) {
+  const rows = loadRowFiles(args.rowsDir);
+  const row = rows.find((r) => r.index === args.rowIndex);
+  if (!row) {
+    console.error(
+      `Row ${args.rowIndex} not found in ${args.rowsDir}`
+      + ` (available: ${rows.map((r) => r.index).join(', ')})`,
+    );
+    process.exit(1);
+  }
+  log(`Loaded row ${row.index} from ${args.rowsDir}`);
+
+  const autoresearchDir = join(args.targetDir, 'autoresearch');
+  const sourceOutDir = join(autoresearchDir, 'source');
+  mkdirSync(sourceOutDir, { recursive: true });
+
+  // Crop source screenshot for this row using pngjs
+  const desktopPath = join(sourceOutDir, 'desktop.png');
+  if (existsSync(desktopPath)) {
+    const pngjsPath = join(
+      autoresearchDir, 'node_modules', 'pngjs', 'lib', 'pngjs.js',
+    );
+    const { PNG } = await import(pngjsPath);
+    const srcData = readFileSync(desktopPath);
+    const srcPng = PNG.sync.read(srcData);
+
+    const cropY = Math.max(0, Math.round(row.bounds.y || 0));
+    const cropH = Math.min(
+      Math.round(row.bounds.height),
+      srcPng.height - cropY,
+    );
+    const cropped = new PNG({ width: srcPng.width, height: cropH });
+    PNG.bitblt(srcPng, cropped, 0, cropY, srcPng.width, cropH, 0, 0);
+
+    const cropPath = join(
+      sourceOutDir, `desktop-row-${row.index}.png`,
+    );
+    writeFileSync(cropPath, PNG.sync.write(cropped));
+    log(`  Cropped source/desktop-row-${row.index}.png (${cropH}px)`);
+  } else {
+    log('  WARNING: desktop.png not found, skipping crop');
+  }
+
+  const port = detectPort(args.targetDir, args.explicitPort);
+  const replacements = buildRowReplacements(row, {
+    port,
+    maxIterations: args.maxIterations,
+    url: args.url,
+    skillHome: args.skillHome,
+    iconGuidance: buildIconGuidance(args.targetDir),
+  });
+
+  // Load and populate per-row templates
+  const evaluateTmpl = loadTemplate('evaluate-row.js.tmpl');
+  const loopTmpl = loadTemplate('loop-row.sh.tmpl');
+  const programTmpl = loadTemplate('program-row.md.tmpl');
+
+  const evaluateContent = applyReplacements(evaluateTmpl, replacements);
+  const loopContent = applyReplacements(loopTmpl, replacements);
+  const programContent = applyReplacements(programTmpl, replacements);
+
+  // Write populated files
+  writeFileSync(
+    join(autoresearchDir, `evaluate-row-${row.index}.js`),
+    evaluateContent,
+  );
+  log(`  Wrote autoresearch/evaluate-row-${row.index}.js`);
+
+  const loopPath = join(args.targetDir, `loop-row-${row.index}.sh`);
+  writeFileSync(loopPath, loopContent);
+  chmodSync(loopPath, 0o755);
+  log(`  Wrote loop-row-${row.index}.sh (chmod +x)`);
+
+  writeFileSync(
+    join(args.targetDir, `program-row-${row.index}.md`),
+    programContent,
+  );
+  log(`  Wrote program-row-${row.index}.md`);
+
+  // Create per-row results directory
+  const rowResultsDir = join(autoresearchDir, 'results', `row-${row.index}`);
+  mkdirSync(rowResultsDir, { recursive: true });
+  log(`  Created autoresearch/results/row-${row.index}/`);
+
+  log('');
+  log(`Row ${row.index} polish loop infrastructure ready.`);
+  log(`  Run: cd ${args.targetDir} && ./loop-row-${row.index}.sh`);
+}
+
+function mainFull(args) {
   const rows = loadRowFiles(args.rowsDir);
   if (rows.length === 0) {
     console.error(`No row-*.json files found in: ${args.rowsDir}`);
@@ -313,20 +548,9 @@ function main() {
   const loopTmpl = loadTemplate('loop.sh.tmpl');
   const programTmpl = loadTemplate('program.md.tmpl');
 
-  // Apply replacements
-  function applyReplacements(template) {
-    let result = template;
-    for (const [key, value] of Object.entries(replacements)) {
-      while (result.includes(key)) {
-        result = result.replace(key, value);
-      }
-    }
-    return result;
-  }
-
-  const evaluateContent = applyReplacements(evaluateTmpl);
-  const loopContent = applyReplacements(loopTmpl);
-  const programContent = applyReplacements(programTmpl);
+  const evaluateContent = applyReplacements(evaluateTmpl, replacements);
+  const loopContent = applyReplacements(loopTmpl, replacements);
+  const programContent = applyReplacements(programTmpl, replacements);
 
   // Create directory structure
   const autoresearchDir = join(args.targetDir, 'autoresearch');
@@ -363,22 +587,8 @@ function main() {
   );
   log(`  Wrote source/nav-structure.json (${navStructure.topNav.length} items)`);
 
-  // Install npm dependencies for evaluator
-  log('Installing evaluator dependencies...');
-  execSync('npm init -y', {
-    cwd: autoresearchDir,
-    stdio: 'pipe',
-  });
-  const pkgPath = join(autoresearchDir, 'package.json');
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-  pkg.type = 'module';
-  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
-
-  execSync('npm install pixelmatch pngjs', {
-    cwd: autoresearchDir,
-    stdio: 'pipe',
-  });
-  log('  Installed pixelmatch + pngjs');
+  // Ensure npm deps are installed (--init-css installs them; fallback here)
+  ensureEvaluatorDeps(autoresearchDir);
 
   log('');
   log('Polish loop infrastructure ready.');
@@ -388,8 +598,18 @@ function main() {
   log(`  Run: cd ${args.targetDir} && ./loop.sh`);
 }
 
+async function main() {
+  const args = parseArgs(process.argv);
+  if (args.mode === 'init-css') return mainInitCss(args);
+  if (args.mode === 'row') return mainRow(args);
+  return mainFull(args);
+}
+
 const isDirectRun = process.argv[1]
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isDirectRun) {
-  main();
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

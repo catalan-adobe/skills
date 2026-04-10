@@ -8,6 +8,8 @@ import {
   countNavItems,
   buildNavStructure,
   synthesizeStyles,
+  generateInitCss,
+  buildRowReplacements,
 } from '../../skills/migrate-header/scripts/setup-polish-loop.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -122,5 +124,100 @@ describe('synthesizeStyles', () => {
     expect(styles.cta['background-color'].value).toBe('rgb(0, 120, 212)');
     expect(styles.cta.color.value).toBe('rgb(255, 255, 255)');
     expect(styles.cta['border-radius'].value).toBe('4px');
+  });
+});
+
+describe('generateInitCss', () => {
+  it('generates @import rules for each row', () => {
+    const rows = loadFixtures();
+    const css = generateInitCss(rows);
+    expect(css).toContain("@import url('row-0.css');");
+    expect(css).toContain("@import url('row-1.css');");
+  });
+
+  it('preserves row order', () => {
+    const rows = loadFixtures();
+    const css = generateInitCss(rows);
+    const idx0 = css.indexOf('row-0.css');
+    const idx1 = css.indexOf('row-1.css');
+    expect(idx0).toBeLessThan(idx1);
+  });
+
+  it('ends with a trailing newline', () => {
+    const rows = loadFixtures();
+    const css = generateInitCss(rows);
+    expect(css.endsWith('\n')).toBe(true);
+  });
+});
+
+describe('buildRowReplacements', () => {
+  it('returns row-specific template values', () => {
+    const rows = loadFixtures();
+    const r = buildRowReplacements(rows[0], {
+      port: '3000',
+      maxIterations: '30',
+      url: 'https://example.com',
+      skillHome: '/path/to/skill',
+    });
+    expect(r['{{ROW_INDEX}}']).toBe('0');
+    expect(r['{{ROW_SELECTOR}}']).toBe('header > div:nth-child(1)');
+    expect(r['{{ROW_SESSION}}']).toBe('row-0-eval');
+    expect(r['{{ROW_HEIGHT}}']).toBe('44');
+    expect(r['{{ROW_SECTION_STYLE}}']).toBe('brand');
+  });
+
+  it('provides fallback selector when none specified', () => {
+    const rows = loadFixtures();
+    const row = { ...rows[0], selector: undefined };
+    const r = buildRowReplacements(row, {
+      port: '3000',
+      maxIterations: '30',
+      url: 'https://example.com',
+      skillHome: '/path/to/skill',
+    });
+    expect(r['{{ROW_SELECTOR}}']).toBe('header > :nth-child(1)');
+  });
+
+  it('uses row description from data', () => {
+    const rows = loadFixtures();
+    const r = buildRowReplacements(rows[1], {
+      port: '3000',
+      maxIterations: '30',
+      url: 'https://example.com',
+      skillHome: '/path/to/skill',
+    });
+    expect(r['{{ROW_DESCRIPTION}}']).toBe(
+      'Main navigation with 4 top-level links and submenus',
+    );
+    expect(r['{{ROW_INDEX}}']).toBe('1');
+    expect(r['{{ROW_HEIGHT}}']).toBe('50');
+  });
+
+  it('provides fallback description when none specified', () => {
+    const rows = loadFixtures();
+    const row = { ...rows[0], description: undefined };
+    const r = buildRowReplacements(row, {
+      port: '3000',
+      maxIterations: '30',
+      url: 'https://example.com',
+      skillHome: '/path/to/skill',
+    });
+    expect(r['{{ROW_DESCRIPTION}}']).toBe('Row 0');
+  });
+
+  it('passes through opts to template keys', () => {
+    const rows = loadFixtures();
+    const r = buildRowReplacements(rows[0], {
+      port: '4000',
+      maxIterations: '50',
+      url: 'https://test.com',
+      skillHome: '/skill',
+      iconGuidance: 'Use :search: icon',
+    });
+    expect(r['{{PORT}}']).toBe('4000');
+    expect(r['{{MAX_ITERATIONS}}']).toBe('50');
+    expect(r['{{URL}}']).toBe('https://test.com');
+    expect(r['{{SKILL_HOME}}']).toBe('/skill');
+    expect(r['{{ICON_GUIDANCE}}']).toBe('Use :search: icon');
   });
 });
