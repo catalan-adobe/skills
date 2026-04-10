@@ -1,5 +1,6 @@
 {
   "index": 0,
+  "selector": "header > div:nth-child(1)",
   "description": "Top bar with logo and utility links",
   "bounds": { "y": 0, "height": 44 },
   "suggestedSectionStyle": "brand",

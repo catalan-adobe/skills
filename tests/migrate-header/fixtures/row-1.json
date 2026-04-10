@@ -1,5 +1,6 @@
 {
   "index": 1,
+  "selector": "header > div:nth-child(2)",
   "description": "Main navigation with 4 top-level links and submenus",
   "bounds": { "y": 44, "height": 50 },
   "suggestedSectionStyle": "main-nav",
