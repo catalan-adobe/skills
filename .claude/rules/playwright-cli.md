@@ -1,5 +1,9 @@
 # playwright-cli Rules
 
+## Always verify with Context7
+
+When using any playwright-cli command — especially unfamiliar flags, subcommands, or argument syntax — look up the current docs via Context7 before writing code. Library ID: `/microsoft/playwright-cli`. Do not guess from codebase patterns or memory; the CLI evolves and has non-obvious conventions (e.g., `screenshot` takes a ref not a CSS selector, `eval` is expression-only, `--raw` strips envelope formatting).
+
 ## screenshot takes selector as positional argument
 
 `playwright-cli screenshot` takes the element selector as a **positional argument**, not a `--selector` flag:
