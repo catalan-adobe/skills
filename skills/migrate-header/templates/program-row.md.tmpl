@@ -1,0 +1,197 @@
+# Header Migration — Per-Row Polish Program
+
+## Goal
+
+Polish row {{ROW_INDEX}} of the migrated header to match the source with maximum visual fidelity.
+
+**Row description:** {{ROW_DESCRIPTION}}
+
+**Source row height: ~{{ROW_HEIGHT}}px at desktop.** Matching this height is critical for the visual score.
+
+## Your Environment
+
+- AEM Edge Delivery Services dev server running at http://localhost:{{PORT}}
+- Test page: http://localhost:{{PORT}}/
+- Nav loaded from: http://localhost:{{PORT}}/nav
+
+## What You CAN Modify
+
+You may ONLY modify **one file**:
+
+- `blocks/header/row-{{ROW_INDEX}}.css` — CSS for this row only
+
+## What You CANNOT Modify
+
+Everything else is off-limits. In particular:
+- `blocks/header/header.css` — base header styles (owned by the full-header pipeline)
+- `blocks/header/header.js` — header decoration logic
+- `nav.plain.html` — navigation content
+- `blocks/header/row-*.css` — other row files
+- `autoresearch/` — evaluation infrastructure (immutable)
+
+## How to Read History
+
+Before making changes, ALWAYS review what has been tried:
+1. `cat autoresearch/results/row-{{ROW_INDEX}}/results-row-{{ROW_INDEX}}.tsv` — Full experiment log (iteration, score, status, description)
+2. `git log --oneline` — Only successful improvements are in the git log
+3. `cat autoresearch/results/row-{{ROW_INDEX}}/latest-evaluation.json` — Last evaluation breakdown with scores and source/rendered heights
+4. **Read the diff image** — `autoresearch/results/row-{{ROW_INDEX}}/desktop-diff.png` shows pixel-level mismatches in red/yellow. Read this image to see WHERE the visual differences are.
+5. `git diff HEAD~1` (if available) — see what the last successful change actually did
+6. `cat autoresearch/results/row-{{ROW_INDEX}}/last-reverted.diff` (if exists) — see the exact diff of the last FAILED attempt
+
+If the TSV shows repeated reverts for similar approaches, DO NOT try that approach again.
+
+## Judge Feedback
+
+If `autoresearch/results/row-{{ROW_INDEX}}/judge-feedback.json` exists, read it FIRST.
+It contains a three-gate assessment from the previous iteration:
+
+```json
+{
+  "layout_ok": true,
+  "precision_ok": false,
+  "active_gate": 2,
+  "reasoning": "Layout correct. Font-family is Arial but source is Helvetica Neue. Row height 120px vs source 94px.",
+  "structure_issues": [],
+  "precision_issues": ["font-family: Arial vs source Helvetica Neue", "row height: 120px vs source 94px"],
+  "diagnosis": ["set font-family to Helvetica Neue and reduce row height to 94px"]
+}
+```
+
+The judge uses three gates — fix issues from the **active gate** only:
+
+- **Gate 1 (`layout_ok: false`)** — structural layout is wrong. Fix element
+  positions, row arrangement, element order. Do NOT work on fonts, sizes,
+  colors, or details.
+- **Gate 2 (`precision_ok: false`)** — layout is correct but fonts, sizes,
+  or dimensions don't match the source. Fix the specific CSS values listed
+  in `precision_issues`. Do NOT work on colors or decorative details.
+- **Gate 3 (both ok)** — structure and precision are correct. Fix colors,
+  spacing fine-tuning, decorative details.
+
+`reasoning` includes actual CSS values the judge measured (Gate 2) or
+visual observations (Gates 1 and 3). Prioritize fixing these items.
+
+## How the Evaluator Scores You
+
+After you exit, two evaluations run:
+
+1. **Pixelmatch evaluator** — compares your rendered row screenshot against the source pixel-by-pixel
+2. **LLM judge** — compares source, previous best, and your current render to assess semantic improvement
+
+The composite score (0-100) combines:
+- **50% weight**: Visual similarity via pixelmatch (desktop only)
+- **50% weight**: LLM judge (did this iteration improve? YES=100, NO=0)
+
+**Important**: The evaluator pads images to equal dimensions before comparing. If your rendered row is shorter than the source, the missing rows count as full-row pixel mismatches. **Matching the source row height (~{{ROW_HEIGHT}}px) is essential for a good visual score.**
+
+The outer loop keeps your changes if the score improves, reverts if it doesn't.
+
+## Source Reference
+
+- `autoresearch/source/desktop-row-{{ROW_INDEX}}.png` — Screenshot of source row at 1440px
+
+## Source Visual Tree (Row {{ROW_INDEX}} Subtree)
+
+Spatial hierarchy of row {{ROW_INDEX}} captured at 1440px viewport.
+Each line shows: `ID [role] [CxR grid] [bg:type] @x,y wxh "text..."`.
+Use this to understand the row's spatial structure — column counts and element positions.
+
+```
+{{ROW_VISUAL_TREE}}
+```
+
+## Row Section Style
+
+The section element wrapping this row has the following computed styles:
+
+```
+{{ROW_SECTION_STYLE}}
+```
+
+Use these as a baseline — your CSS should match or refine these values.
+
+## CSS Query Tool
+
+You have access to an on-demand CSS inspector that queries the source
+page's actual stylesheets via Chrome DevTools Protocol. Use it to get
+exact property values instead of guessing.
+
+### How to Use
+
+```bash
+# Open session on source URL (do this once at start of iteration)
+node "{{SKILL_HOME}}/scripts/css-query.js" open "{{URL}}" --session=row-{{ROW_INDEX}}-css-src
+
+# Query specific properties for an element
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav > a:first-child" font-size,color,font-weight --session=row-{{ROW_INDEX}}-css-src
+
+# Get all matched CSS rules for an element (full cascade)
+node "{{SKILL_HOME}}/scripts/css-query.js" cascade ".header-brand" --session=row-{{ROW_INDEX}}-css-src
+
+# List CSS custom properties defined in the source
+node "{{SKILL_HOME}}/scripts/css-query.js" vars --session=row-{{ROW_INDEX}}-css-src
+
+# Close when done (before committing)
+node "{{SKILL_HOME}}/scripts/css-query.js" close --session=row-{{ROW_INDEX}}-css-src
+```
+
+### When to Use
+
+- When the diff image shows a color mismatch: query `background-color` or `color`
+- When font rendering differs: query `font-family`, `font-size`, `font-weight`
+- When spacing is off: query `padding`, `margin`, `gap` values
+- When you need the source's CSS custom properties to map to EDS properties
+
+### Output
+
+```json
+{"font-size": {"value": "14px", "source": "author", "selector": ".nav-link", "file": "styles.css", "inherited": false}}
+```
+
+## Available Icons
+
+{{ICON_GUIDANCE}}
+
+## Constraints
+
+1. **CSS only.** You cannot touch `header.js` or `nav.plain.html`. If a DOM change is needed, the iteration cannot proceed — note it in the commit message and exit.
+2. **The header must render.** A broken header that doesn't display scores 0. Prefer incremental progress.
+3. **Commit before exiting.** Stage your change and commit: `git add blocks/header/row-{{ROW_INDEX}}.css && git commit -m "description"`
+4. **Read history first.** Check the TSV and diff image before changing anything.
+5. **One coherent goal per iteration.** You may change multiple related properties (e.g., height + padding + background) if they serve a single goal.
+
+## Strategy
+
+**At the start of every iteration**, open a CSS query session on the source URL:
+```bash
+node "{{SKILL_HOME}}/scripts/css-query.js" open "{{URL}}" --session=row-{{ROW_INDEX}}-css-src
+```
+Use it to get exact values before making changes. Close before committing.
+
+### Phase 1: Dimensions (score < 40)
+Match the source row height (~{{ROW_HEIGHT}}px). Query the source to get exact values:
+```bash
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav" height,padding-top,padding-bottom --session=row-{{ROW_INDEX}}-css-src
+```
+
+### Phase 2: Colors and layout (score 40-65)
+Query exact colors — don't guess from the screenshot:
+```bash
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav" background-color --session=row-{{ROW_INDEX}}-css-src
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav a" color --session=row-{{ROW_INDEX}}-css-src
+```
+Match horizontal layout: element alignment, spacing, gap values.
+
+### Phase 3: Visual polish (score > 65)
+Query specific properties for pixel-accurate matching:
+```bash
+node "{{SKILL_HOME}}/scripts/css-query.js" query "nav a" font-size,font-weight,letter-spacing,text-transform --session=row-{{ROW_INDEX}}-css-src
+```
+Use the diff image to identify remaining mismatch areas, then query those
+specific source elements to find the exact target values.
+
+### If stuck (3+ reverts in a row on similar approaches)
+- Use `css-query.js cascade` to see ALL CSS rules affecting the problem element
+- Look at the diff image to find the largest red areas
+- Query the exact source values for that area and compare against your CSS
