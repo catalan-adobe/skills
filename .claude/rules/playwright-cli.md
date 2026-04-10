@@ -14,6 +14,25 @@ playwright-cli screenshot --filename=/tmp/full.png
 
 Do NOT use `--selector=` — it is not a valid flag.
 
+## run-code for multi-statement logic
+
+`playwright-cli run-code "async page => { ... }"` executes a full async function with `page` access. Unlike `eval` (expression-only), `run-code` supports statements, variables, `await`, and complex logic.
+
+Use `--raw` to get clean output without the `### Result` / `### Ran Playwright code` envelope:
+
+```bash
+# Extract structured data without truncation
+playwright-cli -s=session --raw run-code "async page => {
+  return await page.evaluate(() => {
+    return JSON.stringify(someComplexExtraction());
+  });
+}" > /tmp/output.json
+```
+
+**When to use `run-code` vs `eval`:**
+- `eval` — quick expressions: `document.title`, `el.getBoundingClientRect()`
+- `run-code` — multi-statement extraction, large DOM reads, anything > 1 line
+
 ## eval only accepts pure expressions
 
 `playwright-cli eval "EXPR"` wraps the argument as `page.evaluate(() => (EXPR))`. This means:
