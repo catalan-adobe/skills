@@ -1,0 +1,348 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Autoresearch loop for a single EDS header row (row-{{ROW_INDEX}}).
+# Outer loop: fresh claude session each iteration, immutable evaluator,
+# file-scoped git ratchet with plateau detection.
+
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+EVALUATE="node ${PROJECT_DIR}/autoresearch/evaluate.js"
+RESULTS_FILE="${PROJECT_DIR}/results-row-{{ROW_INDEX}}.tsv"
+PROGRAM_FILE="${PROJECT_DIR}/program.md"
+PORT="${AEM_PORT:-{{PORT}}}"
+MAX_ITERATIONS="${MAX_ITERATIONS:-{{MAX_ITERATIONS}}}"
+MAX_CONSECUTIVE_REVERTS="${MAX_CONSECUTIVE_REVERTS:-{{MAX_CONSECUTIVE_REVERTS}}}"
+ROW_CSS="blocks/header/row-{{ROW_INDEX}}.css"
+ROW_RESULTS_DIR="${PROJECT_DIR}/autoresearch/results/row-{{ROW_INDEX}}"
+BEST_SCORE=0
+ITERATION=0
+CONSECUTIVE_REVERTS=0
+BEST_KEPT_ITERATION=0
+JUDGE_TMPL_DIR="{{SKILL_HOME}}/templates"
+JUDGE_NEUTRAL=$'50\t{"layout_ok":true,"precision_ok":false,"active_gate":1,"diagnosis":[],"structure_issues":[],"precision_issues":[],"reasoning":""}'
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log() { echo -e "${BLUE}[row-{{ROW_INDEX}}]${NC} $1"; }
+ok()  { echo -e "${GREEN}[row-{{ROW_INDEX}}]${NC} $1"; }
+warn() { echo -e "${YELLOW}[row-{{ROW_INDEX}}]${NC} $1"; }
+err() { echo -e "${RED}[row-{{ROW_INDEX}}]${NC} $1"; }
+
+cleanup() {
+  echo ""
+  log "Stopping... Final best score: ${BEST_SCORE}"
+  if [[ -f "${RESULTS_FILE}" ]]; then
+    log "Results saved to ${RESULTS_FILE}"
+    log "Total iterations: ${ITERATION}"
+    log "Consecutive reverts at exit: ${CONSECUTIVE_REVERTS}"
+  fi
+  # Clean up any temp backups
+  rm -f "/tmp/row-{{ROW_INDEX}}-backup-$$.css"
+  exit 0
+}
+trap cleanup SIGINT SIGTERM
+
+# Initialize results file
+if [[ ! -f "${RESULTS_FILE}" ]]; then
+  printf "iteration\tcommit\tscore\tvisual_desktop\tjudge\tstatus\tdescription\n" \
+    > "${RESULTS_FILE}"
+fi
+
+# Resume support: read best score and iteration count from existing results
+if [[ -f "${RESULTS_FILE}" ]]; then
+  existing_best=$(tail -n +2 "${RESULTS_FILE}" \
+    | awk -F'\t' '{print $3}' | sort -rn | head -1)
+  if [[ -n "${existing_best}" ]]; then
+    BEST_SCORE="${existing_best}"
+    ITERATION=$(tail -n +2 "${RESULTS_FILE}" | wc -l | tr -d ' ')
+    log "Resuming from iteration ${ITERATION}, best score: ${BEST_SCORE}"
+  fi
+fi
+
+# Check dev server is reachable
+check_server() {
+  local status
+  status=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://localhost:${PORT}/" 2>/dev/null) || true
+  if [[ "${status}" != "200" ]]; then
+    err "Dev server not running on port ${PORT}."
+    err "Start it with: cd ${PROJECT_DIR} && aem up --html-folder ."
+    exit 1
+  fi
+}
+
+# Run evaluator and extract composite score
+run_evaluation() {
+  local eval_output
+  eval_output=$(${EVALUATE} "${PORT}" "${ITERATION}" 2>/dev/null) || true
+
+  if [[ -z "${eval_output}" ]]; then
+    echo "0|0"
+    return
+  fi
+
+  echo "${eval_output}" | node --input-type=commonjs -e "
+    const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));
+    const fields = [
+      d.compositeScore||0,
+      d.viewports?.desktop?.similarity||0,
+    ];
+    console.log(fields.join('|'));
+  " 2>/dev/null || echo "0|0"
+}
+
+# Run LLM judge: compare source + before + after screenshots + CSS queries
+run_judge() {
+  local iteration=$1
+  local source_img="${PROJECT_DIR}/autoresearch/source/desktop-row-{{ROW_INDEX}}.png"
+  local styles_json="${PROJECT_DIR}/autoresearch/extraction/styles.json"
+  local css_query="{{SKILL_HOME}}/scripts/css-query.js"
+  local after_img="${ROW_RESULTS_DIR}/desktop-rendered-${iteration}.png"
+  local judge_prompt_file="/tmp/judge-prompt-row-{{ROW_INDEX}}-$$.md"
+
+  if [[ ! -f "${after_img}" ]]; then
+    warn "Judge: after screenshot not found, skipping"
+    printf '%s\n' "${JUDGE_NEUTRAL}"
+    return
+  fi
+
+  # Common sed replacements for both templates
+  local common_seds=(
+    -e "s|{{SOURCE_IMG}}|${source_img}|g"
+    -e "s|{{AFTER_IMG}}|${after_img}|g"
+    -e "s|{{AFTER_ITERATION}}|${iteration}|g"
+    -e "s|{{STYLES_JSON}}|${styles_json}|g"
+    -e "s|{{CSS_QUERY}}|${css_query}|g"
+    -e "s|{{PORT}}|${PORT}|g"
+  )
+
+  # Build judge prompt from template
+  if [[ ${BEST_KEPT_ITERATION} -eq 0 ]]; then
+    local tmpl="${JUDGE_TMPL_DIR}/judge-first.md.tmpl"
+    if [[ ! -f "${tmpl}" ]]; then
+      warn "Judge: first-iteration template not found, skipping"
+      printf '%s\n' "${JUDGE_NEUTRAL}"
+      return
+    fi
+    sed "${common_seds[@]}" "${tmpl}" > "${judge_prompt_file}"
+  else
+    local before_img="${ROW_RESULTS_DIR}/desktop-rendered-${BEST_KEPT_ITERATION}.png"
+    local tmpl="${JUDGE_TMPL_DIR}/judge.md.tmpl"
+    if [[ ! -f "${tmpl}" ]]; then
+      warn "Judge: template not found, skipping"
+      printf '%s\n' "${JUDGE_NEUTRAL}"
+      return
+    fi
+    if [[ ! -f "${before_img}" ]]; then
+      warn "Judge: before screenshot not found, using first-iteration template"
+      tmpl="${JUDGE_TMPL_DIR}/judge-first.md.tmpl"
+      sed "${common_seds[@]}" "${tmpl}" > "${judge_prompt_file}"
+    else
+      sed "${common_seds[@]}" \
+          -e "s|{{BEFORE_IMG}}|${before_img}|g" \
+          -e "s|{{BEFORE_ITERATION}}|${BEST_KEPT_ITERATION}|g" \
+          "${tmpl}" > "${judge_prompt_file}"
+    fi
+  fi
+
+  # Open css-query session on rendered page for Gate 2
+  node "${css_query}" open "http://localhost:${PORT}/" \
+    --session=row-{{ROW_INDEX}}-judge 2>/dev/null || true
+
+  # Invoke judge (Read for images/styles, Bash for css-query)
+  local judge_raw
+  judge_raw=$(claude -p "$(cat "${judge_prompt_file}")" \
+    --allowedTools "Read,Bash" \
+    --output-format json \
+    2>"${ROW_RESULTS_DIR}/judge-stderr.log") || true
+  rm -f "${judge_prompt_file}"
+
+  # Close css-query session
+  node "${css_query}" close \
+    --session=row-{{ROW_INDEX}}-judge 2>/dev/null || true
+
+  if [[ -z "${judge_raw}" ]]; then
+    warn "Judge: no output, defaulting to neutral"
+    printf '%s\n' "${JUDGE_NEUTRAL}"
+    return
+  fi
+
+  # Parse judge output — unwrap --output-format json envelope, then parse model response
+  echo "${judge_raw}" | node --input-type=commonjs -e "
+    const raw = require('fs').readFileSync('/dev/stdin', 'utf-8').trim();
+    try {
+      const envelope = JSON.parse(raw);
+      const d = JSON.parse(envelope.result);
+      const score = d.improved === true ? 100 : (d.improved === false ? 0 : 50);
+      const detail = JSON.stringify({
+        layout_ok: d.layout_ok === true,
+        precision_ok: d.precision_ok === true,
+        active_gate: d.active_gate || 1,
+        diagnosis: d.diagnosis || [],
+        structure_issues: d.structure_issues || [],
+        precision_issues: d.precision_issues || [],
+        reasoning: d.reasoning || '',
+      });
+      console.log(score + '\t' + detail);
+    } catch {
+      console.log('50\t' + JSON.stringify({layout_ok:true,precision_ok:false,active_gate:1,diagnosis:[],structure_issues:[],precision_issues:[],reasoning:''}));
+    }
+  " 2>/dev/null || printf '%s\n' "${JUDGE_NEUTRAL}"
+}
+
+# Main loop
+log "Starting row-{{ROW_INDEX}} autoresearch loop"
+log "Max iterations: ${MAX_ITERATIONS}"
+log "Plateau threshold: ${MAX_CONSECUTIVE_REVERTS} consecutive reverts"
+log "Evaluator: ${EVALUATE}"
+log "Row CSS: ${ROW_CSS}"
+echo ""
+
+check_server
+mkdir -p "${ROW_RESULTS_DIR}"
+
+while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
+  ITERATION=$((ITERATION + 1))
+  log "=== Iteration ${ITERATION}/${MAX_ITERATIONS} (best: ${BEST_SCORE}, reverts: ${CONSECUTIVE_REVERTS}/${MAX_CONSECUTIVE_REVERTS}) ==="
+
+  # Backup current row CSS before agent session
+  css_backup="/tmp/row-{{ROW_INDEX}}-backup-${ITERATION}-$$.css"
+  if [[ -f "${PROJECT_DIR}/${ROW_CSS}" ]]; then
+    cp "${PROJECT_DIR}/${ROW_CSS}" "${css_backup}"
+  else
+    touch "${css_backup}"
+  fi
+
+  # Fresh claude session with program.md (must cd — claude has no --cwd flag)
+  log "Launching fresh Claude session..."
+  (cd "${PROJECT_DIR}" && claude -p "$(cat "${PROGRAM_FILE}")" \
+    --allowedTools "Edit,Write,Read,Glob,Grep,Bash" \
+    > /dev/null 2>&1) || true
+
+  # Check if row CSS changed (diff backup vs current)
+  css_changed=false
+  if ! diff -q "${css_backup}" "${PROJECT_DIR}/${ROW_CSS}" > /dev/null 2>&1; then
+    css_changed=true
+  fi
+
+  # Check for staged/unstaged changes too (agent may not have touched row CSS directly)
+  has_uncommitted=false
+  git -C "${PROJECT_DIR}" diff --quiet 2>/dev/null || has_uncommitted=true
+  git -C "${PROJECT_DIR}" diff --cached --quiet 2>/dev/null \
+    || has_uncommitted=true
+
+  if [[ "${css_changed}" == "false" ]] && [[ "${has_uncommitted}" == "false" ]]; then
+    warn "No changes to ${ROW_CSS} detected, skipping evaluation"
+    printf "%d\t-\t%s\t-\t-\tno_changes\tAgent made no modifications\n" \
+      "${ITERATION}" "${BEST_SCORE}" >> "${RESULTS_FILE}"
+    rm -f "${css_backup}"
+    CONSECUTIVE_REVERTS=$((CONSECUTIVE_REVERTS + 1))
+    if [[ ${CONSECUTIVE_REVERTS} -ge ${MAX_CONSECUTIVE_REVERTS} ]]; then
+      err "Plateau: ${CONSECUTIVE_REVERTS} consecutive non-improvements. Stopping."
+      break
+    fi
+    continue
+  fi
+
+  # Stage and commit the row CSS (and any other uncommitted changes)
+  if [[ "${has_uncommitted}" == "true" ]] || [[ "${css_changed}" == "true" ]]; then
+    git -C "${PROJECT_DIR}" add "${ROW_CSS}" 2>/dev/null || true
+    # Stage any other modified files the agent touched
+    git -C "${PROJECT_DIR}" add -u 2>/dev/null || true
+    git -C "${PROJECT_DIR}" commit \
+      -m "row-{{ROW_INDEX}}-iteration-${ITERATION}: agent modifications" \
+      2>/dev/null || true
+  fi
+
+  local_commit=$(git -C "${PROJECT_DIR}" rev-parse --short HEAD)
+  commit_msg=$(git -C "${PROJECT_DIR}" log -1 --format=%s)
+
+  # Run immutable evaluator
+  log "Running evaluation..."
+  eval_result=$(run_evaluation)
+  IFS='|' read -r _eval_composite desktop <<< "${eval_result}"
+
+  # Run LLM judge
+  log "Running judge comparison..."
+  judge_result=$(run_judge "${ITERATION}")
+  IFS=$'\t' read -r judge_score judge_detail <<< "${judge_result}"
+
+  # Write judge feedback for next iteration's polish agent
+  echo "${judge_detail}" > "${ROW_RESULTS_DIR}/judge-feedback.json"
+
+  # Composite: pixelmatch 50% + judge 50%
+  score=$(node -e "
+    const pm = ${desktop} || 0;
+    const judge = ${judge_score} || 50;
+    console.log(Math.round((pm * 0.50 + judge * 0.50) * 100) / 100);
+  " 2>/dev/null || echo "0")
+
+  # Compare with best — strict improvement required
+  keep=$(node -e "console.log(${score} > ${BEST_SCORE} ? 'yes' : 'no')" \
+    2>/dev/null || echo "no")
+
+  if [[ "${keep}" == "yes" ]]; then
+    iteration_status="kept"
+    ok "IMPROVED: ${BEST_SCORE} -> ${score} (desktop=${desktop}, judge=${judge_score})"
+    BEST_SCORE="${score}"
+    BEST_KEPT_ITERATION=${ITERATION}
+    CONSECUTIVE_REVERTS=0
+    printf "%d\t%s\t%s\t%s\t%s\timproved\t%s\n" \
+      "${ITERATION}" "${local_commit}" "${score}" \
+      "${desktop}" "${judge_score}" \
+      "${commit_msg}" \
+      >> "${RESULTS_FILE}"
+  else
+    iteration_status="reverted"
+    warn "NO IMPROVEMENT: ${score} <= ${BEST_SCORE} (judge=${judge_score}) — reverting"
+    # Save the diff before reverting
+    git -C "${PROJECT_DIR}" diff HEAD~1 HEAD -- "${ROW_CSS}" \
+      > "${ROW_RESULTS_DIR}/last-reverted.diff" \
+      2>/dev/null || true
+    # Undo commit and restore file (no reset --hard — file-scoped only)
+    git -C "${PROJECT_DIR}" reset --soft HEAD~1 2>/dev/null || true
+    git -C "${PROJECT_DIR}" checkout -- "${ROW_CSS}" 2>/dev/null || true
+    CONSECUTIVE_REVERTS=$((CONSECUTIVE_REVERTS + 1))
+    printf "%d\t%s\t%s\t%s\t%s\treverted\t%s\n" \
+      "${ITERATION}" "${local_commit}" "${score}" \
+      "${desktop}" "${judge_score}" \
+      "${commit_msg}" \
+      >> "${RESULTS_FILE}"
+
+    if [[ ${CONSECUTIVE_REVERTS} -ge ${MAX_CONSECUTIVE_REVERTS} ]]; then
+      err "Plateau: ${CONSECUTIVE_REVERTS} consecutive non-improvements. Stopping."
+      rm -f "${css_backup}"
+      break
+    fi
+  fi
+
+  # Append to cumulative judge history (survives git reverts)
+  node -e "
+    const fs = require('fs');
+    const detail = JSON.parse(process.argv[1] || '{}');
+    const entry = {
+      ...detail,
+      iteration: ${ITERATION},
+      composite: ${score},
+      desktop: ${desktop},
+      judge: ${judge_score},
+      status: '${iteration_status}',
+    };
+    fs.appendFileSync(
+      '${ROW_RESULTS_DIR}/judge-history.jsonl',
+      JSON.stringify(entry) + '\n'
+    );
+  " "${judge_detail}" 2>/dev/null || true
+
+  # Clean up iteration backup
+  rm -f "${css_backup}"
+
+  echo ""
+done
+
+log "Loop finished. Best score: ${BEST_SCORE} after ${ITERATION} iterations."
