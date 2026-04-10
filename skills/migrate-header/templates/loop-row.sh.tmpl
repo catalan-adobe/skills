@@ -268,11 +268,20 @@ while [[ ${ITERATION} -lt ${MAX_ITERATIONS} ]]; do
   # Write judge feedback for next iteration's polish agent
   echo "${judge_detail}" > "${ROW_RESULTS_DIR}/judge-feedback.json"
 
+  # Extract layout_ok from judge detail to veto broken states
+  layout_ok=$(echo "${judge_detail}" | node --input-type=commonjs -e "
+    const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));
+    console.log(d.layout_ok ? 'true' : 'false');
+  " 2>/dev/null || echo "true")
+
   # Composite: pixelmatch 50% + judge 50%
+  # Veto: layout_ok=false caps score at 50 so broken states can't lock in
   score=$(node -e "
     const pm = ${desktop} || 0;
     const judge = ${judge_score} || 50;
-    console.log(Math.round((pm * 0.50 + judge * 0.50) * 100) / 100);
+    const layoutOk = '${layout_ok}' === 'true';
+    const raw = Math.round((pm * 0.50 + judge * 0.50) * 100) / 100;
+    console.log(layoutOk ? raw : Math.min(raw, 50));
   " 2>/dev/null || echo "0")
 
   # Compare with best — strict improvement required
