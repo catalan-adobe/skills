@@ -32,7 +32,7 @@ Everything else is off-limits. In particular:
 ## How to Read History
 
 Before making changes, ALWAYS review what has been tried:
-1. `cat autoresearch/results/row-{{ROW_INDEX}}/results-row-{{ROW_INDEX}}.tsv` — Full experiment log (iteration, score, status, description)
+1. `cat results-row-{{ROW_INDEX}}.tsv` — Full experiment log (iteration, score, status, description)
 2. `git log --oneline` — Only successful improvements are in the git log
 3. `cat autoresearch/results/row-{{ROW_INDEX}}/latest-evaluation.json` — Last evaluation breakdown with scores and source/rendered heights
 4. **Read the diff image** — `autoresearch/results/row-{{ROW_INDEX}}/desktop-diff.png` shows pixel-level mismatches in red/yellow. Read this image to see WHERE the visual differences are.
@@ -101,15 +101,10 @@ Use this to understand the row's spatial structure — column counts and element
 {{ROW_VISUAL_TREE}}
 ```
 
-## Row Section Style
+## Row Section Class
 
-The section element wrapping this row has the following computed styles:
-
-```
-{{ROW_SECTION_STYLE}}
-```
-
-Use these as a baseline — your CSS should match or refine these values.
+This row is wrapped in a section with class `{{ROW_SECTION_STYLE}}`. Target
+your CSS selectors at `.section.{{ROW_SECTION_STYLE}}` or its children.
 
 ## CSS Query Tool
 
