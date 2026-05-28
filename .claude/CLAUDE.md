@@ -83,3 +83,4 @@ All skills lint clean. All published to tessl registry. Run `tessl skill lint sk
 | `browser-probe` | Detect CDN bot protection and produce browser recipes for playwright-cli |
 | `brand-setup` | Extract brand identity from a URL and configure EDS projects |
 | `visual-tree` | Capture spatial DOM hierarchy for page analysis |
+| `reduce-page` | Reduce webpages to structural skeletons with semantic tokens |
