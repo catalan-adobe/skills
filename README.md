@@ -276,6 +276,18 @@ relationships to produce a structured tree of the visible page layout.
 
 See [SKILL.md](skills/visual-tree/SKILL.md) for details.
 
+### reduce-page
+
+Reduce any webpage to a minimal structural skeleton with semantic tokens.
+Two-phase pipeline: Phase 1 injects a browser script that tokenizes content
+(`{TEXT}`, `{HEADING:n}`, `{IMAGE:WxH}`, `{CTA:label}`, etc.), Phase 2
+applies LLM structural reasoning to collapse repeated patterns, remove
+decorative wrappers, and produce `skeleton.html` + `manifest.json`.
+
+**Dependencies:** playwright-cli (or cmux-browser/CDP via browser-universal)
+
+See [SKILL.md](skills/reduce-page/SKILL.md) for details.
+
 ## License
 
 MIT
