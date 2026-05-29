@@ -14,12 +14,11 @@ tools directly. Key guidance:
 - **Wait**: `browser_wait_for` accepts text to wait for or a timeout.
 - **Screenshot**: `browser_take_screenshot` captures the current viewport.
 
-## Slicc playwright-cli
+## playwright-cli
 
-Run `playwright-cli help` to get the installed command list. Then fetch the
-full workflow reference (optional -- local help is sufficient if this fails):
-
-    WebFetch https://raw.githubusercontent.com/ai-ecoverse/slicc/main/src/defaults/workspace/skills/playwright-cli/SKILL.md
+Run `playwright-cli help` to get the installed command list. For detailed docs,
+look up `/microsoft/playwright-cli` via Context7 (optional -- local help is
+sufficient if Context7 is unavailable).
 
 Key guidance:
 
