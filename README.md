@@ -179,12 +179,13 @@ See [SKILL.md](skills/page-prep/SKILL.md) for the full workflow.
 
 ### browser-universal
 
-Detect available browser interaction layer (Playwright MCP, Slicc
-playwright-cli, cmux-browser, CDP) and load the right commands. Other
-skills depend on this instead of hardcoding a specific browser layer.
-Supports layer preference, dynamic reference loading from source of truth,
-and a universal verb mapping for navigate, snapshot, click, fill, eval,
-screenshot, wait, and tab management.
+Detect the available browser interaction layer and load the right commands.
+`playwright-cli` is the default, recommended layer; it falls back to Playwright
+MCP, cmux-browser, or CDP when absent. Other skills depend on this instead of
+hardcoding a specific browser layer. Uses a sequential short-circuit detection
+ladder, layer preference override, dynamic reference loading, and a universal
+verb mapping for navigate, snapshot, click, fill, eval, screenshot, wait, and
+tab management.
 
 **Dependencies:** none
 
