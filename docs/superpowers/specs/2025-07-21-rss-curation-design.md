@@ -28,10 +28,11 @@ Only new entries proceed to scoring.
 
 ### Score
 
-An LLM (Gemini Flash for headless/cron, Claude for interactive) receives
-the batch of new articles plus the user's interest profile. It returns a
-relevance score (0–10) and a one-line rationale per article. Scores and
-rationales are written to the DB.
+Claude (in the active conversation) receives the batch of new articles
+plus the user's interest profile. It returns a relevance score (0–10)
+and a one-line rationale per article. Scores and rationales are written
+to the DB. Scoring only happens interactively — headless cron runs only
+fetch and store.
 
 ### Output
 
@@ -161,16 +162,14 @@ accumulate. The user reviews changes before they affect scoring.
 
 ## Scheduled Runs
 
-A cron job (or macOS launchd) triggers the headless pipeline.
+A cron job (or macOS launchd) triggers the **fetch-only** pipeline.
 Default frequency: **daily at 7:00 AM local time**.
 
 1. `node rss-feed.mjs fetch --config config.yaml --db feeds.db`
-2. `node rss-feed.mjs score --profile profile.yaml --db feeds.db`
-   — calls Gemini Flash API
-3. `node rss-feed.mjs digest --db feeds.db --out digests/`
 
-No Claude conversation needed. Requires `GEMINI_API_KEY` in the
-environment for headless scoring.
+This stores new articles in the DB without scoring them. Scoring and
+digest generation happen next time the user invokes the skill
+interactively (Claude does the scoring in conversation).
 
 The `setup` subcommand generates a launchd plist (macOS) or crontab
 entry and offers to install it. The schedule is also configurable in
@@ -240,10 +239,7 @@ Single entry point: `rss-feed.mjs`
 - `better-sqlite3` — SQLite with FTS5 support
 - `js-yaml` — config/profile YAML parsing
 
-Scoring LLM:
-
-- **Headless (cron):** Gemini Flash via REST API (`GEMINI_API_KEY`)
-- **Interactive:** Claude (the skill itself does the scoring)
+Scoring: Claude in the active conversation (no external API key needed).
 
 ## Decisions
 
