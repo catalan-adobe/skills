@@ -1,0 +1,66 @@
+{
+  "context": "Tests whether the agent correctly documents the first-run setup workflow, data directory file layout, 3-layer profile architecture, and supported feed formats as specified in the rss-curation skill. The agent must produce a setup guide and a sample profile YAML that faithfully reflect the skill's specific instructions without having those details spelled out in the task.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Setup subcommand invocation",
+      "description": "setup_guide.md includes the command `node rss-feed.mjs setup` with the `--data-dir` flag (exact subcommand name and flag must appear)",
+      "max_score": 12
+    },
+    {
+      "name": "Data directory prompt",
+      "description": "setup_guide.md indicates that the user must first choose or provide a data directory path before running the setup command",
+      "max_score": 8
+    },
+    {
+      "name": "config.yaml feed editing step",
+      "description": "setup_guide.md includes a step to edit `config.yaml` to add RSS/Atom feed URLs",
+      "max_score": 10
+    },
+    {
+      "name": "profile.yaml interests step",
+      "description": "setup_guide.md includes a step to fill in `profile.yaml` with the user's interests",
+      "max_score": 10
+    },
+    {
+      "name": "AGENTS.md / repos scan step",
+      "description": "setup_guide.md mentions the optional step of scanning AGENTS.md and/or recent repos to auto-populate the inferred profile layer",
+      "max_score": 8
+    },
+    {
+      "name": "Correct step ordering",
+      "description": "The steps in setup_guide.md appear in the correct order: (1) choose data directory, (2) run setup command, (3) edit config.yaml, (4) fill profile.yaml, (5) optional AGENTS.md/repos scan",
+      "max_score": 8
+    },
+    {
+      "name": "Supported feed formats",
+      "description": "setup_guide.md mentions all three supported feed formats: RSS 2.0, Atom, and RSS 1.0 (or RDF)",
+      "max_score": 8
+    },
+    {
+      "name": "Data directory file layout",
+      "description": "setup_guide.md lists the four expected files/directories inside the data directory: config.yaml, profile.yaml, feeds.db, and digests/ (with YYYY-MM-DD.md pattern)",
+      "max_score": 8
+    },
+    {
+      "name": "Explicit profile section",
+      "description": "sample_profile.yaml contains a clearly labeled 'explicit' section with example interest entries",
+      "max_score": 8
+    },
+    {
+      "name": "Inferred profile section",
+      "description": "sample_profile.yaml contains a clearly labeled 'inferred' section with example entries",
+      "max_score": 8
+    },
+    {
+      "name": "Learned profile section",
+      "description": "sample_profile.yaml contains a clearly labeled 'learned' section with example entries",
+      "max_score": 8
+    },
+    {
+      "name": "No instruction leakage",
+      "description": "task.md (the scenario task) does NOT mention the setup subcommand name, the three layer names, or the four data directory files — the agent had to know these from the skill",
+      "max_score": 4
+    }
+  ]
+}
