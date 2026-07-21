@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import fs from "node:fs";
 import yaml from "js-yaml";
 import {
 	openDb,
@@ -22,7 +22,11 @@ export function applyFeedback(dbPath, url, signal) {
 	const db = openDb(dbPath);
 	try {
 		const found = recordFeedback(db, url, resolved);
-		if (!found) return JSON.stringify({ ok: false, error: `No article found for URL: ${url}` });
+		if (!found)
+			return JSON.stringify({
+				ok: false,
+				error: `No article found for URL: ${url}`,
+			});
 		return JSON.stringify({ ok: true, url, signal: resolved });
 	} finally {
 		db.close();
@@ -33,7 +37,11 @@ export function applyStar(dbPath, url, starred = true) {
 	const db = openDb(dbPath);
 	try {
 		const found = setStarred(db, url, starred);
-		if (!found) return JSON.stringify({ ok: false, error: `No article found for URL: ${url}` });
+		if (!found)
+			return JSON.stringify({
+				ok: false,
+				error: `No article found for URL: ${url}`,
+			});
 		return JSON.stringify({ ok: true, url, starred });
 	} finally {
 		db.close();
@@ -107,7 +115,7 @@ export function learnFromFeedback(dbPath, profilePath) {
 		};
 
 		profile.learned = learned;
-		const tmpPath = profilePath + '.tmp';
+		const tmpPath = profilePath + ".tmp";
 		fs.writeFileSync(tmpPath, yaml.dump(profile, { lineWidth: 80 }));
 		fs.renameSync(tmpPath, profilePath);
 

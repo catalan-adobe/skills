@@ -81,14 +81,17 @@ describe("digest", () => {
 	it("generates markdown with top picks and also noted sections", async () => {
 		const { generateDigest } = await import(`${DIGEST_MOD}?t=${Date.now()}`);
 		const today = new Date().toISOString().slice(0, 10);
-		const md = generateDigest(dbPath, today, { outDir });
+		const results = generateDigest(dbPath, today, { outDir });
 
-		assert.ok(md.includes("# RSS Digest"));
-		assert.ok(md.includes("Top Pick Article"));
-		assert.ok(md.includes("9.2"));
-		assert.ok(md.includes("Also Noted"));
-		assert.ok(md.includes("Also Noted Article"));
-		assert.ok(!md.includes("Low Score Noise"));
+		// Articles published on 2025-07-21 → digest keyed by that date
+		const md = results['2025-07-21'];
+		assert.ok(md, 'Expected a digest for publication date 2025-07-21');
+		assert.ok(md.includes('# RSS Digest'));
+		assert.ok(md.includes('Top Pick Article'));
+		assert.ok(md.includes('9.2'));
+		assert.ok(md.includes('Also Noted'));
+		assert.ok(md.includes('Also Noted Article'));
+		assert.ok(!md.includes('Low Score Noise'));
 	});
 
 	it("writes digest file to outDir", async () => {
@@ -96,7 +99,8 @@ describe("digest", () => {
 		const today = new Date().toISOString().slice(0, 10);
 		generateDigest(dbPath, today, { outDir });
 
-		const filePath = path.join(outDir, `${today}.md`);
+		// File is named by publication date, not fetch date
+		const filePath = path.join(outDir, '2025-07-21.md');
 		assert.ok(fs.existsSync(filePath));
 		const content = fs.readFileSync(filePath, "utf8");
 		assert.ok(content.includes("Top Pick Article"));

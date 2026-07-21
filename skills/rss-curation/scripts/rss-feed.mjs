@@ -87,8 +87,14 @@ const COMMANDS = {
 		const date = flags.date || new Date().toISOString().slice(0, 10);
 		const outDir = flags.out;
 		const minScore = flags.minScore ? Number(flags.minScore) : undefined;
-		const md = generateDigest(dbPath, date, { outDir, minScore });
-		console.log(md);
+		const results = generateDigest(dbPath, date, { outDir, minScore });
+		const dates = Object.keys(results).sort().reverse();
+		for (const d of dates) {
+			console.log(results[d]);
+		}
+		if (dates.length > 1) {
+			console.log(`\n> Generated ${dates.length} digests: ${dates.join(", ")}`);
+		}
 	},
 
 	async search(flags) {

@@ -124,15 +124,16 @@ export function searchArticles(db, query, limit = 20) {
 }
 
 export function recordFeedback(db, url, signal) {
-	const result = db.prepare("UPDATE articles SET feedback = ? WHERE url = ?").run(signal, url);
+	const result = db
+		.prepare("UPDATE articles SET feedback = ? WHERE url = ?")
+		.run(signal, url);
 	return result.changes > 0;
 }
 
 export function setStarred(db, url, starred) {
-	const result = db.prepare("UPDATE articles SET starred = ? WHERE url = ?").run(
-		starred ? 1 : 0,
-		url,
-	);
+	const result = db
+		.prepare("UPDATE articles SET starred = ? WHERE url = ?")
+		.run(starred ? 1 : 0, url);
 	return result.changes > 0;
 }
 
@@ -156,7 +157,7 @@ export function getFeedbackStats(db) {
 	return { ups, downs };
 }
 
-export function getArticlesByDate(db, date, minScore) {
+export function getArticlesByFetchDate(db, date, minScore) {
 	if (minScore != null) {
 		return db
 			.prepare(

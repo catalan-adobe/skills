@@ -152,8 +152,8 @@ describe("db", () => {
 		db.close();
 	});
 
-	it("getArticlesByDate filters by date and minimum score", async () => {
-		const { openDb, insertArticle, writeScores, getArticlesByDate } =
+	it("getArticlesByFetchDate filters by date and minimum score", async () => {
+		const { openDb, insertArticle, writeScores, getArticlesByFetchDate } =
 			await loadDb();
 		const db = openDb(dbPath);
 		insertArticle(db, {
@@ -188,10 +188,10 @@ describe("db", () => {
 		]);
 
 		const today = new Date().toISOString().slice(0, 10);
-		const all = getArticlesByDate(db, today);
+		const all = getArticlesByFetchDate(db, today);
 		assert.equal(all.length, 2);
 
-		const highOnly = getArticlesByDate(db, today, 6);
+		const highOnly = getArticlesByFetchDate(db, today, 6);
 		assert.equal(highOnly.length, 1);
 		assert.equal(highOnly[0].title, "High Score");
 		db.close();
