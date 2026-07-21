@@ -1,0 +1,61 @@
+{
+  "context": "Tests whether the agent correctly implements the rss-curation post-digest workflow: using search with the required --limit flag, resolving numbered IDs to URLs before submitting feedback, using the --signal flag with +1/-1 values, treating stars as independent of feedback, invoking learn with both required flags, and noting the ~20-signal threshold recommendation.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Search subcommand used",
+      "description": "Script calls `node rss-feed.mjs search` (not a generic grep or curl)",
+      "max_score": 8
+    },
+    {
+      "name": "Search --limit 10",
+      "description": "The search invocation includes `--limit 10`",
+      "max_score": 10
+    },
+    {
+      "name": "Feedback subcommand used",
+      "description": "Script calls `node rss-feed.mjs feedback` at least once",
+      "max_score": 8
+    },
+    {
+      "name": "--signal flag with +1 or -1",
+      "description": "Feedback invocation uses `--signal +1` or `--signal -1` (not emoji, not --up/--down as a flag name)",
+      "max_score": 10
+    },
+    {
+      "name": "ID-to-URL resolution step",
+      "description": "Script includes a step (comment, variable assignment, or echo) that explicitly resolves a numbered result position to its URL before calling feedback --url",
+      "max_score": 12
+    },
+    {
+      "name": "Positive and negative feedback",
+      "description": "Script submits both a +1 signal and a -1 signal (two separate feedback calls or clear placeholders for each)",
+      "max_score": 8
+    },
+    {
+      "name": "Star subcommand used",
+      "description": "Script calls `node rss-feed.mjs star` (not unstar or starred — the bookmark action itself)",
+      "max_score": 10
+    },
+    {
+      "name": "Star is separate from feedback",
+      "description": "The star command is a distinct call from the feedback command — the article is both starred AND given +1 feedback (both commands present, not one instead of the other)",
+      "max_score": 10
+    },
+    {
+      "name": "Learn subcommand used",
+      "description": "Script calls `node rss-feed.mjs learn`",
+      "max_score": 8
+    },
+    {
+      "name": "Learn --db and --profile flags",
+      "description": "The learn invocation includes both `--db` and `--profile` flags",
+      "max_score": 10
+    },
+    {
+      "name": "~20-signal threshold noted",
+      "description": "Script contains a comment or echo statement recommending running learn after approximately 20 (or 20+) feedback signals",
+      "max_score": 6
+    }
+  ]
+}

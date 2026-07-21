@@ -1,0 +1,66 @@
+{
+  "context": "Tests whether the agent follows the rss-curation skill's specific conventions for locating scripts, installing dependencies, running pipeline subcommands in order, scoring articles with the 3-layer profile and correct numeric bands, writing scores back via the db.mjs Node one-liner, and generating the digest.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "CLAUDE_SKILL_DIR check",
+      "description": "Script checks the CLAUDE_SKILL_DIR environment variable first when resolving the scripts directory (e.g. uses `${CLAUDE_SKILL_DIR:-}` or similar conditional)",
+      "max_score": 10
+    },
+    {
+      "name": "find fallback",
+      "description": "When CLAUDE_SKILL_DIR is not set, script falls back to `find ~/.claude -path \"*/rss-curation/scripts\" -type d` (or equivalent) to locate the scripts directory",
+      "max_score": 10
+    },
+    {
+      "name": "Abort on missing dir",
+      "description": "Script exits with a non-zero exit code (or explicit error message to stderr) if the scripts directory is not found",
+      "max_score": 8
+    },
+    {
+      "name": "Conditional npm install",
+      "description": "Script installs npm dependencies only when `node_modules` does NOT already exist inside the scripts directory (guards with `[ -d node_modules ] || npm install` or equivalent)",
+      "max_score": 9
+    },
+    {
+      "name": "fetch subcommand flags",
+      "description": "Script invokes `node rss-feed.mjs fetch` with both `--config` (pointing to config.yaml) and `--db` (pointing to feeds.db) flags",
+      "max_score": 8
+    },
+    {
+      "name": "unscored subcommand",
+      "description": "Script invokes `node rss-feed.mjs unscored --db ...` to retrieve unscored articles",
+      "max_score": 8
+    },
+    {
+      "name": "Score JSON shape",
+      "description": "The script documents or produces example score output as a JSON array where each element contains all four fields: `url`, `score`, `scoreReason`, and `tags`",
+      "max_score": 8
+    },
+    {
+      "name": "Numeric score bands",
+      "description": "Script or its comments describe the scoring bands: 9-10 for direct matches to explicit interests, 0-2 for anti-interests/noise (any two bands correctly stated is sufficient)",
+      "max_score": 8
+    },
+    {
+      "name": "db.mjs Node one-liner",
+      "description": "Script writes scores back using a Node one-liner that imports `openDb` and `writeScores` from `./db.mjs` (not a separate subcommand)",
+      "max_score": 10
+    },
+    {
+      "name": "openDb + writeScores calls",
+      "description": "The Node one-liner calls both `openDb(...)` and `writeScores(db, ...)` and closes the db connection",
+      "max_score": 9
+    },
+    {
+      "name": "digest subcommand",
+      "description": "Script invokes `node rss-feed.mjs digest` with `--db`, `--date`, and `--out` flags",
+      "max_score": 8
+    },
+    {
+      "name": "3-layer profile reference",
+      "description": "Script or its comments reference the 3-layer profile structure (Explicit, Inferred, and Learned layers) when describing the scoring step",
+      "max_score": 4
+    }
+  ]
+}

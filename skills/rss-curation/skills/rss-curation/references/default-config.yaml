@@ -1,0 +1,14 @@
+feeds:
+  # Add your RSS/Atom feed URLs here
+  # - name: Hacker News
+  #   url: https://hnrss.org/frontpage
+  # - name: Simon Willison
+  #   url: https://simonwillison.net/atom/everything/
+  # - name: Chrome Blog
+  #   url: https://developer.chrome.com/blog/rss.xml
+
+settings:
+  min_score: 6
+  schedule: "0 7 * * *"
+
+data_dir: ~/rss
