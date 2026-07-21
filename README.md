@@ -289,6 +289,18 @@ decorative wrappers, and produce `skeleton.html` + `manifest.json`.
 
 See [SKILL.md](skills/reduce-page/SKILL.md) for details.
 
+### rss-curation
+
+Follow RSS feeds and curate them with LLM-scored relevance. Builds a
+searchable SQLite knowledge base of articles, produces ranked daily
+digests, and learns your interests from feedback over time. Three-layer
+interest profile: explicit interests, inferred from your environment,
+and learned from thumbs-up/down feedback.
+
+**Dependencies:** Node 22+, better-sqlite3
+
+See [SKILL.md](skills/rss-curation/SKILL.md) for details.
+
 ## License
 
 MIT
