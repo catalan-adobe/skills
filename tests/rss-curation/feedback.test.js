@@ -103,19 +103,27 @@ describe("feedback", () => {
 
 	it("applyFeedback accepts text aliases +1 and -1", async () => {
 		const { applyFeedback } = await import(`${FB_MOD}?t=${Date.now()}`);
-		const up = parseJSON(applyFeedback(dbPath, "https://example.com/ai-agents", "+1"));
+		const up = parseJSON(
+			applyFeedback(dbPath, "https://example.com/ai-agents", "+1"),
+		);
 		assert.equal(up.ok, true);
 		assert.equal(up.signal, "up");
 
-		const down = parseJSON(applyFeedback(dbPath, "https://example.com/crypto-hype", "-1"));
+		const down = parseJSON(
+			applyFeedback(dbPath, "https://example.com/crypto-hype", "-1"),
+		);
 		assert.equal(down.ok, true);
 		assert.equal(down.signal, "down");
 	});
 
 	it("applyStar and listStarred", async () => {
-		const { applyStar, listStarred } = await import(`${FB_MOD}?t=${Date.now()}`);
+		const { applyStar, listStarred } = await import(
+			`${FB_MOD}?t=${Date.now()}`
+		);
 
-		const starResult = parseJSON(applyStar(dbPath, "https://example.com/ai-agents", true));
+		const starResult = parseJSON(
+			applyStar(dbPath, "https://example.com/ai-agents", true),
+		);
 		assert.equal(starResult.ok, true);
 		assert.equal(starResult.starred, true);
 

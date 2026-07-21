@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import yaml from "js-yaml";
-import { openDb, recordFeedback, setStarred, getStarred, getFeedbackStats } from "./db.mjs";
+import {
+	openDb,
+	recordFeedback,
+	setStarred,
+	getStarred,
+	getFeedbackStats,
+} from "./db.mjs";
 
 const SIGNAL_ALIASES = {
 	"+1": "up",
@@ -11,7 +17,8 @@ const SIGNAL_ALIASES = {
 
 export function applyFeedback(dbPath, url, signal) {
 	const resolved = SIGNAL_ALIASES[signal];
-	if (!resolved) return JSON.stringify({ ok: false, error: `Unknown signal: ${signal}` });
+	if (!resolved)
+		return JSON.stringify({ ok: false, error: `Unknown signal: ${signal}` });
 	const db = openDb(dbPath);
 	try {
 		recordFeedback(db, url, resolved);
@@ -35,16 +42,20 @@ export function listStarred(dbPath) {
 	const db = openDb(dbPath);
 	try {
 		const articles = getStarred(db);
-		return JSON.stringify({
-			count: articles.length,
-			articles: articles.map((a) => ({
-				title: a.title,
-				url: a.url,
-				feedName: a.feed_name,
-				score: a.score,
-				scoreReason: a.score_reason,
-			})),
-		}, null, 2);
+		return JSON.stringify(
+			{
+				count: articles.length,
+				articles: articles.map((a) => ({
+					title: a.title,
+					url: a.url,
+					feedName: a.feed_name,
+					score: a.score,
+					scoreReason: a.score_reason,
+				})),
+			},
+			null,
+			2,
+		);
 	} finally {
 		db.close();
 	}

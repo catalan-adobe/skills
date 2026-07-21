@@ -4,10 +4,11 @@ description: >
   Follow RSS feeds and curate them with LLM-scored relevance. Builds a
   searchable SQLite knowledge base, produces ranked daily digests, and
   learns your interests from feedback. Use when the user wants to check
-  their feeds, search past articles, give feedback, or update their
-  interest profile. Triggers on: "rss digest", "what's new in my feeds",
-  "search my feeds for X", "thumbs up on #3", "update rss profile",
-  "/rss-curation", "rss search", "curate my feeds".
+  their feeds, search past articles, give feedback, star articles, or
+  update their interest profile. Triggers on: "rss digest", "what's new
+  in my feeds", "search my feeds for X", "thumbs up on #3", "star #1",
+  "update rss profile", "/rss-curation", "rss search", "curate my feeds",
+  "show starred articles".
 ---
 
 # RSS Curation
@@ -40,17 +41,14 @@ cd "$RSS_SCRIPTS" && [ -d node_modules ] || npm install
 
 If no data directory exists yet, help the user set up:
 
-1. Ask where they want their data (default: `~/repos/gc/catalan/notes/rss`)
-2. Create the directory and copy default configs:
+1. Ask where they want their data directory
+2. Run setup:
 
 ```bash
-DATA_DIR="$HOME/repos/gc/catalan/notes/rss"
-mkdir -p "$DATA_DIR/digests"
-cp "$RSS_SCRIPTS/../references/default-config.yaml" "$DATA_DIR/config.yaml"
-cp "$RSS_SCRIPTS/../references/default-profile.yaml" "$DATA_DIR/profile.yaml"
+cd "$RSS_SCRIPTS" && node rss-feed.mjs setup --data-dir "$DATA_DIR"
 ```
 
-1. Help the user edit `config.yaml` to add their feed URLs
+1. Help the user edit `config.yaml` to add their RSS/Atom feed URLs
 2. Help the user fill in `profile.yaml` with their explicit interests
 3. Optionally scan AGENTS.md and recent repos to populate the inferred layer
 
@@ -60,7 +58,7 @@ All data lives in the configured `data_dir`:
 
 - `config.yaml` — feed URLs and settings
 - `profile.yaml` — 3-layer interest profile
-- `feeds.db` — SQLite knowledge base (all articles + scores + feedback)
+- `feeds.db` — SQLite knowledge base (all articles + scores + feedback + stars)
 - `digests/YYYY-MM-DD.md` — daily digest files
 
 ## Mode: Digest
@@ -76,6 +74,7 @@ cd "$RSS_SCRIPTS" && node rss-feed.mjs fetch \
 ```
 
 Output: JSON with `{ total, new, articles }`. Report how many new articles.
+Supports RSS 2.0, Atom, and RSS 1.0 (RDF) feeds.
 
 ### Step 2: Score unscored articles
 
@@ -111,17 +110,7 @@ relevance against the 3-layer profile and produce:
 Priority: explicit interests > inferred topics > learned boosts.
 Anti-interests and learned suppressions lower the score.
 
-Write scores back:
-
-```bash
-cd "$RSS_SCRIPTS" && node rss-feed.mjs feedback \
-  --db "$DATA_DIR/feeds.db" \
-  --url "<article-url>" \
-  --signal up
-```
-
-**Note:** To write scores, use the db module directly. Present the scores
-to the user and write them by invoking a Node one-liner:
+Write scores back by invoking a Node one-liner:
 
 ```bash
 cd "$RSS_SCRIPTS" && node -e "
@@ -157,25 +146,51 @@ cd "$RSS_SCRIPTS" && node rss-feed.mjs search \
 ```
 
 Returns JSON with matching articles. Present results conversationally
-with title, source, date, score, and link. Answer follow-up questions
-using the article summaries/content in the results.
+with title, source, date, score, and link.
 
 ## Mode: Feedback
 
-Trigger: "thumbs up on #3", "I liked that WebGPU article", "not
-interested in listicles"
+Trigger: "thumbs up on #3", "+1 on #3", "I liked that article", "-1 on #5"
 
-When the user gives feedback on a specific article:
+The user can give feedback using emoji or text shortcuts:
+
+| Input | Meaning |
+|-------|---------|
+| `+1` or `up` | 👍 Liked — boosts similar content |
+| `-1` or `down` | 👎 Disliked — suppresses similar content |
 
 ```bash
 cd "$RSS_SCRIPTS" && node rss-feed.mjs feedback \
   --db "$DATA_DIR/feeds.db" \
   --url "<article-url>" \
-  --signal up  # or down
+  --signal +1  # or -1, up, down
 ```
 
 The digest uses numbered IDs (#1, #2, etc.) — resolve those to URLs from
 the most recent digest or search results.
+
+## Mode: Star
+
+Trigger: "star #1", "bookmark that article", "show my starred articles"
+
+Stars are independent of feedback — the user can star AND thumbs-up the
+same article. Stars act as a personal reading list / bookmarks.
+
+```bash
+# Star an article
+cd "$RSS_SCRIPTS" && node rss-feed.mjs star \
+  --db "$DATA_DIR/feeds.db" \
+  --url "<article-url>"
+
+# Remove star
+cd "$RSS_SCRIPTS" && node rss-feed.mjs unstar \
+  --db "$DATA_DIR/feeds.db" \
+  --url "<article-url>"
+
+# List all starred articles
+cd "$RSS_SCRIPTS" && node rss-feed.mjs starred \
+  --db "$DATA_DIR/feeds.db"
+```
 
 ## Mode: Learn
 
@@ -187,11 +202,9 @@ cd "$RSS_SCRIPTS" && node rss-feed.mjs learn \
   --profile "$DATA_DIR/profile.yaml"
 ```
 
-This aggregates all feedback signals, identifies topic patterns, and
-updates the `learned` section of `profile.yaml`. Show the user what
-changed so they can review it.
-
-Suggest running this after ~20+ feedback signals accumulate.
+Aggregates all feedback signals, identifies topic patterns, and updates
+the `learned` section of `profile.yaml`. Show the user what changed so
+they can review it. Suggest running after ~20+ feedback signals.
 
 ## Interest Profile
 
@@ -209,7 +222,6 @@ interests carry the most weight, then inferred, then learned.
 For daily automated fetching (no scoring — that happens interactively):
 
 ```bash
-# Add to crontab:
 0 7 * * * cd /path/to/rss-curation/scripts && node rss-feed.mjs fetch \
   --config /path/to/config.yaml --db /path/to/feeds.db
 ```

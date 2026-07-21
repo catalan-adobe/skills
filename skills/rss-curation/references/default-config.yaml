@@ -11,4 +11,4 @@ settings:
   min_score: 6
   schedule: "0 7 * * *"
 
-data_dir: ~/repos/gc/catalan/notes/rss
+data_dir: ~/rss

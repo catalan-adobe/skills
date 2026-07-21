@@ -6,7 +6,12 @@ import yaml from "js-yaml";
 import { fetchFeeds } from "./fetch.mjs";
 import { openDb, getUnscored } from "./db.mjs";
 import { runSearch } from "./search.mjs";
-import { applyFeedback, applyStar, listStarred, learnFromFeedback } from "./feedback.mjs";
+import {
+	applyFeedback,
+	applyStar,
+	listStarred,
+	learnFromFeedback,
+} from "./feedback.mjs";
 import { generateDigest } from "./digest.mjs";
 import { initDataDir } from "./setup.mjs";
 

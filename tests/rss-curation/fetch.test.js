@@ -105,7 +105,11 @@ describe("parseFeed", () => {
 
 	it("parses RSS 1.0 (RDF) feeds like Slashdot", async () => {
 		const { parseFeed } = await loadFetch();
-		const articles = parseFeed(RDF_SAMPLE, "Slashdot", "https://slashdot.org/rss");
+		const articles = parseFeed(
+			RDF_SAMPLE,
+			"Slashdot",
+			"https://slashdot.org/rss",
+		);
 		assert.equal(articles.length, 1);
 		assert.equal(articles[0].title, "Linux 7.0 Released");
 		assert.equal(articles[0].url, "https://slashdot.org/story/1");
@@ -114,7 +118,11 @@ describe("parseFeed", () => {
 
 	it("handles Atom entries with typed titles", async () => {
 		const { parseFeed } = await loadFetch();
-		const articles = parseFeed(ATOM_TYPED_TITLE, "Octocats", "https://octodex.github.com/atom.xml");
+		const articles = parseFeed(
+			ATOM_TYPED_TITLE,
+			"Octocats",
+			"https://octodex.github.com/atom.xml",
+		);
 		assert.equal(articles.length, 1);
 		assert.equal(articles[0].title, "Bombacat");
 	});

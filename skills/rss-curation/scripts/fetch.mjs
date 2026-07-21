@@ -19,9 +19,9 @@ function normalizeRssItems(channel) {
 }
 
 function extractText(val) {
-	if (val == null) return '';
-	if (typeof val === 'string') return val;
-	if (typeof val === 'object' && val['#text']) return val['#text'];
+	if (val == null) return "";
+	if (typeof val === "string") return val;
+	if (typeof val === "object" && val["#text"]) return val["#text"];
 	return String(val);
 }
 
@@ -45,13 +45,13 @@ function normalizeRdfItems(rdf) {
 	const items = rdf.item;
 	if (!items) return [];
 	return (Array.isArray(items) ? items : [items]).map((item) => ({
-		title: item.title || '',
-		url: item.link || '',
-		publishedAt: item['dc:date']
-			? new Date(item['dc:date']).toISOString()
+		title: item.title || "",
+		url: item.link || "",
+		publishedAt: item["dc:date"]
+			? new Date(item["dc:date"]).toISOString()
 			: null,
-		summary: item.description || '',
-		author: item['dc:creator'] || null,
+		summary: item.description || "",
+		author: item["dc:creator"] || null,
 	}));
 }
 
@@ -63,7 +63,7 @@ function normalizeItems(parsed) {
 	if (feed) return normalizeAtomEntries(feed);
 
 	// RSS 1.0 (RDF)
-	const rdf = parsed?.['rdf:RDF'];
+	const rdf = parsed?.["rdf:RDF"];
 	if (rdf) return normalizeRdfItems(rdf);
 
 	return [];
@@ -90,9 +90,9 @@ export async function fetchFeeds(config, db) {
 
 	for (const feed of feeds) {
 		try {
-				const res = await fetch(feed.url, {
-				headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RSS reader)' },
-				redirect: 'follow',
+			const res = await fetch(feed.url, {
+				headers: { "User-Agent": "Mozilla/5.0 (compatible; RSS reader)" },
+				redirect: "follow",
 			});
 			if (!res.ok) continue;
 			const xml = await res.text();

@@ -1,45 +1,40 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { openDb } from './db.mjs';
+import fs from "node:fs";
+import path from "node:path";
+import { openDb } from "./db.mjs";
 
 export function initDataDir(dataDir, configTemplate, profileTemplate) {
-  fs.mkdirSync(path.join(dataDir, 'digests'), { recursive: true });
+	fs.mkdirSync(path.join(dataDir, "digests"), { recursive: true });
 
-  const configPath = path.join(dataDir, 'config.yaml');
-  const profilePath = path.join(dataDir, 'profile.yaml');
-  const dbPath = path.join(dataDir, 'feeds.db');
+	const configPath = path.join(dataDir, "config.yaml");
+	const profilePath = path.join(dataDir, "profile.yaml");
+	const dbPath = path.join(dataDir, "feeds.db");
 
-  if (!fs.existsSync(configPath)) {
-    fs.copyFileSync(configTemplate, configPath);
-  }
-  if (!fs.existsSync(profilePath)) {
-    fs.copyFileSync(profileTemplate, profilePath);
-  }
+	if (!fs.existsSync(configPath)) {
+		fs.copyFileSync(configTemplate, configPath);
+	}
+	if (!fs.existsSync(profilePath)) {
+		fs.copyFileSync(profileTemplate, profilePath);
+	}
 
-  const db = openDb(dbPath);
-  db.close();
+	const db = openDb(dbPath);
+	db.close();
 
-  return { configPath, profilePath, dbPath };
+	return { configPath, profilePath, dbPath };
 }
 
 function parseCron(schedule) {
-  const [minute, hour] = schedule.split(' ');
-  return {
-    minute: Number(minute) || 0,
-    hour: Number(hour) || 7,
-  };
+	const [minute, hour] = schedule.split(" ");
+	return {
+		minute: Number(minute) || 0,
+		hour: Number(hour) || 7,
+	};
 }
 
-export function generateLaunchdPlist(
-  scriptPath,
-  configPath,
-  dbPath,
-  schedule,
-) {
-  const parts = parseCron(schedule);
-  const label = 'com.catalan.rss-curation';
+export function generateLaunchdPlist(scriptPath, configPath, dbPath, schedule) {
+	const parts = parseCron(schedule);
+	const label = "com.catalan.rss-curation";
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
+	return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
