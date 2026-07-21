@@ -84,14 +84,14 @@ describe("digest", () => {
 		const results = generateDigest(dbPath, today, { outDir });
 
 		// Articles published on 2025-07-21 → digest keyed by that date
-		const md = results['2025-07-21'];
-		assert.ok(md, 'Expected a digest for publication date 2025-07-21');
-		assert.ok(md.includes('# RSS Digest'));
-		assert.ok(md.includes('Top Pick Article'));
-		assert.ok(md.includes('9.2'));
-		assert.ok(md.includes('Also Noted'));
-		assert.ok(md.includes('Also Noted Article'));
-		assert.ok(!md.includes('Low Score Noise'));
+		const md = results["2025-07-21"];
+		assert.ok(md, "Expected a digest for publication date 2025-07-21");
+		assert.ok(md.includes("# RSS Digest"));
+		assert.ok(md.includes("Top Pick Article"));
+		assert.ok(md.includes("9.2"));
+		assert.ok(md.includes("Also Noted"));
+		assert.ok(md.includes("Also Noted Article"));
+		assert.ok(!md.includes("Low Score Noise"));
 	});
 
 	it("writes digest file to outDir", async () => {
@@ -100,7 +100,7 @@ describe("digest", () => {
 		generateDigest(dbPath, today, { outDir });
 
 		// File is named by publication date, not fetch date
-		const filePath = path.join(outDir, '2025-07-21.md');
+		const filePath = path.join(outDir, "2025-07-21.md");
 		assert.ok(fs.existsSync(filePath));
 		const content = fs.readFileSync(filePath, "utf8");
 		assert.ok(content.includes("Top Pick Article"));
