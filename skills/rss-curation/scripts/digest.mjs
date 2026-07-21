@@ -27,14 +27,15 @@ function renderTopPick(article, index) {
 	const tags = safeParseTags(article.tags);
 	return [
 		`### #${index + 1} · ${article.title} (${article.score})`,
-		`**Source:** ${article.feed_name} · ${timeAgo(article.published_at)}`,
-		`**Why:** ${article.score_reason}`,
-		tags.length ? `**Tags:** ${tags.join(", ")}` : "",
-		`**Link:** ${article.url}`,
-		"",
+		'',
+		`- **Source:** ${article.feed_name} · ${timeAgo(article.published_at)}`,
+		`- **Why:** ${article.score_reason}`,
+		tags.length ? `- **Tags:** ${tags.join(', ')}` : '',
+		`- **Link:** ${article.url}`,
+		'',
 	]
 		.filter(Boolean)
-		.join("\n");
+		.join('\n');
 }
 
 function renderAlsoNoted(article) {
