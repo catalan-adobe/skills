@@ -8,6 +8,7 @@ import { openDb, getUnscored } from './db.mjs';
 import { runSearch } from './search.mjs';
 import { applyFeedback, learnFromFeedback } from './feedback.mjs';
 import { generateDigest } from './digest.mjs';
+import { initDataDir } from './setup.mjs';
 
 const USAGE = [
   'Usage: rss-feed.mjs <subcommand> [options]',
@@ -19,6 +20,7 @@ const USAGE = [
   '  search     --db <path> --query <text> [--limit <n>]',
   '  feedback   --db <path> --url <url> --signal <up|down>',
   '  learn      --db <path> --profile <path>',
+  '  setup      --data-dir <path>',
 ].join('\n');
 
 function die(msg) {
@@ -102,6 +104,18 @@ const COMMANDS = {
     const dbPath = requireFlag(flags, 'db');
     const profilePath = requireFlag(flags, 'profile');
     console.log(learnFromFeedback(dbPath, profilePath));
+  },
+
+  async setup(flags) {
+    const dataDir = requireFlag(flags, 'dataDir');
+    const scriptDir = import.meta.dirname;
+    const refsDir = path.resolve(scriptDir, '../references');
+    const result = initDataDir(
+      dataDir,
+      path.join(refsDir, 'default-config.yaml'),
+      path.join(refsDir, 'default-profile.yaml'),
+    );
+    console.log(JSON.stringify({ ok: true, ...result }, null, 2));
   },
 };
 
