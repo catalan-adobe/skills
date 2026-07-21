@@ -1,0 +1,19 @@
+explicit:
+  interests: []
+    # Add topics you care about:
+    # - "AI agents and coding assistants"
+    # - "Web performance and browser APIs"
+  anti-interests: []
+    # Add topics you want to suppress:
+    # - "Cryptocurrency and blockchain"
+
+inferred:
+  sources: []
+  topics: []
+
+learned:
+  boost: []
+  suppress: []
+  examples:
+    liked: []
+    disliked: []

@@ -123,9 +123,10 @@ describe("integration: full pipeline", () => {
 		assert.ok(learnResult.learned.examples.liked.length > 0);
 
 		// 5. Digest
-		const md = generateDigest(dbPath, "2025-07-21", { outDir });
-		assert.ok(md.includes("AI Agent Patterns"));
-		assert.ok(md.includes("CSS Container Queries"));
-		assert.ok(fs.existsSync(path.join(outDir, "2025-07-21.md")));
+		const today = new Date().toISOString().slice(0, 10);
+		const md = generateDigest(dbPath, today, { outDir });
+		assert.ok(md.includes('AI Agent Patterns'));
+		assert.ok(md.includes('CSS Container Queries'));
+		assert.ok(fs.existsSync(path.join(outDir, `${today}.md`)));
 	});
 });

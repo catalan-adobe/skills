@@ -80,7 +80,8 @@ describe("digest", () => {
 
 	it("generates markdown with top picks and also noted sections", async () => {
 		const { generateDigest } = await import(`${DIGEST_MOD}?t=${Date.now()}`);
-		const md = generateDigest(dbPath, "2025-07-21", { outDir });
+		const today = new Date().toISOString().slice(0, 10);
+		const md = generateDigest(dbPath, today, { outDir });
 
 		assert.ok(md.includes("# RSS Digest"));
 		assert.ok(md.includes("Top Pick Article"));
@@ -92,9 +93,10 @@ describe("digest", () => {
 
 	it("writes digest file to outDir", async () => {
 		const { generateDigest } = await import(`${DIGEST_MOD}?t=${Date.now()}`);
-		generateDigest(dbPath, "2025-07-21", { outDir });
+		const today = new Date().toISOString().slice(0, 10);
+		generateDigest(dbPath, today, { outDir });
 
-		const filePath = path.join(outDir, "2025-07-21.md");
+		const filePath = path.join(outDir, `${today}.md`);
 		assert.ok(fs.existsSync(filePath));
 		const content = fs.readFileSync(filePath, "utf8");
 		assert.ok(content.includes("Top Pick Article"));

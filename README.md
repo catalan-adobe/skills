@@ -297,7 +297,7 @@ digests, and learns your interests from feedback over time. Three-layer
 interest profile: explicit interests, inferred from your environment,
 and learned from thumbs-up/down feedback.
 
-**Dependencies:** Node 22+, better-sqlite3
+**Dependencies:** Node 22+, better-sqlite3, fast-xml-parser, js-yaml
 
 See [SKILL.md](skills/rss-curation/SKILL.md) for details.
 

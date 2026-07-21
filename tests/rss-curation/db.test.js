@@ -187,10 +187,11 @@ describe("db", () => {
 			},
 		]);
 
-		const all = getArticlesByDate(db, "2025-07-21");
+		const today = new Date().toISOString().slice(0, 10);
+		const all = getArticlesByDate(db, today);
 		assert.equal(all.length, 2);
 
-		const highOnly = getArticlesByDate(db, "2025-07-21", 6);
+		const highOnly = getArticlesByDate(db, today, 6);
 		assert.equal(highOnly.length, 1);
 		assert.equal(highOnly[0].title, "High Score");
 		db.close();

@@ -3,5 +3,5 @@
   "version": "0.1.0",
   "description": "Follow RSS feeds and curate them with LLM-scored relevance. Builds a searchable SQLite knowledge base, produces ranked daily digests, and learns your interests from feedback.",
   "private": false,
-  "skills": "./skills/"
+  "skills": "skills"
 }

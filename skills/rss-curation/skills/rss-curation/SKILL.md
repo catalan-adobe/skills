@@ -13,9 +13,6 @@ description: >
 
 # RSS Curation
 
-Curate RSS feeds with LLM-scored relevance, build a searchable knowledge
-base, and produce ranked digests that improve over time via feedback.
-
 ## Script Location
 
 ```bash
@@ -48,9 +45,11 @@ If no data directory exists yet, help the user set up:
 cd "$RSS_SCRIPTS" && node rss-feed.mjs setup --data-dir "$DATA_DIR"
 ```
 
-1. Help the user edit `config.yaml` to add their RSS/Atom feed URLs
-2. Help the user fill in `profile.yaml` with their explicit interests
-3. Optionally scan AGENTS.md and recent repos to populate the inferred layer
+1. Verify setup succeeded — confirm `config.yaml`, `profile.yaml`, and
+   `feeds.db` exist in `$DATA_DIR`
+2. Help the user edit `config.yaml` to add their RSS/Atom feed URLs
+3. Help the user fill in `profile.yaml` with their explicit interests
+4. Optionally scan AGENTS.md and recent repos to populate the inferred layer
 
 ## Data Paths
 
@@ -122,6 +121,9 @@ db.close();
 ```
 
 Where `$SCORES_JSON` is the JSON array of score objects.
+
+Verify scores were written — re-run the `unscored` command and confirm
+the count dropped to zero (or to the expected remaining count).
 
 ### Step 3: Generate digest
 
