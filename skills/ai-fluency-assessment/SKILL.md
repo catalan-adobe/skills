@@ -21,6 +21,11 @@ Then run `assess.py` to scan and classify all 18 observable behaviors. The scrip
 python3 /path/to/skills/ai-fluency-assessment/scripts/assess.py \
   --output-dir .ai-fluency --max-sessions 6000
 
+# Include Pi coding-agent sessions alongside Claude Code
+python3 /path/to/skills/ai-fluency-assessment/scripts/assess.py \
+  --pi-sessions-dir ~/Documents/elias-files/pi/sessions \
+  --output-dir .ai-fluency --max-sessions 6000
+
 # Custom sessions directory (e.g., exported sessions, another machine's data)
 python3 /path/to/skills/ai-fluency-assessment/scripts/assess.py \
   --sessions-dir <PATH> --output-dir .ai-fluency --max-sessions 6000

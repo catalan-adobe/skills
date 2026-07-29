@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """AI Fluency Assessment: evidence collection and behavior classification.
 
-Scans Claude Code JSONL session files, extracts user messages, and
-classifies them against 18 behaviors from Anthropic's 4D AI Fluency
-Framework (Dakan, Feller & Anthropic, 2025).
+Scans Claude Code and Pi coding-agent JSONL session files, extracts
+user messages, and classifies them against 18 behaviors from Anthropic's
+4D AI Fluency Framework (Dakan, Feller & Anthropic, 2025).
 
 Default mode uses LLM classification (requires anthropic SDK).
 Use --regex-only for a fast, free approximation (stdlib only, 11 behaviors).
@@ -199,10 +199,19 @@ _SKIP_PREFIXES = [
     "users-", "home-",
 ]
 
+_PI_SKIP_PREFIXES = [
+    "/Users/catalan/repos/", "/Users/paolo/playground/",
+    "/home/azureuser/repos/", "/home/azureuser/",
+    "/Users/catalan/Documents/", "/private/",
+]
+
 
 def clean_project_name(dirname: str) -> str:
-    """Turn '-Users-catalan-repos-ai-foo-bar' into 'ai-foo-bar'."""
-    raw = dirname.lstrip("-")
+    """Turn '-Users-catalan-repos-ai-foo-bar' into 'ai-foo-bar'.
+
+    Also handles Pi double-dash directory encoding (--name--).
+    """
+    raw = dirname.strip("-")
     lower = raw.lower()
     for prefix in _SKIP_PREFIXES:
         if lower.startswith(prefix):
@@ -217,10 +226,46 @@ def clean_project_name(dirname: str) -> str:
     return raw.strip("-") or dirname.strip("-")
 
 
+def _project_from_cwd(cwd: str) -> str:
+    """Derive a clean project name from a Pi session cwd path."""
+    for prefix in _PI_SKIP_PREFIXES:
+        if cwd.startswith(prefix):
+            cwd = cwd[len(prefix):]
+            break
+    # Collapse worktree paths: repo/.worktrees/branch -> repo
+    cwd = re.sub(r'/\.worktrees/[^/]+$', '', cwd)
+    parts = cwd.strip('/').replace('/', '-')
+    if len(parts) > 60:
+        short = parts[-60:]
+        idx = short.find('-')
+        if idx > 0:
+            short = short[idx + 1:]
+        parts = short
+    return parts.strip('-') or 'unknown'
+
+
+def _extract_text(content) -> str:
+    """Extract plain text from a message content field.
+
+    Claude Code: content is a string or a list of blocks.
+    Pi: content is always a list of {type, text/...} blocks.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            block.get('text', '')
+            for block in content
+            if isinstance(block, dict) and block.get('type') == 'text'
+        ]
+        return '\n'.join(parts)
+    return ''
+
+
 # ── JSONL parsing ───────────────────────────────────────────────────
 
-def parse_sessions(sessions_dir: Path, max_sessions: int):
-    """Walk sessions_dir, parse JSONL files, return messages and stats."""
+def parse_claude_sessions(sessions_dir: Path, max_sessions: int):
+    """Walk Claude Code sessions_dir, parse JSONL files, return messages."""
     jsonl_files = sorted(sessions_dir.rglob("*.jsonl"))
     total_scanned = 0
     sessions_with_messages = set()
@@ -257,12 +302,15 @@ def parse_sessions(sessions_dir: Path, max_sessions: int):
                     continue
                 try:
                     record = json.loads(line)
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if not isinstance(record, dict):
                     continue
                 if record.get("type") != "user":
                     continue
-                content = record.get("message", {}).get("content")
-                if not isinstance(content, str) or not content.strip():
+                raw_content = record.get("message", {}).get("content")
+                content = _extract_text(raw_content)
+                if not content.strip():
                     continue
                 user_msg_index += 1
                 messages.append({
@@ -271,6 +319,7 @@ def parse_sessions(sessions_dir: Path, max_sessions: int):
                     "timestamp": record.get("timestamp", ""),
                     "content": content,
                     "session_msg_index": user_msg_index,
+                    "source": "claude-code",
                 })
                 sessions_with_messages.add(session_id)
                 project_stats[project]["messages"] += 1
@@ -290,6 +339,146 @@ def parse_sessions(sessions_dir: Path, max_sessions: int):
         "messages": messages,
         "projects": projects_out,
     }
+
+
+def parse_pi_sessions(sessions_dir: Path, max_sessions: int):
+    """Walk Pi coding-agent sessions_dir, parse JSONL files.
+
+    Pi session format differs from Claude Code:
+    - Records use type="message" with message.role (not type="user").
+    - Content is always a list of {type, text} blocks.
+    - A "session" record carries the real cwd for project naming.
+    - Subagents are identified by session_info.parentId != null.
+    - Dirs use --double-dash-- encoding.
+    """
+    jsonl_files = sorted(sessions_dir.rglob("*.jsonl"))
+    total_scanned = 0
+    sessions_with_messages = set()
+    messages = []
+    project_stats = defaultdict(
+        lambda: {"full_path": "", "messages": 0, "sessions": set()}
+    )
+
+    for fpath in jsonl_files:
+        if total_scanned >= max_sessions:
+            break
+        total_scanned += 1
+
+        parts = fpath.relative_to(sessions_dir).parts
+        raw_project_dir = parts[0] if parts else "unknown"
+        session_id = fpath.stem
+
+        # First pass: read session metadata (cwd, subagent status).
+        cwd = None
+        is_subagent = False
+        try:
+            f = open(fpath, encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(
+                f"Warning: skipping {fpath}: {exc}", file=sys.stderr
+            )
+            continue
+        with f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                rtype = record.get("type")
+                if rtype == "session":
+                    cwd = record.get("cwd")
+                elif rtype == "session_info":
+                    if record.get("parentId") is not None:
+                        is_subagent = True
+                # Stop scanning metadata after first message.
+                if rtype == "message":
+                    break
+
+        if is_subagent:
+            continue
+
+        project = (
+            _project_from_cwd(cwd)
+            if cwd
+            else clean_project_name(raw_project_dir)
+        )
+        project_stats[project]["full_path"] = cwd or str(
+            sessions_dir / raw_project_dir
+        )
+
+        # Second pass: extract user messages.
+        user_msg_index = 0
+        with open(fpath, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("type") != "message":
+                    continue
+                msg = record.get("message", {})
+                if msg.get("role") != "user":
+                    continue
+                content = _extract_text(msg.get("content"))
+                if not content.strip():
+                    continue
+                user_msg_index += 1
+                messages.append({
+                    "project": project,
+                    "session_id": session_id,
+                    "timestamp": record.get("timestamp", ""),
+                    "content": content,
+                    "session_msg_index": user_msg_index,
+                    "source": "pi",
+                })
+                sessions_with_messages.add(session_id)
+                project_stats[project]["messages"] += 1
+                project_stats[project]["sessions"].add(session_id)
+
+    projects_out = {
+        name: {
+            "full_path": data["full_path"],
+            "message_count": data["messages"],
+            "session_count": len(data["sessions"]),
+        }
+        for name, data in project_stats.items()
+    }
+    return {
+        "total_scanned": total_scanned,
+        "sessions_with_messages": len(sessions_with_messages),
+        "messages": messages,
+        "projects": projects_out,
+    }
+
+
+def merge_evidence(*parsed_list):
+    """Merge multiple parse results into one StandardEvidence dict."""
+    merged = {
+        "total_scanned": 0,
+        "sessions_with_messages": 0,
+        "messages": [],
+        "projects": {},
+    }
+    for parsed in parsed_list:
+        merged["total_scanned"] += parsed["total_scanned"]
+        merged["sessions_with_messages"] += parsed[
+            "sessions_with_messages"
+        ]
+        merged["messages"].extend(parsed["messages"])
+        for name, data in parsed["projects"].items():
+            if name in merged["projects"]:
+                existing = merged["projects"][name]
+                existing["message_count"] += data["message_count"]
+                existing["session_count"] += data["session_count"]
+            else:
+                merged["projects"][name] = dict(data)
+    return merged
 
 
 # ── Regex analysis (--regex-only) ───────────────────────────────────
@@ -500,12 +689,18 @@ def _record_match(bucket: dict, msg: dict):
         })
 
 
-def write_evidence(output_dir: Path, sessions_dir: Path, parsed: dict):
-    """Write evidence.json with all extracted user messages."""
+def write_evidence(output_dir: Path, sources: dict, parsed: dict):
+    """Write evidence.json with all extracted user messages.
+
+    Args:
+        output_dir: Where to write evidence.json.
+        sources: Dict of source name -> directory path scanned.
+        parsed: Merged StandardEvidence dict.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     evidence = {
         "collection_date": str(date.today()),
-        "sessions_dir": str(sessions_dir),
+        "sources": {k: str(v) for k, v in sources.items()},
         "total_sessions_scanned": parsed["total_scanned"],
         "sessions_with_user_messages": parsed["sessions_with_messages"],
         "total_user_messages": len(parsed["messages"]),
@@ -516,6 +711,7 @@ def write_evidence(output_dir: Path, sessions_dir: Path, parsed: dict):
                 "session_id": m["session_id"],
                 "timestamp": m["timestamp"],
                 "content": m["content"],
+                "source": m.get("source", "unknown"),
             }
             for m in parsed["messages"]
         ],
@@ -570,14 +766,19 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "AI Fluency Assessment: collect evidence and classify "
-            "behaviors from Claude Code sessions."
+            "behaviors from Claude Code and Pi sessions."
         ),
     )
     parser.add_argument(
         "--sessions-dir", type=Path,
         default=Path.home() / ".claude" / "projects",
-        help="Directory containing JSONL session files "
+        help="Claude Code sessions directory "
         "(default: ~/.claude/projects).",
+    )
+    parser.add_argument(
+        "--pi-sessions-dir", type=Path, default=None,
+        help="Pi coding-agent sessions directory (optional). "
+        "Scans Pi JSONL session files alongside Claude Code.",
     )
     parser.add_argument(
         "--output-dir", type=Path, default=Path(".ai-fluency"),
@@ -585,7 +786,7 @@ def main():
     )
     parser.add_argument(
         "--max-sessions", type=int, default=2000,
-        help="Max session files to scan (default: 2000).",
+        help="Max session files to scan per source (default: 2000).",
     )
     parser.add_argument(
         "--regex-only", action="store_true",
@@ -613,34 +814,76 @@ def main():
     sessions_dir = args.sessions_dir.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
 
-    if not sessions_dir.is_dir():
-        print(
-            f"Error: sessions directory not found: {sessions_dir}",
-            file=sys.stderr,
+    sources = {}
+    parsed_results = []
+
+    # Parse Claude Code sessions.
+    if sessions_dir.is_dir():
+        try:
+            output_dir.relative_to(sessions_dir)
+        except ValueError:
+            pass
+        else:
+            print(
+                "Error: output-dir must not be inside sessions-dir.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        print(f"[Claude Code] Scanning: {sessions_dir}")
+        cc_parsed = parse_claude_sessions(
+            sessions_dir, args.max_sessions
         )
-        sys.exit(1)
-    try:
-        output_dir.relative_to(sessions_dir)
-    except ValueError:
-        pass
+        print(
+            f"  Scanned {cc_parsed['total_scanned']} files, "
+            f"{cc_parsed['sessions_with_messages']} with messages, "
+            f"{len(cc_parsed['messages'])} user messages, "
+            f"{len(cc_parsed['projects'])} projects"
+        )
+        sources["claude-code"] = sessions_dir
+        parsed_results.append(cc_parsed)
     else:
         print(
-            "Error: output-dir must not be inside sessions-dir.",
+            f"Warning: Claude Code sessions dir not found: "
+            f"{sessions_dir}",
             file=sys.stderr,
         )
+
+    # Parse Pi sessions (optional).
+    if args.pi_sessions_dir:
+        pi_dir = args.pi_sessions_dir.expanduser().resolve()
+        if pi_dir.is_dir():
+            print(f"[Pi] Scanning: {pi_dir}")
+            pi_parsed = parse_pi_sessions(pi_dir, args.max_sessions)
+            print(
+                f"  Scanned {pi_parsed['total_scanned']} files, "
+                f"{pi_parsed['sessions_with_messages']} with messages, "
+                f"{len(pi_parsed['messages'])} user messages, "
+                f"{len(pi_parsed['projects'])} projects"
+            )
+            sources["pi"] = pi_dir
+            parsed_results.append(pi_parsed)
+        else:
+            print(
+                f"Warning: Pi sessions dir not found: {pi_dir}",
+                file=sys.stderr,
+            )
+
+    if not parsed_results:
+        print("Error: no session directories found.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Scanning sessions in: {sessions_dir}")
-    print(f"Output directory:     {output_dir}")
-    print(f"Max sessions:         {args.max_sessions}")
+    parsed = merge_evidence(*parsed_results)
 
-    parsed = parse_sessions(sessions_dir, args.max_sessions)
-    print(f"\nScanned {parsed['total_scanned']} session files")
-    print(f"Sessions with user messages: {parsed['sessions_with_messages']}")
-    print(f"Total user messages: {len(parsed['messages'])}")
-    print(f"Projects: {len(parsed['projects'])}")
+    print(f"\nOutput directory: {output_dir}")
+    print(f"Total scanned:   {parsed['total_scanned']} session files")
+    print(
+        f"With messages:   {parsed['sessions_with_messages']} sessions"
+    )
+    print(f"User messages:   {len(parsed['messages'])}")
+    print(f"Projects:        {len(parsed['projects'])}")
 
-    ev_path = write_evidence(output_dir, sessions_dir, parsed)
+    ev_path = write_evidence(output_dir, sources, parsed)
     print(f"\nEvidence written to: {ev_path}")
 
     if args.regex_only:
