@@ -14,7 +14,7 @@ import json
 import re
 import sys
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 # ── Behavior definitions ────────────────────────────────────────────
@@ -244,6 +244,16 @@ def _project_from_cwd(cwd: str) -> str:
     return parts.strip('-') or 'unknown'
 
 
+def _is_recent(fpath: Path, cutoff: datetime | None) -> bool:
+    """Check if a session file is newer than the cutoff date."""
+    if cutoff is None:
+        return True
+    mtime = datetime.fromtimestamp(
+        fpath.stat().st_mtime, tz=timezone.utc
+    )
+    return mtime >= cutoff
+
+
 def _extract_text(content) -> str:
     """Extract plain text from a message content field.
 
@@ -264,7 +274,10 @@ def _extract_text(content) -> str:
 
 # ── JSONL parsing ───────────────────────────────────────────────────
 
-def parse_claude_sessions(sessions_dir: Path, max_sessions: int):
+def parse_claude_sessions(
+    sessions_dir: Path, max_sessions: int,
+    cutoff: datetime | None = None,
+):
     """Walk Claude Code sessions_dir, parse JSONL files, return messages."""
     jsonl_files = sorted(sessions_dir.rglob("*.jsonl"))
     total_scanned = 0
@@ -278,6 +291,8 @@ def parse_claude_sessions(sessions_dir: Path, max_sessions: int):
         if total_scanned >= max_sessions:
             break
         if "/subagents/" in str(fpath):
+            continue
+        if not _is_recent(fpath, cutoff):
             continue
         total_scanned += 1
 
@@ -341,7 +356,10 @@ def parse_claude_sessions(sessions_dir: Path, max_sessions: int):
     }
 
 
-def parse_pi_sessions(sessions_dir: Path, max_sessions: int):
+def parse_pi_sessions(
+    sessions_dir: Path, max_sessions: int,
+    cutoff: datetime | None = None,
+):
     """Walk Pi coding-agent sessions_dir, parse JSONL files.
 
     Pi session format differs from Claude Code:
@@ -362,6 +380,8 @@ def parse_pi_sessions(sessions_dir: Path, max_sessions: int):
     for fpath in jsonl_files:
         if total_scanned >= max_sessions:
             break
+        if not _is_recent(fpath, cutoff):
+            continue
         total_scanned += 1
 
         parts = fpath.relative_to(sessions_dir).parts
@@ -789,6 +809,10 @@ def main():
         help="Max session files to scan per source (default: 2000).",
     )
     parser.add_argument(
+        "--since-days", type=int, default=None,
+        help="Only include sessions modified in the last N days.",
+    )
+    parser.add_argument(
         "--regex-only", action="store_true",
         help="Use regex heuristics instead of LLM classification "
         "(fast/free but less accurate, 11 behaviors only).",
@@ -814,6 +838,13 @@ def main():
     sessions_dir = args.sessions_dir.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
 
+    cutoff = None
+    if args.since_days:
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(
+            days=args.since_days
+        )
+        print(f"Date filter:     since {cutoff.date()}")
+
     sources = {}
     parsed_results = []
 
@@ -832,7 +863,7 @@ def main():
 
         print(f"[Claude Code] Scanning: {sessions_dir}")
         cc_parsed = parse_claude_sessions(
-            sessions_dir, args.max_sessions
+            sessions_dir, args.max_sessions, cutoff
         )
         print(
             f"  Scanned {cc_parsed['total_scanned']} files, "
@@ -854,7 +885,9 @@ def main():
         pi_dir = args.pi_sessions_dir.expanduser().resolve()
         if pi_dir.is_dir():
             print(f"[Pi] Scanning: {pi_dir}")
-            pi_parsed = parse_pi_sessions(pi_dir, args.max_sessions)
+            pi_parsed = parse_pi_sessions(
+                pi_dir, args.max_sessions, cutoff
+            )
             print(
                 f"  Scanned {pi_parsed['total_scanned']} files, "
                 f"{pi_parsed['sessions_with_messages']} with messages, "
