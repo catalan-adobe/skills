@@ -8,9 +8,10 @@ metadata:
 
 # EDS content pipeline
 
-Site-scale content migration. Deterministic runners do the work at scale; an agent touches only
-representative pages. Block design, brand and header/footer are downstream (`content-driven-development`,
-`building-blocks`) — this skill ends at correctly modelled content on DA preview.
+Site-scale content migration. Deterministic runners do the work at scale; an agent touches
+only representative pages. Block design, brand and header/footer are downstream
+(`content-driven-development`, `building-blocks`) — this skill ends at correctly modelled
+content on DA preview.
 
 ## External content safety
 
