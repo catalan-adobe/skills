@@ -187,6 +187,16 @@ test('feedback add/list/set round-trips', async () => {
   assert.equal(after[0].scope, 'template:pdp');
 });
 
+test('setFeedback throws when the id does not exist', async () => {
+  const paths = await tmpPaths();
+  await assert.rejects(
+    () => import('./state.mjs').then(
+      ({ setFeedback }) => setFeedback('nope', { status: 'applied' }, paths)
+    ),
+    /feedback item nope not found/
+  );
+});
+
 test('check-evidence treats a malformed selector as unresolved instead of throwing',
   async () => {
     const paths = await tmpPaths();
