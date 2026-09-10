@@ -52,3 +52,36 @@ export function assertRecord(name, record) {
     }
   }
 }
+
+/**
+ * Validates a `blocks.json` content model record (spec § 8).
+ *
+ * @param {object} b The block record to validate.
+ * @throws {Error} Naming the violation.
+ */
+export function assertBlock(b) {
+  const fail = (m) => {
+    throw new Error(`blocks.json record "${b?.name ?? '?'}": ${m}`);
+  };
+  if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(b?.name ?? '')) {
+    fail('name must be kebab-case');
+  }
+  if (!['scaffold', 'implemented'].includes(b.status)) {
+    fail('status must be scaffold | implemented');
+  }
+  if (!['fixed', 'repeat'].includes(b.model?.rows)) {
+    fail('model.rows must be fixed | repeat');
+  }
+  if (!Array.isArray(b.model.columns) || !b.model.columns.length) {
+    fail('model.columns must be non-empty');
+  }
+  if (typeof b.model.header !== 'boolean') {
+    fail('model.header must be boolean');
+  }
+  if (!b.templates || typeof b.templates !== 'object') {
+    fail('templates must be an object');
+  }
+  if (!Array.isArray(b.evidence)) {
+    fail('evidence must be an array');
+  }
+}
