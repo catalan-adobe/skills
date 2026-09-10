@@ -29,7 +29,7 @@ const USAGE = 'Usage: bulk.mjs --template <t> (--dry-run | --run) [--limit n] [-
 /** One failed pipeline step for a single URL; `stage` names the step that failed. */
 export class BulkStepError extends Error {
   /**
-   * @param {string} stage One of fetch, transform, validate, upload, preview.
+   * @param {string} stage One of fetch, capture, transform, validate, upload, preview.
    * @param {string} message What failed.
    */
   constructor(stage, message) {
@@ -201,7 +201,7 @@ async function publishDocument(ctx, doc) {
 
 async function processUrl(ctx, record) {
   const html = await fetchSource(ctx, record.url);
-  await captureSource(ctx, record.url, html).catch(rethrow('fetch'));
+  await captureSource(ctx, record.url, html).catch(rethrow('capture'));
   const hash = contentHash(html, ctx.params.sourceRoot);
   if (isUpToDate(ctx, record, hash)) {
     return {

@@ -189,12 +189,17 @@ test('the urls shape accepts every status bulk writes', () => {
 
 test('classifyFailure masks volatile detail and maps stages to statuses', () => {
   assert.equal(classifyFailure('transform', 'cannot map the hero').status, 'long-tail');
-  assert.equal(classifyFailure('media', 'XML_PARSE_HUGE').status, 'failed', 'media is not LLM');
+  assert.equal(
+    classifyFailure('media', 'XML_PARSE_HUGE').status,
+    'failed',
+    'media is not LLM'
+  );
   assert.equal(classifyFailure('validate', 'media: bad img').status, 'long-tail');
   const fetchFail = classifyFailure('fetch', `GET ${urlFor('a')} -> 503`);
   assert.equal(fetchFail.status, 'failed');
   assert.equal(fetchFail.class, 'fetch: GET <url> -> N');
   assert.equal(fetchFail.message, `GET ${urlFor('a')} -> 503`);
+  assert.equal(classifyFailure('capture', 'EACCES write').status, 'failed');
   assert.equal(classifyFailure('upload', 'PUT -> 500').status, 'failed');
 });
 
