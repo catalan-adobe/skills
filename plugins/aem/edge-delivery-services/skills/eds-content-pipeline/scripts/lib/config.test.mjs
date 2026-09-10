@@ -50,23 +50,20 @@ test('rejects a configuration with missing keys and names them', async () => {
   );
 });
 
-const validBase = {
-  origin: 'https://x.test',
-  sitemapIndex: 'https://x.test/sitemap.xml',
+const base = {
+  origin: 'https://www.example.com',
+  sitemapIndex: 'https://www.example.com/sitemap.xml',
   exclusions: {},
   overlaySelectors: [],
-  viewports: {},
-  concurrency: {},
-  rateLimit: {},
+  viewports: [1440],
+  concurrency: { fetch: 2 },
+  rateLimit: { perSecond: 2 },
   thresholds: {},
   bundles: { pageTree: 'x.js' },
   templateSeeds: {},
   da: {
-    org: 'o',
-    site: 's',
-    ref: 'r',
-    adminHost: 'https://admin.hlx.page',
-    sourceHost: 'https://admin.da.live',
+    org: 'o', site: 's', ref: 'main',
+    adminHost: 'a', sourceHost: 'b',
   },
   templates: {
     'case-study': {
@@ -77,10 +74,21 @@ const validBase = {
   },
 };
 
+
+
 test('da field is present and validated in config', async () => {
-  const file = await tmpConfig(validBase);
-  const cfg = await loadConfig(file);
-  assert.ok(cfg.da, 'da object must be present in site.config.json');
+  const cfg = await loadConfig(
+    await tmpConfig({
+      ...base,
+      da: {
+        org: 'o', site: 's', ref: 'r',
+        adminHost: 'https://admin.hlx.page',
+        sourceHost: 'https://admin.da.live',
+      },
+    }),
+  );
+  assert.ok(cfg.da,
+    'da object must be present in site.config.json');
   assert.equal(cfg.da.org, 'o');
   assert.equal(cfg.da.site, 's');
   assert.equal(cfg.da.ref, 'r');
@@ -90,9 +98,10 @@ test('da field is present and validated in config', async () => {
 
 test('rejects config when da.sourceHost is missing', async () => {
   const file = await tmpConfig({
-    ...validBase,
+    ...base,
     da: {
-      org: 'o', site: 's', ref: 'r', adminHost: 'https://admin.hlx.page',
+      org: 'o', site: 's', ref: 'r',
+      adminHost: 'https://admin.hlx.page',
     },
   });
   await assert.rejects(() => loadConfig(file), /da missing: sourceHost/);
@@ -181,7 +190,7 @@ test('templates.page matches multiple path patterns correctly', async () => {
 
 test('rejects config when a template entry is missing required fields', async () => {
   const file = await tmpConfig({
-    ...validBase,
+    ...base,
     templates: { 'case-study': { sourceRoot: '#contentCntr' } },
   });
   await assert.rejects(
@@ -192,7 +201,7 @@ test('rejects config when a template entry is missing required fields', async ()
 
 test('rejects config when a template entry has a non-boolean needsBrowser', async () => {
   const file = await tmpConfig({
-    ...validBase,
+    ...base,
     templates: {
       'case-study': {
         sourceRoot: '#contentCntr',
@@ -209,7 +218,7 @@ test('rejects config when a template entry has a non-boolean needsBrowser', asyn
 
 test('rejects config when thresholds.scorecard is not an object', async () => {
   const file = await tmpConfig({
-    ...validBase,
+    ...base,
     thresholds: { scorecard: ['nope'] },
   });
   await assert.rejects(
@@ -229,7 +238,7 @@ test('scorecard.gateLayers and gateLayersNote are optional', async () => {
 
 test('rejects thresholds.scorecard.gateLayers with an unknown layer', async () => {
   const file = await tmpConfig({
-    ...validBase,
+    ...base,
     thresholds: { scorecard: { gateLayers: ['L1', 'L4'] } },
   });
   await assert.rejects(
@@ -240,7 +249,7 @@ test('rejects thresholds.scorecard.gateLayers with an unknown layer', async () =
 
 test('rejects thresholds.scorecard.gateLayers when empty/not array', async () => {
   const file = await tmpConfig({
-    ...validBase,
+    ...base,
     thresholds: { scorecard: { gateLayers: [] } },
   });
   await assert.rejects(
@@ -248,7 +257,7 @@ test('rejects thresholds.scorecard.gateLayers when empty/not array', async () =>
     /thresholds\.scorecard\.gateLayers must be a non-empty array/,
   );
   const file2 = await tmpConfig({
-    ...validBase,
+    ...base,
     thresholds: { scorecard: { gateLayers: 'L3' } },
   });
   await assert.rejects(
@@ -259,7 +268,7 @@ test('rejects thresholds.scorecard.gateLayers when empty/not array', async () =>
 
 test('rejects thresholds.scorecard.gateLayersNote when it is not a string', async () => {
   const file = await tmpConfig({
-    ...validBase,
+    ...base,
     thresholds: { scorecard: { gateLayers: ['L3'], gateLayersNote: 42 } },
   });
   await assert.rejects(
@@ -291,7 +300,7 @@ test('scorecard.accept entries have required fields', async () => {
 });
 
 const accepting = (accept) => ({
-  ...validBase,
+  ...base,
   thresholds: { scorecard: { accept } },
 });
 
@@ -345,23 +354,7 @@ test('accepts an accept entry naming neither viewports nor templates', async () 
   assert.equal(cfg.thresholds.scorecard.accept.length, 1);
 });
 
-const base = {
-  origin: 'https://www.example.com',
-  sitemapIndex: 'https://www.example.com/sitemap.xml',
-  exclusions: {},
-  overlaySelectors: [],
-  viewports: [1440],
-  concurrency: { fetch: 2 },
-  rateLimit: { perSecond: 2 },
-  thresholds: {},
-  bundles: { pageTree: 'x.js' },
-  templateSeeds: {},
-  da: {
-    org: 'o', site: 's', ref: 'main',
-    adminHost: 'a', sourceHost: 'b',
-  },
-  templates: {},
-};
+
 
 test('brand is no longer required and thresholds get defaults', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'ecp-config-'));
@@ -398,3 +391,18 @@ test('originAliasHosts strips scheme and www', () => {
     ['example.com', 'example.com', 'shop.example.com'],
   );
 });
+
+test('partial fidelity override keeps other fidelity defaults',
+  async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(),
+      'ecp-config-'));
+    const file = path.join(dir, 'site.config.json');
+    await writeFile(file, JSON.stringify({
+      ...base,
+      thresholds: { fidelity: { recall: 0.95 } },
+    }));
+    const config = await loadConfig(file);
+    assert.deepEqual(config.thresholds.fidelity,
+      { recall: 0.95, precision: 0.95 });
+    assert.equal(config.thresholds.coverage, 0.95);
+  });

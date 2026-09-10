@@ -58,11 +58,19 @@ const THRESHOLD_DEFAULTS = {
  * @returns {object} Config with defaults applied.
  */
 function withDefaults(config) {
+  const userThresholds = config.thresholds ?? {};
   return {
     ...config,
     include: config.include ?? [],
     originAliases: config.originAliases ?? [config.origin],
-    thresholds: { ...THRESHOLD_DEFAULTS, ...config.thresholds },
+    thresholds: {
+      ...THRESHOLD_DEFAULTS,
+      ...userThresholds,
+      fidelity: {
+        ...THRESHOLD_DEFAULTS.fidelity,
+        ...userThresholds.fidelity,
+      },
+    },
   };
 }
 
