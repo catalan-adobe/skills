@@ -13,6 +13,9 @@ const SRC = '<main><h1>Alpha Grinder</h1><p class="price">€ 89</p><nav>Home �
   + '<a href="/about.html">About us</a></main>';
 const OUT = '<main><div><h1>Alpha Grinder</h1><p>€ 89</p><img src="/img/alpha.jpg"></div>'
   + '<div><div class="specifications"><div><div>Weight</div><div>1.2 kg</div></div></div>'
+  + '<div class="section-metadata"><div><div>Style</div><div>dark</div></div></div>'
+  + '<div class="metadata"><div><div>title</div><div>Alpha Grinder | Shop</div></div>'
+  + '<div><div>image</div><div><img src="/og/alpha-social.jpg"></div></div></div>'
   + '</div></main>';
 
 test('contentSet tokenises text at element boundaries plus images and links', () => {
@@ -22,12 +25,17 @@ test('contentSet tokenises text at element boundaries plus images and links', ()
   assert.ok(!s.has('›'));
 });
 
+test('contentSet drops elements the template declares not migrated', () => {
+  const s = contentSet(SRC, 'main', ['nav']);
+  assert.ok(!s.has('home › alpha') && s.has('alpha grinder'));
+});
+
 test('compare reports recall/precision and the diffs', () => {
   const r = compare(contentSet(SRC, 'main'), contentSet(OUT, 'main'));
   assert.ok(r.recall > 0.6 && r.recall < 1);
   assert.equal(r.precision, 1);
   assert.ok(r.missing.includes('about us'));
-  assert.deepEqual(r.invented, []);
+  assert.deepEqual(r.invented, [], 'metadata and section-metadata rows are not content');
 });
 
 test('checkBlockShape validates column counts against the model', () => {
@@ -41,6 +49,16 @@ test('checkBlockShape validates column counts against the model', () => {
     { name: 'specifications', ok: true, reason: '' },
   );
   assert.equal(res.find((b) => b.name === 'ghost').ok, false);
+});
+
+test('checkBlockShape with a template checks only that template\'s blocks', () => {
+  const blocks = [
+    { name: 'specifications', model: { columns: [{}, {}] }, templates: { product: 1 } },
+    { name: 'ghost', model: { columns: [{}] }, templates: { article: 1 } },
+  ];
+  const res = checkBlockShape(OUT, blocks, { template: 'product' });
+  assert.deepEqual(res.map((b) => b.name), ['specifications']);
+  assert.equal(res[0].ok, true);
 });
 
 test('CLI with no arguments exits 1 and shows usage', async () => {

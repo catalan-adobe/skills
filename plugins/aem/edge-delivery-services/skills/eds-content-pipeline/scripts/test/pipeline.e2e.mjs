@@ -211,11 +211,14 @@ test(
         srcPath,
         outPath,
         '--source-root', '#maincontent',
+        // analysis.md "Not migrated": the breadcrumb trail is navigation, not content.
+        '--ignore', 'nav.breadcrumbs',
         '--blocks',
         path.join(repo, 'migration/data/blocks.json'),
-        '--min-recall', '0.75',
-        '--min-precision', '0.75',
+        '--template', 'product',
       );
+      assert.equal(fid.recall, 1, `every source token survived: ${JSON.stringify(fid)}`);
+      assert.equal(fid.precision, 1, `nothing invented: ${JSON.stringify(fid)}`);
       assert.equal(
         fid.pass,
         true,

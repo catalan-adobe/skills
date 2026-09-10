@@ -4,7 +4,11 @@ import { JSDOM } from 'jsdom';
 import { flag } from './args.mjs';
 
 const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG']);
+// Blocks the harness adds from the page head; their rows are not page content and would count
+// as invented tokens in the output.
+const HARNESS_BLOCKS = new Set(['metadata', 'section-metadata']);
 const normalise = (t) => t.replace(/\s+/g, ' ').trim().toLowerCase();
+const isHarnessBlock = (el) => [...el.classList].some((c) => HARNESS_BLOCKS.has(c));
 
 /**
  * Content tokens of a document: each element's own text (not descendants),
@@ -12,14 +16,17 @@ const normalise = (t) => t.replace(/\s+/g, ' ').trim().toLowerCase();
  * tokenisation artefacts.
  * @param {string} html - HTML document to tokenise
  * @param {string} rootSelector - CSS selector for root element (default 'main')
+ * @param {string[]} [ignore] - Selectors of elements the template declares "not migrated";
+ *   removed before tokenising so a deliberate omission does not count as lost content
  * @returns {Set<string>} Set of normalised tokens
  */
-export function contentSet(html, rootSelector = 'main') {
+export function contentSet(html, rootSelector = 'main', ignore = []) {
   const { document } = new JSDOM(html).window;
   const root = document.querySelector(rootSelector) ?? document.body;
+  for (const sel of ignore) root.querySelectorAll(sel).forEach((el) => el.remove());
   const set = new Set();
   const walk = (el) => {
-    if (SKIP.has(el.tagName)) return;
+    if (SKIP.has(el.tagName) || isHarnessBlock(el)) return;
     const own = [...el.childNodes]
       .filter((n) => n.nodeType === 3)
       .map((n) => n.textContent)
@@ -60,14 +67,20 @@ export function compare(sourceSet, outSet) {
 /**
  * Validate each block table's column count against its model declaration.
  * Block tables: `<div class="<name>"><div>row…</div></div>` where columns are
- * direct children of row divs.
+ * direct children of row divs. With `template`, only the blocks whose
+ * `templates` include it are checked — a page carries its template's blocks,
+ * not every block of the site.
  * @param {string} outHtml - Output HTML
- * @param {Array} blocks - Block model array with name, model.columns
+ * @param {Array} blocks - Block records with name, model.columns, templates
+ * @param {{template?: string}} [options] - Restrict to one template's blocks
  * @returns {Array} Array of {name, ok, reason} objects
  */
-export function checkBlockShape(outHtml, blocks) {
+export function checkBlockShape(outHtml, blocks, { template } = {}) {
   const { document } = new JSDOM(outHtml).window;
-  return blocks.map(({ name, model }) => {
+  const scoped = template
+    ? blocks.filter((b) => b.templates && template in b.templates)
+    : blocks;
+  return scoped.map(({ name, model }) => {
     const el = document.querySelector(`main .${name}`);
     if (!el) {
       return { name, ok: false, reason: 'block not present in output' };
@@ -109,13 +122,15 @@ async function main(argv) {
   if (!source || !out) {
     throw new Error(
       'Usage: fidelity.mjs <source.html> <out.html> ' +
-        '[--source-root sel] [--checklist f] [--blocks f] ' +
-        '[--min-recall 0.9] [--min-precision 0.95]'
+        '[--source-root sel] [--ignore sel]... [--checklist f] [--blocks f] ' +
+        '[--template t] [--min-recall 0.9] [--min-precision 0.95]'
     );
   }
+  const ignore = argv.flatMap((a, i) => (a === '--ignore' ? [argv[i + 1]] : []));
   const srcSet = contentSet(
     await readFile(source, 'utf8'),
-    flag(argv, '--source-root', 'main')
+    flag(argv, '--source-root', 'main'),
+    ignore,
   );
   const outHtml = await readFile(out, 'utf8');
   const outSet = contentSet(outHtml, 'main');
@@ -129,7 +144,9 @@ async function main(argv) {
     : [];
   const blocksFile = flag(argv, '--blocks');
   const blocks = blocksFile
-    ? checkBlockShape(outHtml, JSON.parse(await readFile(blocksFile, 'utf8')))
+    ? checkBlockShape(outHtml, JSON.parse(await readFile(blocksFile, 'utf8')), {
+      template: flag(argv, '--template'),
+    })
     : [];
   const list = checklist(items, outSet);
   const minRecall = Number(flag(argv, '--min-recall', 0.9));
