@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { checkPreconditions, writeProject } from './init.mjs';
@@ -104,10 +105,11 @@ test(
 );
 
 test('CLI usage error exits 1', async () => {
+  const initScript = fileURLToPath(
+    new URL('./init.mjs', import.meta.url)
+  );
   try {
-    await execFileP('node', [
-      'lib/init.mjs',
-    ]);
+    await execFileP('node', [initScript]);
     assert.fail('should have exited non-zero');
   } catch (e) {
     assert.equal(e.code, 1);
@@ -117,10 +119,8 @@ test('CLI usage error exits 1', async () => {
 
 test('CLI with --skip-checks scaffolds temp EDS repo', async () => {
   const repo = await edsRepo();
-  const initScript = path.join(
-    process.cwd(),
-    'lib',
-    'init.mjs',
+  const initScript = fileURLToPath(
+    new URL('./init.mjs', import.meta.url)
   );
   const result = await execFileP(
     'node',
