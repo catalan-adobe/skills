@@ -119,7 +119,6 @@ function siteConfig() {
     origin: ORIGIN,
     sitemapIndex: `${ORIGIN}/sitemap.xml`,
     exclusions: {},
-    overlaySelectors: [],
     viewports: [1440],
     concurrency: { fetch: 2, browser: 2, da: 2 },
     rateLimit: { requestsPerSecond: 2 },

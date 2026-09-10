@@ -21,14 +21,12 @@ const USAGE = 'Usage: transform.mjs <url|file.html> --template <t> [--url <sourc
 const warn = (code, message) => ({ code, message });
 const titleCase = (key) => key.replace(/(^|-)([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
 
-
-
 /**
  * Loads a template transformer and asserts the transformer contract.
  *
  * @param {string} template Template name, e.g. `case-study`.
  * @param {object} [options]
- * @param {string} [options.dir] Transformer directory; defaults to `site/transformers`.
+ * @param {string} [options.dir] Transformer directory; defaults to `<project>/transformers`.
  * @returns {Promise<{template: string, file: string, match: Function, transformDOM: Function,
  *   generateDocumentPath: Function, needsBrowser: boolean, version: string}>} The transformer.
  * @throws {Error} When the module is missing or does not export the contract.
@@ -38,7 +36,7 @@ export async function loadTransformer(template, { dir } = {}) {
   const file = path.join(base, `${template}.mjs`);
   const module = await import(pathToFileURL(file).href).catch((err) => {
     throw new Error(`No transformer for template "${template}" at ${file} (${err.message}); `
-      + 'write it in the template stage Transformer phase');
+      + 'author it there (see references/transformer-contract.md)');
   });
   const missing = CONTRACT.filter((name) => typeof module[name] !== 'function');
   if (missing.length) {
@@ -92,9 +90,7 @@ function metadataRows(document, metadata) {
   });
 }
 
-function appendMetadataBlock(
-  document, sections, metadata, warnings, importer,
-) {
+function appendMetadataBlock(document, sections, metadata, warnings) {
   const filled = { title: '', description: '', ...metadata };
   for (const key of ['title', 'description']) {
     if (!filled[key]) warnings.push(warn('metadata', `source has no page ${key}`));
@@ -106,7 +102,7 @@ function appendMetadataBlock(
   sections[sections.length - 1].append(block);
 }
 
-function sectionMetadata(document, section, importer) {
+function sectionMetadata(document, section) {
   const rows = [...section.attributes]
     .filter((attr) => attr.name.startsWith('data-section-'))
     .map((attr) => [titleCase(attr.name.slice('data-section-'.length)), attr.value]);
@@ -189,7 +185,7 @@ function sanitizeSection(section, ctx) {
   stripAttributes(section, false);
 }
 
-function prepareSections(document, root, ctx, importer) {
+function prepareSections(document, root, ctx) {
   const children = [...root.children];
   let sections = children;
   if (!children.length || children.some((el) => el.tagName !== 'DIV')) {
@@ -200,7 +196,7 @@ function prepareSections(document, root, ctx, importer) {
     sections = [section];
   }
   for (const section of sections) {
-    sectionMetadata(document, section, importer);
+    sectionMetadata(document, section);
     sanitizeSection(section, ctx);
   }
   return sections;
@@ -246,8 +242,8 @@ function rootElement(result, transformer) {
  * @param {string} options.url Source page URL (jsdom base URL).
  * @param {object} options.transformer Result of {@link loadTransformer}.
  * @param {object} [options.params] Transformer parameters; `sourceRoot` drives the hash.
- * @param {string[]} [options.hosts] Hosts that count as the source site (see
- *   {@link originAliasHosts}); read from `site.config.json` when omitted.
+ * @param {string[]} options.hosts Hosts that count as the source site
+ *   (`originAliasHosts(config)`); required, so no runner reads config behind a caller's back.
  * @returns {Promise<{path: string, html: string, metadata: object, hash: string,
  *   warnings: object[]}>} The DA document and its provenance.
  * @throws {Error} When `match` is false or `transformDOM` returns no element.
@@ -271,12 +267,8 @@ export async function transformHtml({
   });
   const warnings = [...(result?.warnings ?? [])];
   const ctx = { hosts, warnings };
-  const sections = prepareSections(
-    document, rootElement(result, transformer), ctx, importer,
-  );
-  appendMetadataBlock(
-    document, sections, { ...metadata, ...(result?.metadata ?? {}) }, warnings, importer,
-  );
+  const sections = prepareSections(document, rootElement(result, transformer), ctx);
+  appendMetadataBlock(document, sections, { ...metadata, ...(result?.metadata ?? {}) }, warnings);
   const docPath = FileUtils.sanitizePath(
     transformer.generateDocumentPath({ document, url }),
   );

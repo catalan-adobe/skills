@@ -97,7 +97,6 @@ function defaultConfig({
     sitemapIndex: sitemap,
     include,
     exclusions: { queryStrings: true, pathPatterns: [] },
-    overlaySelectors: [],
     viewports: { desktop: [1440, 900] },
     concurrency: { fetch: 2, browser: 1, da: 2 },
     rateLimit: { requestsPerSecond: 2 },

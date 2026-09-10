@@ -3,7 +3,6 @@
   "sitemapIndex": "http://127.0.0.1:0/sitemap.xml",
   "exclusions": { "queryStrings": true, "pathPatterns": [] },
   "include": [],
-  "overlaySelectors": [],
   "viewports": { "desktop": [1440, 900] },
   "concurrency": { "fetch": 2, "browser": 1, "da": 2 },
   "rateLimit": { "requestsPerSecond": 5 },

@@ -274,7 +274,6 @@ test('the CLI refuses to publish and rejects unknown commands', async () => {
     origin: 'https://www.example.com',
     sitemapIndex: 'https://www.example.com/sitemap.xml',
     exclusions: {},
-    overlaySelectors: [],
     viewports: [1440],
     concurrency: { fetch: 2, browser: 2, da: 2 },
     rateLimit: { requestsPerSecond: 2 },

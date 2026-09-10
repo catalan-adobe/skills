@@ -26,9 +26,8 @@ implementation. */
 export default function decorate(block) {
   const columns = ${JSON.stringify(cols)};
   [...block.children].forEach((row, r) => {
-    row.classList.add('${name}-row');
-    if (${model.header} && r === 0) \
-row.classList.add('${name}-header');
+    row.classList.add('${name}-row');${model.header ? `
+    if (r === 0) row.classList.add('${name}-header');` : ''}
     [...row.children].forEach((cell, c) => \
 cell.classList.add(\`${name}-\${columns[c] ?? 'cell'}\`));
   });
@@ -42,8 +41,8 @@ tokens. */
   gap: 0.5rem 1rem;
   padding: 0.5rem 0;
   border-bottom: 1px solid currentcolor;
-}
-.${name}-header { font-weight: 700; }
+}${model.header ? `
+.${name}-header { font-weight: 700; }` : ''}
 `;
   return { js, css };
 }

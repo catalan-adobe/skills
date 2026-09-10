@@ -199,7 +199,7 @@ export async function collectOrchestrator({
 
 /**
  * Turns an artifact or evidence reference into an href usable from the report location
- * (`tools/migration/data/retros/`). URLs are returned unchanged.
+ * (`data/retros/`). URLs are returned unchanged.
  *
  * @param {string} pathOrUrl Repo-relative path, absolute repo path or URL.
  * @returns {string} The href.

@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolvePaths } from './paths.mjs';
 import { listRecords, upsertRecords } from './state.mjs';
-import { runCluster, slugify, treeBootstrap, treeFromPoll }
+import { runCluster, treeBootstrap, treeFromPoll }
   from './cluster.mjs';
 
 const execFileP = promisify(execFile);
@@ -17,7 +17,6 @@ const clusterCli = fileURLToPath(new URL('./cluster.mjs', import.meta.url));
 function makeConfig(repoRoot = process.cwd()) {
   return {
     origin: 'https://example.com',
-    overlaySelectors: ['#cookie'],
     concurrency: { browser: 2 },
     thresholds: {
       clusterSimilarity: 0.8,
@@ -202,17 +201,6 @@ test('representative screenshots are captured once and skipped when already on d
     config: testConfig, paths, browserFactory: fakeBrowserFactory(log)
   });
   assert.equal(log.slice(before).filter(([cmd]) => cmd === 'shot').length, 0);
-});
-
-test('slugify converts URL pathnames to filesystem-safe slugs', () => {
-  assert.equal(slugify('https://x.test/blog/my-post/'), 'blog-my-post');
-  assert.equal(slugify('https://x.test/'), 'index');
-  assert.equal(slugify('https://x.test/path/to/page'), 'path-to-page');
-  assert.equal(slugify('https://x.test/a'), 'a');
-  assert.throws(
-    () => slugify('not-a-url'),
-    /Cannot derive a screenshot name from invalid URL/,
-  );
 });
 
 test('runCluster throws when page-tree bundle file is missing', async () => {

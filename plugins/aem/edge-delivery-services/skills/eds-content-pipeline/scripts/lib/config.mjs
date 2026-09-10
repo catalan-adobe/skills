@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolvePaths } from './paths.mjs';
 
 const REQUIRED = [
-  'origin', 'sitemapIndex', 'exclusions', 'overlaySelectors', 'viewports',
+  'origin', 'sitemapIndex', 'exclusions', 'viewports',
   'concurrency', 'rateLimit', 'thresholds', 'bundles', 'templateSeeds', 'da',
   'templates',
 ];
@@ -243,7 +243,7 @@ function assertThresholds(thresholds, configPath) {
 /**
  * Loads and validates the project configuration.
  *
- * @param {string} [configPath] Defaults to `tools/migration/site/site.config.json`.
+ * @param {string} [configPath] Defaults to `<project>/site.config.json`.
  * @returns {Promise<object>} The parsed configuration.
  * @throws {Error} When the file is unreadable or required keys are missing.
  */

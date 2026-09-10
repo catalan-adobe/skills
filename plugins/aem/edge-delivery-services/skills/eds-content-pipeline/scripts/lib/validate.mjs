@@ -609,7 +609,7 @@ export const RULES = [
 ];
 
 /**
- * Loads project rules from `tools/migration/site/rules/*.mjs`.
+ * Loads project rules from `<project>/rules/*.mjs`.
  *
  * Each module exports `check(doc) → issues[]`; the file name is the rule name.
  *

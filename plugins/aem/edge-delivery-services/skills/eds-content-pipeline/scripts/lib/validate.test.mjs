@@ -431,7 +431,6 @@ test('CLI with no arguments exits 1 and shows usage', async () => {
     origin: 'https://example.com',
     sitemapIndex: 'https://example.com/sitemap.xml',
     exclusions: {},
-    overlaySelectors: [],
     viewports: [1440],
     concurrency: { fetch: 2, browser: 2, da: 2 },
     rateLimit: { requestsPerSecond: 2 },

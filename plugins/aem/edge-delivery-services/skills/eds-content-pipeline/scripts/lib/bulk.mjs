@@ -355,7 +355,7 @@ function listLines(items, render) {
  * Renders the operator-facing dry-run report.
  *
  * @param {object} report Report from {@link buildReport}.
- * @returns {string} Markdown for `docs/migration/reports/bulk-<template>-dryrun.md`.
+ * @returns {string} Markdown for `<project>/reports/bulk-<template>-dryrun.md`.
  */
 export function renderDryRunReport(report) {
   const failureRows = listLines(

@@ -222,3 +222,9 @@ test(
     );
   },
 );
+
+test('renderStub without a header row emits no header branch or rule', () => {
+  const { js, css } = renderStub(block);
+  assert.ok(!js.includes('-header'), 'no dead header branch in the stub');
+  assert.ok(!css.includes('-header'), 'no unused header rule');
+});

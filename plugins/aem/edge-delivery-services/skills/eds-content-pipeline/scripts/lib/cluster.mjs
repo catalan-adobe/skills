@@ -149,23 +149,6 @@ async function runWorkers({
   return tally;
 }
 
-/**
- * Converts a URL pathname to a filesystem-safe slug; used as screenshot filenames.
- *
- * @param {string} url A valid absolute URL.
- * @returns {string} Lowercase hyphen-separated slug, or `'index'` for root paths.
- * @throws {Error} When `url` is not a valid URL.
- */
-export function slugify(url) {
-  let pathname;
-  try {
-    ({ pathname } = new URL(url));
-  } catch {
-    throw new Error(`Cannot derive a screenshot name from invalid URL "${url}"`);
-  }
-  const slug = pathname.replace(/^\/|\/$/g, '').replace(/[^a-z0-9]+/gi, '-');
-  return slug.toLowerCase() || 'index';
-}
 
 /**
  * Groups fingerprinted URLs into templates, names them from the sitemap seeds and picks
@@ -211,7 +194,7 @@ const SHOT_SETTLE_TIMEOUT_MS = 10000;
 async function missingShots(templates, dir) {
   const urls = templates.flatMap((t) => t.representatives);
   const checks = await Promise.all(urls.map(async (url) => {
-    const file = path.join(dir, `${slugify(url)}.jpg`);
+    const file = path.join(dir, `${captureSlug(url)}.jpg`);
     const exists = await stat(file).then(() => true, () => false);
     return exists ? null : { url, file };
   }));

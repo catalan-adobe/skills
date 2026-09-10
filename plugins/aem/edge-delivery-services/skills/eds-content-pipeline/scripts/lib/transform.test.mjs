@@ -75,7 +75,7 @@ test('loadTransformer asserts the contract and reports missing modules', async (
   );
   await assert.rejects(
     () => loadTransformer('missing', { dir }),
-    /No transformer for template "missing" at .*missing\.mjs .*; write it in the template stage/,
+    /No transformer for template "missing" at .*missing\.mjs .*; author it there/,
   );
 });
 
