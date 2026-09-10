@@ -4,9 +4,9 @@
   "exclusions": { "queryStrings": true, "pathPatterns": [] },
   "include": [],
   "overlaySelectors": [],
-  "viewports": [1440],
-  "concurrency": { "fetch": 2, "browser": 1 },
-  "rateLimit": { "perSecond": 5 },
+  "viewports": { "desktop": [1440, 900] },
+  "concurrency": { "fetch": 2, "browser": 1, "da": 2 },
+  "rateLimit": { "requestsPerSecond": 5 },
   "thresholds": { "minClusterSize": 2 },
   "bundles": {
     "pageTree":

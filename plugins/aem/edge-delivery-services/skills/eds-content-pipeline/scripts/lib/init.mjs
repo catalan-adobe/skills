@@ -79,7 +79,7 @@ function defaultConfig({
     include,
     exclusions: { queryStrings: true, pathPatterns: [] },
     overlaySelectors: [],
-    viewports: [1440],
+    viewports: { desktop: [1440, 900] },
     concurrency: { fetch: 2, browser: 1, da: 2 },
     rateLimit: { requestsPerSecond: 2 },
     thresholds: {

@@ -1,4 +1,23 @@
-import { Blocks } from '#lib/importer.mjs';
+// Transformers can use Blocks from the skill's importer.mjs via relative path to
+// ../../../lib when needed. For now, this fixture uses native DOM APIs only.
+const Blocks = {
+  createBlock(doc, { name, cells }) {
+    const div = doc.createElement('div');
+    div.className = name;
+    for (const [key, val] of cells) {
+      const row = doc.createElement('div');
+      row.className = `${name}-row`;
+      const th = doc.createElement('div');
+      th.textContent = key;
+      const td = doc.createElement('div');
+      if (typeof val === 'string') td.textContent = val;
+      else td.append(val);
+      row.append(th, td);
+      div.append(row);
+    }
+    return div;
+  },
+};
 
 export const version = '1.0.0';
 export const needsBrowser = false;

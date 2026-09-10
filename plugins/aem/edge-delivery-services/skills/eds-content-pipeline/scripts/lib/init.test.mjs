@@ -95,6 +95,11 @@ test(
       path.join(repo, 'migration', 'site.config.json'),
     );
     assert.equal(config.thresholds.newTemplateMin, 5);
+    assert.deepEqual(
+      config.viewports,
+      { desktop: [1440, 900] },
+      'viewports should have desktop key with [width, height]',
+    );
   },
 );
 
