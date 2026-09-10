@@ -255,6 +255,9 @@ function rootElement(result, transformer) {
 export async function transformHtml({
   html, url, transformer, params = {}, hosts,
 }) {
+  if (!hosts) {
+    throw new Error('transformHtml needs hosts (originAliasHosts(config))');
+  }
   const { document } = new JSDOM(html, { url }).window;
   if (!transformer.match(url, document)) {
     throw new Error(`Transformer "${transformer.template}" does not match ${url}; the URL is `
@@ -267,7 +270,7 @@ export async function transformHtml({
     document, url, html, params, importer,
   });
   const warnings = [...(result?.warnings ?? [])];
-  const ctx = { hosts: hosts ?? originAliasHosts(await loadConfig()), warnings };
+  const ctx = { hosts, warnings };
   const sections = prepareSections(
     document, rootElement(result, transformer), ctx, importer,
   );

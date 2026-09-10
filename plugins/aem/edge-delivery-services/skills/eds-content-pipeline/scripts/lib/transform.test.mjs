@@ -198,6 +198,20 @@ test('transformHtml refuses out-of-scope URLs and bad transformDOM returns', asy
   );
 });
 
+test('transformHtml throws when hosts is undefined', async () => {
+  const dir = await fixtureDir();
+  const transformer = await loadTransformer('case-study', { dir });
+  await assert.rejects(
+    () => transformHtml({
+      html: SOURCE,
+      url: 'https://www.example.com/case-study/acme-flight-school/',
+      transformer,
+      params: { sourceRoot: '#content' },
+    }),
+    /transformHtml needs hosts \(originAliasHosts\(config\)\)/,
+  );
+});
+
 test('contentHash ignores scripts, comments and whitespace but tracks copy', () => {
   const base = contentHash(SOURCE, '#content');
   const noisy = SOURCE
