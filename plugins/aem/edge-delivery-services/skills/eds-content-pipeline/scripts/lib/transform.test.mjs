@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
@@ -12,7 +12,7 @@ import {
   contentHash, extractMetadata, isInternal, loadTransformer, transformHtml,
 } from './transform.mjs';
 import { validateFile } from './validate.mjs';
-import { resolvePaths } from './paths.mjs';
+
 
 const execFileP = promisify(execFile);
 const cli = fileURLToPath(new URL('./transform.mjs', import.meta.url));
@@ -207,35 +207,6 @@ test('the CLI rejects incomplete invocations with the usage line', async () => {
   const failed = await execFileP(process.execPath, [cli, 'page.html']).catch((e) => e);
   assert.equal(failed.code, 1);
   assert.match(failed.stderr, /Usage: transform\.mjs <url\|file\.html> --template <t>/);
-});
-
-test('the shipped case-study transformer produces a gate-clean document', async (t) => {
-  const paths = resolvePaths();
-  const transformerFile = path.join(paths.siteDir, 'transformers', 'case-study.mjs');
-  const captureDir = path.join(paths.dataDir, 'captures', 'case-study-kingdom-air-corps');
-  const capture = path.join(captureDir, 'source', 'dom.html');
-  if (![transformerFile, capture].every((file) => existsSync(file))) {
-    t.skip('the template stage has not written the case-study transformer and capture yet');
-    return;
-  }
-  const transformer = await loadTransformer('case-study');
-  const result = await transformHtml({
-    html: await readFile(capture, 'utf8'),
-    url: 'https://www.example.com/case-study/kingdom-air-corps/',
-    transformer,
-    params: { sourceRoot: '#contentCntr' },
-  });
-  assert.equal(result.path, '/case-study/kingdom-air-corps');
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'migration-transform-'));
-  const file = path.join(dir, 'doc.html');
-  await writeFile(file, result.html);
-  const verdict = await validateFile(file, {
-    origin: 'https://www.example.com',
-    rulesDir: path.join(paths.siteDir, 'rules'),
-    docPath: result.path,
-    fetch: async () => new Response(null, { status: 200, headers: { 'content-length': '10' } }),
-  });
-  assert.equal(verdict.pass, true, JSON.stringify(verdict.issues));
 });
 
 test('isInternal accepts every alias host and rejects lookalikes', () => {

@@ -368,3 +368,52 @@ test('project leakage rules override the default set', async () => {
   );
   assert.ok(defaults.leaks.some((re) => re.test('lorem ipsum')));
 });
+
+test('invalid leakage patterns throw with context', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'ecp-bad-'));
+  await mkdir(path.join(dir, 'rules'), { recursive: true });
+  await writeFile(
+    path.join(dir, 'rules', 'leakage.json'),
+    JSON.stringify({ leaks: ['[invalid(regex'], proseLeaks: [] }),
+  );
+  await assert.rejects(
+    () => loadLeakRules(resolvePaths({ MIGRATION_PROJECT_DIR: dir })),
+    /Invalid leakage pattern.*\[invalid\(regex/,
+  );
+});
+
+test(
+  'validateFile applies project leakage rules when rules dir exists',
+  async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'ecp-leak-'));
+    await mkdir(path.join(dir, 'rules'), { recursive: true });
+    await writeFile(
+      path.join(dir, 'rules', 'leakage.json'),
+      JSON.stringify({ leaks: ['\\bFORBIDDEN_TOKEN\\b'], proseLeaks: [] }),
+    );
+    const html = page('<p>The FORBIDDEN_TOKEN is here</p>');
+    const file = path.join(dir, 'test.html');
+    await writeFile(file, html);
+    const result = await validateFile(file, {
+      rulesDir: path.join(dir, 'rules'),
+    });
+    const leaks = result.issues.filter((i) => i.rule === 'leakage');
+    assert.equal(leaks.length, 1);
+    assert.ok(leaks[0].message.includes('FORBIDDEN_TOKEN'));
+  },
+);
+
+test(
+  'validateFile passes without project rules when rules dir does not exist',
+  async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'ecp-noruled-'));
+    const html = page('<p>Any text is fine</p>');
+    const file = path.join(dir, 'test.html');
+    await writeFile(file, html);
+    const result = await validateFile(file, {
+      rulesDir: path.join(dir, 'rules'),
+    });
+    const leaks = result.issues.filter((i) => i.rule === 'leakage');
+    assert.equal(leaks.length, 0);
+  },
+);

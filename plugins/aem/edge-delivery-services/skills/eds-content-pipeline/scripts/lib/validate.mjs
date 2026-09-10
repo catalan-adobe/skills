@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -16,17 +17,11 @@ const ATTR_RE = /([\w:.-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link',
   'meta', 'source', 'track', 'wbr']);
 const BLOCK_NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-const LEAKS = [/\[[a-z0-9_-]+\s[^\]]*\]/i, /lorem ipsum/i, /\bTODO\b/, /\{\{/, /\[object Object\]/,
-  /\bundefined\b/];
-// Two of the patterns also match English: knack quotes email and form templates inside its blog
-// posts ("Dear [First Name]", "[Company Name]"), titles a post "Jotform vs. Typeform
-// [2026 Guide]" and writes "undefined processes". They are copy when the source page carries the
-// same string in the same prose or heading, and scaffolding otherwise, so they are only excused
-// where the document reads as copy and the comparison can be made.
-const PROSE_LEAKS = new Set([LEAKS[0], LEAKS[5]]);
+
 const PROSE_TAGS = new Set(['p', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
 const SOURCE_DROP_RE = /<(script|style|noscript|template)\b[\s\S]*?<\/\1>/gi;
 const ENTITY_RE = /&(?:#(\d+)|#x([0-9a-f]+)|(amp|lt|gt|quot|apos|nbsp|rsquo|lsquo|ldquo|rdquo));/gi;
+
 const NAMED_ENTITIES = {
   amp: '&',
   lt: '<',
@@ -83,6 +78,29 @@ function applyToken(stack, groups) {
   if (!groups.selfClose && !VOID_TAGS.has(tag)) stack.push(node);
 }
 
+// Load default leakage rules at module initialization for synchronous validateHtml.
+const DEFAULT_LEAK_RULES = (() => {
+  const fallback = fileURLToPath(
+    new URL('./rules/leakage.default.json', import.meta.url),
+  );
+  const raw = JSON.parse(readFileSync(fallback, 'utf8'));
+  const compile = (list) => list.map((s) => {
+    try {
+      return new RegExp(s, 'i');
+    } catch (cause) {
+      throw new Error(
+        `Invalid pattern "${s}" in default rules:
+          ${cause.message}`,
+        { cause },
+      );
+    }
+  });
+  return {
+    leaks: compile(raw.leaks),
+    proseLeaks: compile(raw.proseLeaks ?? []),
+  };
+})();
+
 /**
  * Loads leakage rules from the project directory, or the default set.
  *
@@ -99,8 +117,23 @@ export async function loadLeakRules(paths = resolvePaths()) {
       () => readFile(fallback, 'utf8'),
     ),
   );
-  const compile = (list) => list.map((s) => new RegExp(s, 'i'));
-  return { leaks: compile(raw.leaks), proseLeaks: compile(raw.proseLeaks ?? []) };
+  const compile = (list) => list.map((s) => {
+    try {
+      return new RegExp(s, 'i');
+    } catch (cause) {
+      const file = project && /rules\/leakage/.test(project)
+        ? project : fallback;
+      throw new Error(
+        `Invalid leakage pattern "${s}" in ${file}:
+          ${cause.message}`,
+        { cause },
+      );
+    }
+  });
+  return {
+    leaks: compile(raw.leaks),
+    proseLeaks: compile(raw.proseLeaks ?? []),
+  };
 }
 
 /**
@@ -532,23 +565,31 @@ function proseText(root) {
     .join(' ');
 }
 
-// A match is authored copy when the document writes it as prose and the source writes the very
-// same string; anything else — a match in a block cell, a heading, or a string the source never
-// paints — stays a leak.
+// A match is authored copy when the document writes it as prose and the source writes
+// the very same string; anything else — a match in a block cell, a heading, or a
+// string the source never paints — stays a leak.
 function leakMatch(doc, re) {
-  const matches = doc.html.match(new RegExp(re.source, `${re.flags.replace('g', '')}g`)) ?? [];
-  if (!PROSE_LEAKS.has(re) || !doc.sourceText) return matches[0] ?? null;
+  const rgx = new RegExp(re.source, `${re.flags.replace('g', '')}g`);
+  const matches = doc.html.match(rgx) ?? [];
+  const isProseLeak = doc.rules.proseLeaks.some(
+    (p) => p.source === re.source,
+  );
+  if (!isProseLeak || !doc.sourceText) return matches[0] ?? null;
   const prose = proseText(doc.root);
-  const authored = (text) => doc.sourceText.includes(text) && prose.includes(text);
+  const authored = (text) => doc.sourceText.includes(text)
+    && prose.includes(text);
   return matches.find((text) => !authored(collapse(text))) ?? null;
 }
 
 function leakageCheck(doc) {
   const issues = [];
-  for (const re of LEAKS) {
+  for (const re of doc.rules.leaks) {
     const found = leakMatch(doc, re);
     if (found) {
-      issues.push(issue('leakage', `document leaks source scaffolding: "${found.slice(0, 60)}"`));
+      issues.push(issue(
+        'leakage',
+        `document leaks source scaffolding: "${found.slice(0, 60)}"`,
+      ));
     }
   }
   return issues;
@@ -622,6 +663,7 @@ export function isFragmentPath(docPath) {
 
 export function validateHtml({
   html, origin = '', docPath = '', sourceText = '', rules = RULES,
+  leakRules = DEFAULT_LEAK_RULES,
 }) {
   const doc = {
     path: docPath,
@@ -630,6 +672,7 @@ export function validateHtml({
     origin,
     sourceText,
     fragment: isFragmentPath(docPath),
+    rules: leakRules,
   };
   const issues = rules.flatMap((rule) => (rule.check(doc) ?? []).map((i) => ({
     rule: i.rule ?? rule.name,
@@ -646,11 +689,16 @@ export function validateHtml({
  * Runs every rule plus the remote media checks (over-cap SVGs) over one document.
  *
  * @param {object} options Everything {@link validateHtml} takes, plus:
- * @param {typeof fetch} [options.fetch] Fetch implementation used to measure remote SVGs.
- * @param {(url: string) => Promise<number>} [options.sizer] Reuse a sizer across documents.
- * @param {number} [options.maxSvgBytes] Cap in bytes; defaults to {@link MAX_SVG_BYTES}.
- * @param {number} [options.maxRasterBytes] Cap in bytes; defaults to {@link MAX_RASTER_BYTES}.
- * @returns {Promise<{pass: boolean, errors: number, warnings: number, issues: object[]}>} Verdict.
+ * @param {typeof fetch} [options.fetch] Fetch implementation used to measure remote
+ *   SVGs.
+ * @param {(url: string) => Promise<number>} [options.sizer] Reuse a sizer across
+ *   documents.
+ * @param {number} [options.maxSvgBytes] Cap in bytes; defaults to
+ *   {@link MAX_SVG_BYTES}.
+ * @param {number} [options.maxRasterBytes] Cap in bytes; defaults to
+ *   {@link MAX_RASTER_BYTES}.
+ * @returns {Promise<{pass: boolean, errors: number, warnings: number,
+ *   issues: object[]}>} Verdict.
  */
 export async function validateHtmlAsync(options) {
   const {
@@ -658,7 +706,8 @@ export async function validateHtmlAsync(options) {
     maxRasterBytes = MAX_RASTER_BYTES, ...rest
   } = options;
   const local = validateHtml(rest);
-  const probe = sizer ?? (fetchImpl ? createRemoteSizer({ fetch: fetchImpl }) : null);
+  const probe = sizer
+    ?? (fetchImpl ? createRemoteSizer({ fetch: fetchImpl }) : null);
   if (!probe) return local;
   const maxima = { svg: maxSvgBytes, image: maxRasterBytes };
   const remote = await remoteMediaIssues(parseHtml(rest.html), probe, maxima);
@@ -676,17 +725,24 @@ export async function validateHtmlAsync(options) {
  * @param {object} [options]
  * @param {string} [options.origin] Source-site origin.
  * @param {string} [options.rulesDir] Project rules directory.
- * @param {string} [options.docPath] DA path; defaults to `/<basename without .html>`.
- * @param {typeof fetch} [options.fetch] Fetch implementation; defaults to the global one.
- * @param {string} [options.sourceHtml] Source page HTML; its text is what the leakage rule
- *   compares the document against.
+ * @param {string} [options.docPath] DA path; defaults to `/<basename without
+ *   .html>`.
+ * @param {typeof fetch} [options.fetch] Fetch implementation; defaults to the
+ *   global one.
+ * @param {string} [options.sourceHtml] Source page HTML; its text is what the
+ *   leakage rule compares the document against.
  * @returns {Promise<object>} `{ file, pass, errors, warnings, issues }`.
  */
 export async function validateFile(file, {
-  origin = '', rulesDir, docPath, sourceHtml = '', fetch: fetchImpl = globalThis.fetch,
+  origin = '', rulesDir, docPath, sourceHtml = '',
+  fetch: fetchImpl = globalThis.fetch,
 } = {}) {
   const html = await readFile(file, 'utf8');
   const siteRules = rulesDir ? await loadSiteRules(rulesDir) : [];
+  const projectDir = rulesDir ? path.dirname(rulesDir) : undefined;
+  const leakRules = await loadLeakRules(
+    projectDir ? resolvePaths({ MIGRATION_PROJECT_DIR: projectDir }) : resolvePaths(),
+  );
   return {
     file,
     ...await validateHtmlAsync({
@@ -695,6 +751,7 @@ export async function validateFile(file, {
       docPath: docPath ?? `/${path.basename(file, '.html')}`,
       sourceText: htmlText(sourceHtml),
       rules: [...RULES, ...siteRules],
+      leakRules,
       fetch: fetchImpl,
     }),
   };
