@@ -54,9 +54,18 @@ for the transformer API and [references/content-model.md](references/content-mod
 | `validate.mjs <file.html>` | content gate for a DA document |
 | `bulk.mjs --template <t> --dry-run\|--run` | every URL of a template → DA preview (gated) |
 
+## Fixture e2e test
+
+The fixture site (`scripts/fixtures/example-site/`) tests the complete pipeline from init
+through bulk --dry-run. It pre-defines a 'product' template with a transformer that extracts
+a hero section and specifications table. Hand-authored template artefacts (transformers,
+templates/, blocks.json) stand in for Plan B's analyst phase.
+
 Stage execution (`stages/*.yaml`, `prompts/`) is documented in a later release.
 
 ## Development
 
 Run tests: `npm test` (from `scripts/`). Lint and validate residue: `npm run check`.
 Validate the skill at repo level: `npm run validate` (from the repo root).
+`npm run test:e2e` in `scripts/` runs the fixture pipeline end-to-end (init → bulk
+--dry-run); needs `playwright-cli` and `PAGE_TREE_BUNDLE=<path>`.
