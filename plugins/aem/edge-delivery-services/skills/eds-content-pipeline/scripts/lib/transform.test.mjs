@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
-
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
@@ -224,4 +223,28 @@ test('isInternal accepts every alias host and rejects lookalikes', () => {
   assert.equal(isInternal('https://learn.example.com/a', hosts), false);
   assert.equal(isInternal('https://notexample.com/a', hosts), false);
   assert.equal(isInternal('mailto:a@example.com', hosts), false);
+});
+
+test('transformDOM receives importer helpers', async () => {
+  const dir = await fixtureDir();
+  const importerCheck = `export const version = '1.0.0';
+export const match = () => true;
+export const generateDocumentPath = () => '/';
+export function transformDOM({ document, importer }) {
+  if (!importer || typeof importer.Blocks?.createBlock !== 'function') {
+    throw new Error('importer.Blocks.createBlock should be a function');
+  }
+  return document.createElement('div');
+}
+`;
+  await writeFile(path.join(dir, 'importer-check.mjs'), importerCheck);
+  const transformer = await loadTransformer('importer-check', { dir });
+  const result = await transformHtml({
+    html: SOURCE,
+    url: 'https://www.example.com/any/',
+    transformer,
+    params: { sourceRoot: '#content' },
+    hosts: HOSTS,
+  });
+  assert.ok(result, 'transformHtml should succeed with importer helpers');
 });

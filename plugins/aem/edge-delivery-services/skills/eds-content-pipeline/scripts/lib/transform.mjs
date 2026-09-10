@@ -8,7 +8,8 @@ import { flag } from './args.mjs';
 import { loadConfig, originAliasHosts } from './config.mjs';
 import { resolvePaths } from './paths.mjs';
 import { createClient } from './http.mjs';
-import { Blocks, FileUtils } from './importer.mjs';
+import * as importer from './importer.mjs';
+const { FileUtils } = importer;
 
 const CONTRACT = ['match', 'transformDOM', 'generateDocumentPath'];
 const DROP_TAGS = 'script, style, noscript, template, link, meta, title, base';
@@ -91,25 +92,32 @@ function metadataRows(document, metadata) {
   });
 }
 
-function appendMetadataBlock(document, sections, metadata, warnings) {
+function appendMetadataBlock(
+  document, sections, metadata, warnings, importer,
+) {
   const filled = { title: '', description: '', ...metadata };
   for (const key of ['title', 'description']) {
     if (!filled[key]) warnings.push(warn('metadata', `source has no page ${key}`));
   }
-  const block = Blocks.createBlock(document, {
+  const block = importer.Blocks.createBlock(document, {
     name: 'metadata',
     cells: metadataRows(document, filled),
   });
   sections[sections.length - 1].append(block);
 }
 
-function sectionMetadata(document, section) {
+function sectionMetadata(document, section, importer) {
   const rows = [...section.attributes]
     .filter((attr) => attr.name.startsWith('data-section-'))
     .map((attr) => [titleCase(attr.name.slice('data-section-'.length)), attr.value]);
   for (const [key] of rows) section.removeAttribute(`data-section-${key.toLowerCase()}`);
   if (!rows.length) return;
-  section.append(Blocks.createBlock(document, { name: 'section-metadata', cells: rows }));
+  section.append(
+    importer.Blocks.createBlock(document, {
+      name: 'section-metadata',
+      cells: rows,
+    }),
+  );
 }
 
 function stripAttributes(el, keepClass) {
@@ -181,7 +189,7 @@ function sanitizeSection(section, ctx) {
   stripAttributes(section, false);
 }
 
-function prepareSections(document, root, ctx) {
+function prepareSections(document, root, ctx, importer) {
   const children = [...root.children];
   let sections = children;
   if (!children.length || children.some((el) => el.tagName !== 'DIV')) {
@@ -192,7 +200,7 @@ function prepareSections(document, root, ctx) {
     sections = [section];
   }
   for (const section of sections) {
-    sectionMetadata(document, section);
+    sectionMetadata(document, section, importer);
     sanitizeSection(section, ctx);
   }
   return sections;
@@ -256,13 +264,19 @@ export async function transformHtml({
   // `transformDOM` may be async: the `video` transformer fetches the Wistia oEmbed poster at
   // transform time. Awaiting a plain object is a no-op for the synchronous transformers.
   const result = await transformer.transformDOM({
-    document, url, html, params,
+    document, url, html, params, importer,
   });
   const warnings = [...(result?.warnings ?? [])];
   const ctx = { hosts: hosts ?? originAliasHosts(await loadConfig()), warnings };
-  const sections = prepareSections(document, rootElement(result, transformer), ctx);
-  appendMetadataBlock(document, sections, { ...metadata, ...(result?.metadata ?? {}) }, warnings);
-  const docPath = FileUtils.sanitizePath(transformer.generateDocumentPath({ document, url }));
+  const sections = prepareSections(
+    document, rootElement(result, transformer), ctx, importer,
+  );
+  appendMetadataBlock(
+    document, sections, { ...metadata, ...(result?.metadata ?? {}) }, warnings, importer,
+  );
+  const docPath = FileUtils.sanitizePath(
+    transformer.generateDocumentPath({ document, url }),
+  );
   return {
     path: docPath,
     html: serialize(sections),

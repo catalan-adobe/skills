@@ -22,7 +22,7 @@ export function match(url) {
 }
 ```
 
-### `transformDOM({ document, url, html, params }) → Element | { element, metadata?, warnings? }`
+### `transformDOM({ document, url, html, params, importer }) → Element | { element, metadata?, warnings? }`
 
 Transforms the source DOM into a new tree of EDS sections. Returns either:
 - A detached DOM element (usually `<main>` or a `<div>`).
@@ -38,7 +38,7 @@ The returned `element`'s direct `<div>` children become sections. Each section's
 
 **Example:**
 ```javascript
-export function transformDOM({ document }) {
+export function transformDOM({ document, importer }) {
   const main = document.createElement('main');
   const hero = document.createElement('div');
   hero.append(
@@ -48,7 +48,7 @@ export function transformDOM({ document }) {
   main.append(hero);
 
   const specs = document.createElement('div');
-  specs.append(Blocks.createBlock(document, {
+  specs.append(importer.Blocks.createBlock(document, {
     name: 'specifications',
     cells: [
       ['Label', 'Value'],
@@ -67,6 +67,9 @@ Parameters:
 - `html`: string, raw source HTML (for Wistia embeds, oembed calls, etc.).
 - `params`: object, template configuration from `site.config.json`
   `templates[template-name]`; e.g. `{ sourceRoot: 'main', ... }`.
+- `importer`: object, the skill's importer module namespace. Contains helpers:
+  `Blocks`, `FileUtils`, `DOMUtils`, `pickImageSrc`, `sectionMetadata`,
+  `splitSections`.
 
 ### `generateDocumentPath({ document, url }) → string`
 
@@ -141,16 +144,16 @@ After the transformer returns:
 
 ## Importer Helpers
 
-Import from `#lib/importer.mjs`:
+The `importer` argument passed to `transformDOM` contains these helpers:
 
-### `Blocks.createBlock(document, { name, variants?, cells })`
+### `importer.Blocks.createBlock(document, { name, variants?, cells })`
 
 Creates a canonical EDS block: `<div class="name variant ...">` with rows of
 cells. Cells are strings (text), Nodes, or arrays of both. Strings never
 parse as HTML (safe from scraped content).
 
 ```javascript
-Blocks.createBlock(document, {
+importer.Blocks.createBlock(document, {
   name: 'specifications',
   variants: ['featured'],
   cells: [
@@ -160,71 +163,73 @@ Blocks.createBlock(document, {
 });
 ```
 
-### `Blocks.getMetadataBlock(document, meta)`
+### `importer.Blocks.getMetadataBlock(document, meta)`
 
 Builds a `metadata` block from a key/value object or Map. Drops empty values.
 
 ```javascript
-Blocks.getMetadataBlock(document, {
+importer.Blocks.getMetadataBlock(document, {
   title: 'Product Name',
   description: 'A great product',
 });
 ```
 
-### `DOMUtils.remove(root, selectors)`
+### `importer.DOMUtils.remove(root, selectors)`
 
 Removes all descendants matching CSS selectors. Returns the count removed.
 
 ```javascript
-DOMUtils.remove(root, ['script', 'style', 'nav']);
+importer.DOMUtils.remove(root, ['script', 'style', 'nav']);
 ```
 
-### `DOMUtils.replaceBackgroundByImg(root, document)`
+### `importer.DOMUtils.replaceBackgroundByImg(root, document)`
 
 Converts `background-image` inline styles to `<img>` elements. Keeps children
 when present; replaces empty holders. Returns created images in document order.
 
 ```javascript
-const images = DOMUtils.replaceBackgroundByImg(section, document);
+const images = importer.DOMUtils.replaceBackgroundByImg(section, document);
 ```
 
-### `FileUtils.sanitizePath(input)`
+### `importer.FileUtils.sanitizePath(input)`
 
 Normalizes a URL or pathname to an EDS document path: lowercase, hyphenated,
 no trailing slash. `/example.html?foo` becomes `/example`; `/` becomes `/index`.
 
 ```javascript
-FileUtils.sanitizePath('https://www.example.com/Case-Study/Acme-Inc/');
+importer.FileUtils.sanitizePath(
+  'https://www.example.com/Case-Study/Acme-Inc/',
+);
 // → '/case-study/acme-inc'
 ```
 
-### `pickImageSrc(img, { maxWidth = 2048 })`
+### `importer.pickImageSrc(img, { maxWidth = 2048 })`
 
 Picks the best srcset candidate under `maxWidth`. Falls back to `src`. Prevents
 overly large originals from being served.
 
 ```javascript
-const src = pickImageSrc(img, { maxWidth: 1600 });
+const src = importer.pickImageSrc(img, { maxWidth: 1600 });
 img.setAttribute('src', src);
 ```
 
-### `sectionMetadata(document, props)`
+### `importer.sectionMetadata(document, props)`
 
 Builds a `Section Metadata` block. `style` property becomes section classes;
 others become `data-*` rows.
 
 ```javascript
-sectionMetadata(document, { style: 'dark', align: 'center' });
+importer.sectionMetadata(document, { style: 'dark', align: 'center' });
 ```
 
-### `splitSections(main, breakSelectors)`
+### `importer.splitSections(main, breakSelectors)`
 
 Groups `main`'s children into section `<div>`s. Opens a new section at each
 element matching `breakSelectors` or at every `<hr>`. Comments and blank text
 are dropped.
 
 ```javascript
-splitSections(main, ['h2', '.section-break']);
+importer.splitSections(main, ['h2', '.section-break']);
 ```
 
 ## CLI
@@ -252,15 +257,20 @@ node ./scripts/lib/transform.mjs \
 Prints a JSON object with `path`, `html`, `metadata`, `hash`, `bytes`,
 `warnings`, `transformerVersion`.
 
+## Important Notes
+
+- **No direct imports**: Transformers must not import `#lib/importer.mjs`
+  directly. Receive the `importer` object as a parameter to `transformDOM`.
+- **Async transformers**: `transformDOM` may be async for operations like
+  video metadata fetching. The harness awaits the result.
+
 ## Worked Example
 
 The `fixtures/example-site/migration/transformers/product.mjs` transformer
 shows a complete implementation:
 
 ```javascript
-import { Blocks } from '#lib/importer.mjs';
-
-export const version = '1.0.0';
+export const version = '1.1.0';
 export const needsBrowser = false;
 
 export function match(url) {
@@ -271,7 +281,7 @@ export function generateDocumentPath({ url }) {
   return new URL(url).pathname.replace(/\.html$/, '');
 }
 
-export function transformDOM({ document }) {
+export function transformDOM({ document, importer }) {
   const warnings = [];
   const main = document.createElement('main');
   const hero = document.createElement('div');
@@ -299,7 +309,7 @@ export function transformDOM({ document }) {
   ]);
   if (rows.length > 0) {
     specs.append(
-      Blocks.createBlock(document, {
+      importer.Blocks.createBlock(document, {
         name: 'specifications',
         cells: rows,
       }),
@@ -310,7 +320,7 @@ export function transformDOM({ document }) {
     );
   }
   main.append(specs);
-  return { element: main, metadata: {}, warnings };
+  return { element: main, warnings };
 }
 ```
 
@@ -319,4 +329,4 @@ This transformer:
 - Builds a hero section with h1, img, price, lead.
 - Builds a specs section with a structured block from an HTML table.
 - Returns warnings when expected elements are missing.
-- Uses `Blocks.createBlock()` to generate valid EDS block markup.
+- Uses `importer.Blocks.createBlock()` to generate valid EDS block markup.
