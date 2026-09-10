@@ -1,0 +1,30 @@
+{
+  "origin": "http://127.0.0.1:0",
+  "sitemapIndex": "http://127.0.0.1:0/sitemap.xml",
+  "exclusions": { "queryStrings": true, "pathPatterns": [] },
+  "include": [],
+  "overlaySelectors": [],
+  "viewports": [1440],
+  "concurrency": { "fetch": 2, "browser": 1 },
+  "rateLimit": { "perSecond": 5 },
+  "thresholds": { "minClusterSize": 2 },
+  "bundles": {
+    "pageTree":
+      ".agents/skills/page-tree/scripts/page-tree-bundle.js"
+  },
+  "templateSeeds": {},
+  "da": {
+    "org": "example",
+    "site": "fixture",
+    "ref": "main",
+    "adminHost": "admin.da.live",
+    "sourceHost": "content.da.live"
+  },
+  "templates": {
+    "product": {
+      "sourceRoot": "#maincontent",
+      "needsBrowser": false,
+      "sourceUrlPattern": "^/product-[a-z]+\\.html$"
+    }
+  }
+}

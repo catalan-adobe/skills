@@ -1,0 +1,24 @@
+[
+  {
+    "name": "specifications",
+    "canonical": "table",
+    "status": "scaffold",
+    "variants": [""],
+    "model": {
+      "rows": "repeat",
+      "columns": [
+        { "name": "label", "type": "text" },
+        { "name": "value", "type": "text" }
+      ],
+      "header": false
+    },
+    "templates": { "product": 1.0 },
+    "evidence": [
+      {
+        "url": "https://fixture.example/product-a.html",
+        "selector": "table.specs tr"
+      }
+    ],
+    "decisions": []
+  }
+]
