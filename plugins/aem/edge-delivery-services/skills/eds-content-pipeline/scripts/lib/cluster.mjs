@@ -1,5 +1,5 @@
 import {
-  mkdir, mkdtemp, rm, stat, writeFile,
+  access, mkdir, mkdtemp, rm, stat, writeFile,
 } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,12 +33,24 @@ export function treeFromPoll(payload) {
 }
 
 async function writeInitScripts(config, paths) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'migration-cluster-'));
+  const bundleFile = path.resolve(
+    paths.repoRoot,
+    config.bundles.pageTree
+  );
+  await access(bundleFile).catch(() => {
+    throw new Error(
+      `page-tree bundle not found at ${bundleFile}; run init.mjs or: ` +
+      'upskill adobe/skills --path plugins/web/skills --skill page-tree'
+    );
+  });
+  const dir = await mkdtemp(
+    path.join(os.tmpdir(), 'migration-cluster-')
+  );
   const bootstrap = path.join(dir, 'bootstrap.js');
   await writeFile(bootstrap, treeBootstrap());
   return {
     dir,
-    scripts: [path.resolve(paths.repoRoot, config.bundles.pageTree), bootstrap],
+    scripts: [bundleFile, bootstrap],
   };
 }
 
