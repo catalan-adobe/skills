@@ -168,7 +168,12 @@ test('force with a limit keeps stale URLs remaining instead of finalizing', asyn
   // The remaining count compares stamps against the run start, so let the clock advance.
   await new Promise((r) => { setTimeout(r, 5); });
   const forced = await runCluster({
-    config: testConfig, paths, browserFactory: fakeBrowserFactory(log), force: true, limit: 1, shots: false,
+    config: testConfig,
+    paths,
+    browserFactory: fakeBrowserFactory(log),
+    force: true,
+    limit: 1,
+    shots: false,
   });
   assert.equal(forced.processed, 1);
   assert.ok(forced.remaining > 0, 'stale fingerprints must still count as remaining');
