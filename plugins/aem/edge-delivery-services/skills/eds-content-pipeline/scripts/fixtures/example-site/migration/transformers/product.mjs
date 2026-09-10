@@ -1,4 +1,4 @@
-import { Blocks } from '#lib/importer';
+import { Blocks } from '#lib/importer.mjs';
 
 export const version = '1.0.0';
 export const needsBrowser = false;
