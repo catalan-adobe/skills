@@ -31,3 +31,19 @@ test('startFixtureServer returns 404 for missing files', async (t) => {
   const res = await fetch(`${s.origin}/missing.html`);
   assert.equal(res.status, 404);
 });
+
+test(
+  'a path that escapes the fixture directory is refused',
+  async (t) => {
+    const s = await startFixtureServer();
+    t.after(() => s.close());
+    const res = await fetch(
+      s.origin + '/..%2F..%2Fpackage.json'
+    );
+    assert.equal(res.status, 404);
+    const raw = await fetch(
+      s.origin + '/%2e%2e/%2e%2e/package.json'
+    );
+    assert.equal(raw.status, 404);
+  },
+);

@@ -1,4 +1,4 @@
-import { Blocks } from '#lib/importer.mjs';
+import { Blocks } from '#lib/importer';
 
 export const version = '1.0.0';
 export const needsBrowser = false;
@@ -12,30 +12,43 @@ export function generateDocumentPath({ url }) {
 }
 
 export function transformDOM({ document }) {
+  const warnings = [];
   const main = document.createElement('main');
   const hero = document.createElement('div');
   const src = document.querySelector('.product-hero');
-  hero.append(
-    src.querySelector('h1'),
-    src.querySelector('img'),
-    src.querySelector('.price'),
-    src.querySelector('.lead'),
-  );
+  if (!src) {
+    warnings.push('Missing .product-hero section');
+  } else {
+    hero.append(
+      src.querySelector('h1'),
+      src.querySelector('img'),
+      src.querySelector('.price'),
+      src.querySelector('.lead'),
+    );
+  }
   main.append(hero);
   const specs = document.createElement('div');
-  specs.append(document.querySelector('.product-specs h2'));
+  const specHead = document
+    .querySelector('.product-specs h2');
+  if (specHead) specs.append(specHead);
   const rows = [
     ...document.querySelectorAll('table.specs tr'),
   ].map((tr) => [
     tr.querySelector('th').textContent.trim(),
     tr.querySelector('td').textContent.trim(),
   ]);
-  specs.append(
-    Blocks.createBlock(document, {
-      name: 'specifications',
-      cells: rows,
-    }),
-  );
+  if (rows.length > 0) {
+    specs.append(
+      Blocks.createBlock(document, {
+        name: 'specifications',
+        cells: rows,
+      }),
+    );
+  } else {
+    warnings.push(
+      'No specification rows found in table.specs',
+    );
+  }
   main.append(specs);
-  return { element: main, metadata: {}, warnings: [] };
+  return { element: main, metadata: {}, warnings };
 }

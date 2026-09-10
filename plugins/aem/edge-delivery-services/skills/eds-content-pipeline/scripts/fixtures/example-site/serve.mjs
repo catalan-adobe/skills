@@ -17,9 +17,21 @@ const TYPES = {
 export async function startFixtureServer() {
   let origin;
   const server = http.createServer(async (req, res) => {
-    const file = req.url === '/' ? 'index.html' : req.url.replace(/^\//, '');
+    const decoded = decodeURIComponent(
+      req.url === '/' ? '/' : req.url
+    );
+    const file = decoded === '/' ? 'index.html' : decoded
+      .replace(/^\//, '');
+    const resolved = path.resolve(path.join(root, file));
+    const isInside = resolved === root ||
+      resolved.startsWith(root + path.sep);
+    if (!isInside) {
+      res.writeHead(404);
+      res.end('not found');
+      return;
+    }
     try {
-      let body = await readFile(path.join(root, file));
+      let body = await readFile(resolved);
       if (file.endsWith('.xml')) {
         body = body
           .toString()
