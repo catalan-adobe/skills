@@ -12,6 +12,16 @@ import { flag } from './args.mjs';
 const KEY_FIELDS = {
   urls: 'url', templates: 'name', blocks: 'name', feedback: 'id',
 };
+
+/**
+ * Where a state file lives. Everything sits in the data dir except `feedback`, the operator
+ * channel, which lives at the project root so people find and edit it.
+ */
+export function stateFileFor(name, paths) {
+  return name === 'feedback'
+    ? path.join(paths.projectDir, 'feedback.json')
+    : paths.stateFile(name);
+}
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
 /**
@@ -102,7 +112,7 @@ export function keyFieldFor(name) {
  */
 export async function upsertRecords(name, records, paths = resolvePaths()) {
   const key = keyFieldFor(name);
-  return updateJson(paths.stateFile(name), [], (existing) => {
+  return updateJson(stateFileFor(name, paths), [], (existing) => {
     const byKey = new Map(existing.map((r) => [r[key], r]));
     const now = new Date().toISOString();
     for (const rec of records) {
@@ -116,7 +126,7 @@ export async function upsertRecords(name, records, paths = resolvePaths()) {
 
 /** Lists records, optionally filtered by exact field values (compared as strings). */
 export async function listRecords(name, { where = {}, paths = resolvePaths() } = {}) {
-  const all = await readJson(paths.stateFile(name), []);
+  const all = await readJson(stateFileFor(name, paths), []);
   return all.filter((r) => Object.entries(where).every(([k, v]) => String(r[k]) === String(v)));
 }
 
@@ -239,7 +249,7 @@ export async function addFeedback(
     status: 'received',
   };
   await updateJson(
-    path.join(paths.projectDir, 'feedback.json'),
+    stateFileFor('feedback', paths),
     [],
     (all) => [...all, item]
   );
@@ -251,7 +261,7 @@ export async function listFeedback(
   paths = resolvePaths()
 ) {
   const all = await readJson(
-    path.join(paths.projectDir, 'feedback.json'),
+    stateFileFor('feedback', paths),
     []
   );
   return all.filter((r) =>
@@ -272,7 +282,7 @@ export async function setFeedback(
     );
   }
   return updateJson(
-    path.join(paths.projectDir, 'feedback.json'),
+    stateFileFor('feedback', paths),
     [],
     (all) => {
       const hit = all.find((r) => r.id === id);

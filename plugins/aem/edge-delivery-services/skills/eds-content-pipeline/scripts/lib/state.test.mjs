@@ -254,3 +254,16 @@ test('two URLs with identical last segment get distinct capture slugs',
     assert.equal(slug2, 'b-index');
   }
 );
+
+test('feedback add and list feedback read the same project file', async () => {
+  const paths = await tmpPaths();
+  const run = runCli(paths);
+  const { stdout } = await run('feedback', 'add', 'template:t1', 'rerun', '--note', 'hero');
+  const item = JSON.parse(stdout);
+  const listed = JSON.parse((await run('list', 'feedback')).stdout);
+  assert.deepEqual(listed.map((r) => r.id), [item.id]);
+  const viaFeedback = JSON.parse((await run('feedback', 'list')).stdout);
+  assert.deepEqual(viaFeedback.map((r) => r.id), [item.id]);
+  const onDisk = JSON.parse(await readFile(path.join(paths.projectDir, 'feedback.json'), 'utf8'));
+  assert.equal(onDisk[0].id, item.id, 'feedback lives at the project root, not in data/');
+});

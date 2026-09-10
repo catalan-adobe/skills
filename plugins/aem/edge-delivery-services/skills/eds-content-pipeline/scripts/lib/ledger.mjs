@@ -2,7 +2,9 @@ import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { resolvePaths } from './paths.mjs';
-import { countBy, readJson, withLock, writeJsonAtomic } from './state.mjs';
+import {
+  countBy, readJson, stateFileFor, withLock, writeJsonAtomic,
+} from './state.mjs';
 import { assertRecord } from './shapes.mjs';
 
 /**
@@ -34,7 +36,7 @@ export async function buildSummary(paths = resolvePaths()) {
   const [urls, templates, feedback, runs, units] = await Promise.all([
     readJson(paths.stateFile('urls'), []),
     readJson(paths.stateFile('templates'), []),
-    readJson(paths.stateFile('feedback'), []),
+    readJson(stateFileFor('feedback', paths), []),
     readRows('runs', paths),
     readRows('units', paths),
   ]);
