@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
@@ -135,7 +135,14 @@ function siteConfig() {
   };
 }
 
-async function setup(slugs) {
+/** A passing (or not) dry-run report, so `--run`'s coverage gate lets the test through. */
+async function writeDryRunReport(paths, template, coverage) {
+  const file = path.join(paths.dataDir, 'bulk', `${template}-dryrun.json`);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify({ coverage }, null, 2));
+}
+
+async function setup(slugs, { dryRunCoverage = 1 } = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'migration-bulk-'));
   const configPath = path.join(dir, 'site.config.json');
   await writeFile(configPath, JSON.stringify(siteConfig()));
@@ -152,6 +159,7 @@ async function setup(slugs) {
     template: 'case-study',
     status: 'analyzed',
   })), paths);
+  if (dryRunCoverage !== null) await writeDryRunReport(paths, 'case-study', dryRunCoverage);
   return {
     dir,
     paths,
@@ -638,4 +646,42 @@ test('a page-scoped item for another template is neither forced nor settled', as
   const [after] = await listFeedback({ id: item.id }, paths);
   assert.equal(after.appliedRun, undefined);
   assert.equal(after.status, 'applied', 'left exactly as it was');
+});
+
+test('--run refuses when no dry-run report exists', async () => {
+  const { paths, io } = await setup(['acme-flight-school'], { dryRunCoverage: null });
+  const err = await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'r-nogate', concurrency: 1 },
+    io: { ...io, http: httpStub().client, da: daStub().client },
+  }).catch((e) => e);
+  const file = path.join(paths.dataDir, 'bulk', 'case-study-dryrun.json');
+  assert.match(err.message, /Run bulk\.mjs --template case-study --dry-run first/);
+  assert.ok(err.message.includes(file));
+});
+
+test('--run refuses when the dry-run coverage is below the threshold', async () => {
+  const { io } = await setup(['acme-flight-school'], { dryRunCoverage: 0.5 });
+  const err = await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'r-lowcov', concurrency: 1 },
+    io: { ...io, http: httpStub().client, da: daStub().client },
+  }).catch((e) => e);
+  assert.match(err.message, /Dry-run coverage 0\.5 is below thresholds\.coverage 0\.95/);
+  assert.match(err.message, /--accept-coverage/);
+});
+
+test('--accept-coverage proceeds below the threshold and records it in the ledger', async () => {
+  const { paths, io } = await setup(['acme-flight-school'], { dryRunCoverage: 0.5 });
+  const report = await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'r-accept', concurrency: 1, acceptCoverage: true },
+    io: { ...io, http: httpStub().client, da: daStub().client },
+  });
+  assert.equal(report.counts.previewed, 1);
+  const units = await readRows('units', paths);
+  assert.equal(units[0].detail, 'bulk run (coverage accepted)');
 });

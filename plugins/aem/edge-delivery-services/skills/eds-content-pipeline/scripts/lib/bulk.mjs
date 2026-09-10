@@ -10,7 +10,7 @@ import { fixDocument } from './media.mjs';
 import { resolvePaths } from './paths.mjs';
 import { mapPool } from './pool.mjs';
 import {
-  captureSlug, listFeedback, listRecords, setFeedback, upsertRecords,
+  captureSlug, listFeedback, listRecords, readJson, setFeedback, upsertRecords,
 } from './state.mjs';
 import { contentHash, loadTransformer, transformHtml } from './transform.mjs';
 import { validateFile } from './validate.mjs';
@@ -24,7 +24,7 @@ const DONE_STATUSES = new Set(['uploaded', 'previewed', 'verified']);
  */
 const LONG_TAIL_STAGES = new Set(['transform', 'validate']);
 const USAGE = 'Usage: bulk.mjs --template <t> (--dry-run | --run) [--limit n] [--force] '
-  + '[--concurrency 4] [--max-minutes m]';
+  + '[--concurrency 4] [--max-minutes m] [--accept-coverage]';
 
 /** One failed pipeline step for a single URL; `stage` names the step that failed. */
 export class BulkStepError extends Error {
@@ -246,7 +246,7 @@ async function recordOutcome(ctx, record, outcome) {
     kind: 'page',
     ref: record.url,
     verdict: outcome.status,
-    detail: `bulk ${ctx.mode}`,
+    detail: ctx.acceptCoverage ? 'bulk run (coverage accepted)' : `bulk ${ctx.mode}`,
     at: ctx.generatedAt,
   }, ctx.paths);
 }
@@ -529,10 +529,29 @@ function resolveDirs(paths, io) {
 function bulkOptions(options, template) {
   const {
     force = false, concurrency = 4, maxMinutes = 30, runId = `bulk-${template}`,
+    acceptCoverage = false,
   } = options;
   return {
-    force, concurrency, runId, deadline: Date.now() + maxMinutes * 60000,
+    force, concurrency, runId, deadline: Date.now() + maxMinutes * 60000, acceptCoverage,
   };
+}
+
+/**
+ * Refuses `--run` when the template has no dry-run report, or its coverage is below
+ * `thresholds.coverage`; `--accept-coverage` (`ctx.acceptCoverage`) bypasses both checks.
+ */
+async function ensureCoverage(ctx) {
+  if (ctx.mode !== 'run' || ctx.acceptCoverage) return;
+  const file = path.join(ctx.paths.dataDir, 'bulk', `${ctx.template}-dryrun.json`);
+  const report = await readJson(file, null);
+  if (!report) {
+    throw new Error(`Run bulk.mjs --template ${ctx.template} --dry-run first: `
+      + `no dry-run report at ${file}`);
+  }
+  if (report.coverage < ctx.thresholds.coverage) {
+    throw new Error(`Dry-run coverage ${report.coverage} is below thresholds.coverage `
+      + `${ctx.thresholds.coverage}; fix the long tail or pass --accept-coverage`);
+  }
 }
 
 async function createContext({
@@ -609,6 +628,7 @@ export async function runBulk({
   const ctx = await createContext({
     template, mode, options, io,
   });
+  await ensureCoverage(ctx);
   const stored = await listRecords('urls', { where: { template }, paths: ctx.paths });
   const selected = selectRecords(stored, options);
   const forced = await forceByFeedback(ctx, selected, stored);
@@ -632,6 +652,7 @@ function parseCli(argv) {
       concurrency: positiveIntFlag(argv, '--concurrency', 4),
       maxMinutes: positiveIntFlag(argv, '--max-minutes', 30),
       runId: flag(argv, '--run-id', `bulk-${template}-cli`),
+      acceptCoverage: argv.includes('--accept-coverage'),
     },
   };
 }

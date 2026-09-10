@@ -43,9 +43,6 @@ one JSON object. See [references/transformer-contract.md](references/transformer
 for the transformer API and [references/content-model.md](references/content-model.md) for
 `blocks.json`.
 
-Global feedback (`scope: global`) is never auto-settled; an operator settles it with
-`state.mjs feedback set <id> appliedRun=<run>`.
-
 | Runner | Purpose |
 | --- | --- |
 | `inventory.mjs` | sitemaps → `migration/data/urls.json` |
@@ -55,7 +52,11 @@ Global feedback (`scope: global`) is never auto-settled; an operator settles it 
 | `transform.mjs <url\|file> --template <t>` | one page → DA document |
 | `fidelity.mjs <source.html> <out.html>` | content recall / precision / checklist verdict |
 | `validate.mjs <file.html>` | content gate for a DA document |
-| `bulk.mjs --template <t> --dry-run\|--run` | every URL of a template → DA preview (gated) |
+| `bulk.mjs --template <t> --dry-run\|--run [--accept-coverage]` | every URL → DA preview (gated) |
+
+`--run` refuses below the last `--dry-run`'s `thresholds.coverage`; `--accept-coverage`
+bypasses the gate and is recorded in `units`. Global feedback (`scope: global`) is never
+auto-settled; an operator settles it with `state.mjs feedback set <id> appliedRun=<run>`.
 
 ## Fixture e2e test
 
