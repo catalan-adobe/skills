@@ -31,8 +31,10 @@ Transforms the source DOM into a new tree of EDS sections. Returns
   - `element`: required, the detached root element.
   - `metadata`: optional object, merged with auto-extracted head metadata
     (title, description, image, canonical, publication-date).
-  - `warnings`: optional array of `{ code, message }` objects, appended to
-    the document's warnings.
+  - `warnings`: optional array appended to the document's warnings. The
+    harness emits `{ code, message }` objects (codes `metadata`, `media`,
+    `links`, `skeleton`, `sections`); transformer warnings may be plain
+    strings. Both end up in `bulk`'s per-URL report unchanged.
 
 The returned `element`'s direct `<div>` children become sections. Each section's
 `data-section-*` attributes become a `section-metadata` block's rows.
@@ -96,9 +98,11 @@ export const version = '1.0.0';
 
 ### `needsBrowser` (boolean, optional, default: false)
 
-Set to `true` if the transformer requires a browser to run (e.g., JavaScript
-rendering, video metadata fetching). The runner will pass a live jsdom window
-with a stubbed navigation API. Async transformers are supported.
+Declares that the template's source pages only render their content client-side,
+so a plain HTTP fetch is not enough. The flag is recorded on the loaded
+transformer and in `site.config.json` (`templates.<t>.needsBrowser`) but **no
+runner acts on it yet**: `transform` and `bulk` always work from the fetched
+HTML. Async `transformDOM` is supported regardless (e.g. an oEmbed call).
 
 ```javascript
 export const needsBrowser = false;
@@ -236,27 +240,28 @@ importer.splitSections(main, ['h2', '.section-break']);
 ## CLI
 
 ```bash
-node ./scripts/lib/transform.mjs <url|file.html> --template <name> \
-  [--url <source-url>] [--out <file>] [--params <json>]
+node .agents/skills/eds-content-pipeline/scripts/lib/transform.mjs <url|file.html> \
+  --template <name> [--url <source-url>] [--out <file>] [--params <json>]
 ```
 
 - `<url|file.html>`: Source URL or file path.
 - `--template <name>`: Transformer name, e.g. `product`.
 - `--url <source-url>`: Required when input is a file.
-- `--out <file>`: Output file (default: `site/content/<path>.html`).
-- `--params <json>`: Extra transformer parameters, e.g. `'{"sourceRoot":"main"}'`.
+- `--out <file>`: Output file (default: `migration/content/<path>.html`).
+- `--params <json>`: Extra transformer parameters merged over
+  `templates.<name>` from `site.config.json`, e.g. `'{"sourceRoot":"main"}'`.
 
 **Example:**
 
 ```bash
-node ./scripts/lib/transform.mjs \
+node .agents/skills/eds-content-pipeline/scripts/lib/transform.mjs \
   https://www.example.com/product-acme.html \
   --template product \
   --out /tmp/product.html
 ```
 
-Prints a JSON object with `path`, `html`, `metadata`, `hash`, `bytes`,
-`warnings`, `transformerVersion`.
+Writes the document to `--out` and prints one JSON object:
+`{ url, template, path, file, hash, transformerVersion, bytes, warnings }`.
 
 ## Important Notes
 

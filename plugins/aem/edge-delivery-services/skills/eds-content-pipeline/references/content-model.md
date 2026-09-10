@@ -1,8 +1,10 @@
-# § 8: Blocks Content Model
+# Blocks content model (`migration/data/blocks.json`)
 
-The `blocks.json` record schema specifies structural and semantic metadata for
-every block in the migration. Each record describes the layout, column types,
-header presence, and status of a single block type.
+One record per block the migration needs. `assertBlock` (scripts/lib/shapes.mjs)
+validates `name`, `status`, `model`, `templates` and `evidence`; `canonical`,
+`variants` and `decisions` are informational for downstream skills and are not
+validated. `scaffold-block.mjs` reads `model`; `fidelity.mjs --blocks` reads
+`model.columns` and `templates`; `state.mjs check-evidence` reads `evidence`.
 
 ## Record Schema
 
@@ -51,8 +53,22 @@ Example:
 
 ### `templates` (object, required)
 
-Object mapping template names to a count or true. Indicates which site
-templates use this block. Example: `{ "product": 1, "category": 1 }`.
+Maps each template that uses the block to the share of that template's
+representative pages carrying it (0–1). Example: `{ "product": 1, "category": 0.4 }`.
+`fidelity.mjs --template <t>` checks only blocks whose `templates` include `<t>`.
+
+### `canonical` (string | null, optional)
+
+The canonical EDS block this one maps to (`table`, `cards`, `columns`, …) or
+`null` when it is site-specific. A hint for downstream block authoring.
+
+### `variants` (string[], optional)
+
+Block variant class tokens seen on the site (`""` is the plain block).
+
+### `decisions` (string[], optional)
+
+Analyst decisions that shaped the model, e.g. `"reviews tab dropped: AJAX-only"`.
 
 ### `evidence` (array, required)
 
@@ -61,8 +77,10 @@ Each evidence object should have:
 - `url` (string): the URL of a page where the block appears.
 - `selector` (string): a CSS selector that matches the block's root element.
 
-Used by `checkEvidence()` to validate that every block has at least one
-matching representative. May be empty if not yet calibrated.
+`state.mjs check-evidence <template>` requires at least one evidence entry per
+block to resolve on that template's capture
+(`data/captures/<template>/<slug>.html`); a block with no evidence, or none that
+resolves, is reported as missing and the check fails.
 
 ## Stub Contract
 
@@ -88,7 +106,9 @@ The implementation guarantee:
 ```json
 {
   "name": "specifications",
+  "canonical": "table",
   "status": "scaffold",
+  "variants": [""],
   "model": {
     "rows": "repeat",
     "columns": [
@@ -105,6 +125,7 @@ The implementation guarantee:
       "url": "https://example.com/products/widget",
       "selector": ".specifications"
     }
-  ]
+  ],
+  "decisions": []
 }
 ```

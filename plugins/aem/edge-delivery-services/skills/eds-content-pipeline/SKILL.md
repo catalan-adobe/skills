@@ -1,6 +1,6 @@
 ---
 name: eds-content-pipeline
-description: Migrate a whole website's content to AEM Edge Delivery Services at scale — inventory the site, cluster pages into templates from their visual tree, decompose each template into sections, layouts, default content and blocks, author one deterministic transformer per template, run it over every URL into DA preview, and hand a verified block content model to downstream skills. Use for site-scale migrations; use page-import for a single page.
+description: Deterministic runners for site-scale content migration to AEM Edge Delivery Services — inventory a site from its sitemaps, cluster pages into templates from their visual tree, run one transformer per template over every URL into DA preview with coverage, validity and fidelity gates, and hand a verified block content model (blocks.json) to downstream skills. The transformer per template is authored by an agent or a developer against the documented contract. Use for site-scale migrations; use page-import for a single page.
 license: Apache-2.0
 metadata:
   version: "0.1.0"
@@ -48,27 +48,34 @@ for the transformer API and [references/content-model.md](references/content-mod
 
 | Runner | Purpose |
 | --- | --- |
-| `inventory.mjs` | sitemaps → `migration/data/urls.json` |
-| `cluster.mjs` | visual-tree fingerprints → `migration/data/templates.json` |
-| `state.mjs list\|set\|check-evidence\|feedback` | inspect and correct state |
-| `scaffold-block.mjs --template <t>` | structural block stubs from `blocks.json` |
-| `transform.mjs <url\|file> --template <t>` | one page → DA document |
-| `fidelity.mjs <source.html> <out.html>` | content recall / precision / checklist verdict |
-| `validate.mjs <file.html>` | content gate for a DA document |
-| `bulk.mjs --template <t> --dry-run\|--run [--accept-coverage]` | every URL → DA preview (gated) |
+| `init.mjs --origin <u> --sitemap <u> --da-org <o> --da-site <s>` | preconditions; scaffold |
+| `inventory.mjs [--no-probe] [--limit n]` | sitemaps → `migration/data/urls.json` |
+| `cluster.mjs [--limit n] [--type t] [--force] [--no-shots]` | visual trees → templates |
+| `state.mjs list\|set\|check-evidence\|feedback` | inspect and correct state; feedback channel |
+| `scaffold-block.mjs --template <t> \| --name <n> [--force]` | block stubs from `blocks.json` |
+| `transform.mjs <url\|file> --template <t> [--out f]` | one page → DA document |
+| `validate.mjs <file.html> [--origin u]` | content gate for one DA document |
+| `fidelity.mjs <src.html> <out.html> [--ignore sel]… [--blocks f]` | recall, precision, shape |
+| `bulk.mjs --template <t> --dry-run\|--run [--accept-coverage]` | every URL → DA preview |
+| `media.mjs fix <document.html> --scope <name>` | repair over-cap images and SVGs via DA |
+| `da.mjs preflight\|get\|put\|preview <path>` | DA source and preview calls (never publish) |
+| `index.mjs push --confirm \| check <path>` | operator-gated query-index config push |
+| `retro.mjs`, `watch-run.mjs` | pi-dynamic-workflows executor tooling over pi run journals only |
 
 `--run` refuses below the last `--dry-run`'s `thresholds.coverage`; `--accept-coverage`
 bypasses the gate and is recorded in `units`. Global feedback (`scope: global`) is never
 auto-settled; an operator settles it with `state.mjs feedback set <id> appliedRun=<run>`.
 
-## Fixture e2e test
+## What this release does not include
 
-The fixture site (`scripts/fixtures/example-site/`) tests the complete pipeline from init
-through bulk --dry-run. It pre-defines a 'product' template with a transformer that extracts
-a hero section and specifications table. Hand-authored template artefacts (transformers,
-templates/, blocks.json) stand in for Plan B's analyst phase.
-
-Stage execution (`stages/*.yaml`, `prompts/`) is documented in a later release.
+The template analysis stage — an agent reading representatives, decomposing them into
+sections, layouts, default content and blocks, and authoring the transformer — is not part of
+this release. The runners expect `migration/transformers/<t>.mjs`,
+`migration/templates/<t>/analysis.md` and `migration/data/blocks.json` to exist; author them
+against
+[references/transformer-contract.md](references/transformer-contract.md) and
+[references/content-model.md](references/content-model.md). The fixture site
+(`scripts/fixtures/example-site/`) shows a complete, hand-authored example.
 
 ## Development
 
