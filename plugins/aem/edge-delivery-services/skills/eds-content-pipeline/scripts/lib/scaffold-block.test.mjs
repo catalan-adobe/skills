@@ -128,7 +128,50 @@ test('CLI no flags exits non-zero with Usage error', async () => {
 });
 
 test(
-  'CLI --name nope returns empty when block does not exist',
+  'CLI --name nope exits 1 with unknown block error',
+  async () => {
+    const repo = await mkdtemp(path.join(os.tmpdir(), 'ecp-cli-'));
+    await mkdir(path.join(repo, 'migration'), { recursive: true });
+    await writeFile(
+      path.join(repo, 'migration', 'site.config.json'),
+      '{}',
+    );
+    const dataDir = repo;
+    const paths = resolvePaths(
+      { MIGRATION_PROJECT_DIR: repo, MIGRATION_DATA_DIR: dataDir },
+    );
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(
+      paths.stateFile('blocks'),
+      JSON.stringify([block]),
+    );
+    const env = {
+      ...process.env,
+      MIGRATION_PROJECT_DIR: repo,
+      MIGRATION_DATA_DIR: dataDir,
+    };
+    const promise = execFileP(
+      process.execPath,
+      [scaffoldCli, '--name', 'nope'],
+      { env, cwd: repo },
+    );
+    await assert.rejects(
+      promise,
+      (err) => {
+        assert.equal(err.code, 1, 'exit code should be 1');
+        assert.match(
+          err.stderr,
+          /Unknown block "nope"/,
+          'stderr should contain unknown block error',
+        );
+        return true;
+      },
+    );
+  },
+);
+
+test(
+  'CLI --template no-such-template exits 0 with empty result',
   async () => {
     const repo = await mkdtemp(path.join(os.tmpdir(), 'ecp-cli-'));
     await mkdir(path.join(repo, 'migration'), { recursive: true });
@@ -152,7 +195,7 @@ test(
     };
     const { stdout } = await execFileP(
       process.execPath,
-      [scaffoldCli, '--name', 'nope'],
+      [scaffoldCli, '--template', 'no-such-template'],
       { env, cwd: repo },
     );
     const result = JSON.parse(stdout);

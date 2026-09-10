@@ -109,6 +109,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const blocks = all.filter(
     (b) => (name ? b.name === name : template in (b.templates ?? {})),
   );
+  if (name && blocks.length === 0) {
+    console.error(`Unknown block "${name}" in blocks.json`);
+    process.exit(1);
+  }
   const result = await scaffold(blocks, paths.repoRoot, {
     force: argv.includes('--force'),
   });
