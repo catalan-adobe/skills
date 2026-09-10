@@ -1,9 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  writeFile,
+} from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderStub, scaffold, STUB_MARKER } from './scaffold-block.mjs';
+import { resolvePaths } from './paths.mjs';
+
+const execFileP = promisify(execFile);
+const scaffoldCli = fileURLToPath(
+  new URL('./scaffold-block.mjs', import.meta.url),
+);
 
 const block = {
   name: 'specifications',
@@ -57,3 +71,111 @@ test('scaffold writes stubs and refuses to overwrite a real block', async () => 
   const forced = await scaffold([block], repo, { force: true });
   assert.equal(forced.written.length, 2);
 });
+
+test('CLI --template exits 0 and writes blocks', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'ecp-cli-'));
+  const repoRoot = path.dirname(repo);
+  const projectDir = repo;
+  const dataDir = repo;
+  await mkdir(path.join(projectDir, 'migration'), { recursive: true });
+  await writeFile(
+    path.join(projectDir, 'migration', 'site.config.json'),
+    '{}',
+  );
+  const paths = resolvePaths(
+    { MIGRATION_PROJECT_DIR: projectDir, MIGRATION_DATA_DIR: dataDir },
+  );
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(
+    paths.stateFile('blocks'),
+    JSON.stringify([block]),
+  );
+  const env = {
+    ...process.env,
+    MIGRATION_PROJECT_DIR: projectDir,
+    MIGRATION_DATA_DIR: dataDir,
+  };
+  const { stdout, stderr } = await execFileP(
+    process.execPath,
+    [scaffoldCli, '--template', 'product'],
+    { env, cwd: projectDir },
+  );
+  assert.equal(stderr, '');
+  const result = JSON.parse(stdout);
+  assert.equal(result.written.length, 2);
+  assert.match(result.written[0], /specifications\.js$/);
+  const jsPath = path.join(repoRoot, result.written[0]);
+  const jsContent = await readFile(jsPath, 'utf8');
+  assert.ok(jsContent.includes(STUB_MARKER));
+});
+
+test('CLI no flags exits non-zero with Usage error', async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), 'ecp-cli-'));
+  await mkdir(path.join(repo, 'migration'), { recursive: true });
+  await writeFile(
+    path.join(repo, 'migration', 'site.config.json'),
+    '{}',
+  );
+  const env = {
+    ...process.env,
+    MIGRATION_PROJECT_DIR: repo,
+    MIGRATION_DATA_DIR: repo,
+  };
+  await assert.rejects(
+    () => execFileP(process.execPath, [scaffoldCli], { env, cwd: repo }),
+    /Usage/,
+  );
+});
+
+test(
+  'CLI --name nope returns empty when block does not exist',
+  async () => {
+    const repo = await mkdtemp(path.join(os.tmpdir(), 'ecp-cli-'));
+    await mkdir(path.join(repo, 'migration'), { recursive: true });
+    await writeFile(
+      path.join(repo, 'migration', 'site.config.json'),
+      '{}',
+    );
+    const dataDir = repo;
+    const paths = resolvePaths(
+      { MIGRATION_PROJECT_DIR: repo, MIGRATION_DATA_DIR: dataDir },
+    );
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(
+      paths.stateFile('blocks'),
+      JSON.stringify([block]),
+    );
+    const env = {
+      ...process.env,
+      MIGRATION_PROJECT_DIR: repo,
+      MIGRATION_DATA_DIR: dataDir,
+    };
+    const { stdout } = await execFileP(
+      process.execPath,
+      [scaffoldCli, '--name', 'nope'],
+      { env, cwd: repo },
+    );
+    const result = JSON.parse(stdout);
+    assert.equal(result.written.length, 0);
+    assert.deepEqual(result.skipped, []);
+  },
+);
+
+test(
+  'renderStub header: true includes header class in JS and CSS',
+  () => {
+    const headerBlock = {
+      ...block,
+      model: { ...block.model, header: true },
+    };
+    const { js, css } = renderStub(headerBlock);
+    assert.match(
+      js,
+      /row\.classList\.add\('specifications-header'\)/,
+    );
+    assert.match(
+      css,
+      /\.specifications-header \{ font-weight: 700; \}/,
+    );
+  },
+);

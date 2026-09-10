@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assertRecord } from './shapes.mjs';
+import { assertRecord, assertBlock } from './shapes.mjs';
 
 const NOW = '2026-09-03T00:00:00.000Z';
 
@@ -49,4 +49,55 @@ test('blocks status enum covers todo building passed failed', () => {
   for (const s of ['todo', 'building', 'passed', 'failed']) {
     assert.doesNotThrow(() => assertRecord('blocks', { name: 'x', status: s, updatedAt: NOW }));
   }
+});
+
+test('assertBlock rejects name ../evil with kebab-case error', () => {
+  assert.throws(
+    () => assertBlock({
+      name: '../evil',
+      status: 'scaffold',
+      model: {
+        rows: 'repeat',
+        columns: [{ name: 'x', type: 'text' }],
+        header: false,
+      },
+      templates: {},
+      evidence: [],
+    }),
+    /kebab-case/,
+  );
+});
+
+test('assertBlock rejects status todo', () => {
+  assert.throws(
+    () => assertBlock({
+      name: 'valid',
+      status: 'todo',
+      model: {
+        rows: 'repeat',
+        columns: [{ name: 'x', type: 'text' }],
+        header: false,
+      },
+      templates: {},
+      evidence: [],
+    }),
+    /status must be scaffold \| implemented/,
+  );
+});
+
+test('assertBlock rejects missing model.columns', () => {
+  assert.throws(
+    () => assertBlock({
+      name: 'valid',
+      status: 'scaffold',
+      model: {
+        rows: 'repeat',
+        columns: undefined,
+        header: false,
+      },
+      templates: {},
+      evidence: [],
+    }),
+    /model\.columns must be non-empty/,
+  );
 });
