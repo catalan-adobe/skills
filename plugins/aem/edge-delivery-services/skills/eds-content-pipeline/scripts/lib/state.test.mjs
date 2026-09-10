@@ -17,7 +17,9 @@ const stateCli = fileURLToPath(new URL('./state.mjs', import.meta.url));
 
 async function tmpPaths() {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'migration-state-'));
-  return resolvePaths({ MIGRATION_DATA_DIR: dir, MIGRATION_PROJECT_DIR: dir });
+  // Distinct dirs: feedback.json lives in the project dir, state files in the data dir, and a
+  // test that pointed both at one directory could not tell them apart.
+  return resolvePaths({ MIGRATION_DATA_DIR: path.join(dir, 'data'), MIGRATION_PROJECT_DIR: dir });
 }
 
 /** Returns a helper that runs the state CLI against `paths`. */
@@ -31,7 +33,11 @@ function runCli(paths) {
 }
 
 const url = (n) => ({
-  url: `https://x.test/p${n}`, path: `/p${n}`, sitemapType: 'page', template: 'page', status: 'todo',
+  url: `https://x.test/p${n}`,
+  path: `/p${n}`,
+  sitemapType: 'page',
+  template: 'page',
+  status: 'todo',
 });
 
 test('upsert creates the file, merges by key and stamps updatedAt', async () => {
@@ -76,7 +82,10 @@ test('withLock times out with an actionable message when the lock is held', asyn
   const acquiredLock = new Promise((r) => { acquired = r; });
   const holder = withLock(file, () => { acquired(); return held; });
   await acquiredLock;
-  await assert.rejects(() => withLock(file, async () => {}, { timeoutMs: 200 }), /remove it if no runner is active/);
+  await assert.rejects(
+    () => withLock(file, async () => {}, { timeoutMs: 200 }),
+    /remove it if no runner is active/,
+  );
   release();
   await holder;
 });
