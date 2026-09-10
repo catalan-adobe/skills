@@ -135,7 +135,7 @@ function parseAssignments(pairs) {
   }));
 }
 
-function countBy(rows, field) {
+export function countBy(rows, field) {
   const counts = {};
   for (const row of rows) {
     const k = String(row[field]);
@@ -180,11 +180,17 @@ export async function checkEvidence(
         `${captureSlug(ev.url)}.html`
       );
       const html = await readFile(file, 'utf8').catch(() => null);
-      if (html &&
-        new JSDOM(html).window.document.querySelector(ev.selector)
-      ) {
-        ok = true;
-        break;
+      if (html) {
+        try {
+          if (new JSDOM(html).window.document.querySelector(
+            ev.selector
+          )) {
+            ok = true;
+            break;
+          }
+        } catch {
+          // Malformed selector; treat as unresolved, continue
+        }
       }
     }
     if (!ok) {

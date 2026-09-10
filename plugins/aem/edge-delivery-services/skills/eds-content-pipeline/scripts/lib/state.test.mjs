@@ -176,3 +176,28 @@ test('feedback add/list/set round-trips', async () => {
   const after = JSON.parse(afterOut);
   assert.equal(after[0].scope, 'template:pdp');
 });
+
+test('check-evidence treats a malformed selector as unresolved instead of throwing',
+  async () => {
+    const paths = await tmpPaths();
+    const { mkdir, writeFile } = await import('fs/promises');
+    const capDir = path.join(paths.dataDir, 'captures', 't1');
+    await mkdir(capDir, { recursive: true });
+    await writeFile(
+      path.join(capDir, 'rep1.html'),
+      '<main><table class="specs"></table></main>'
+    );
+    await upsertRecords('blocks', [{
+      name: 'broken',
+      status: 'todo',
+      templates: { t1: 1 },
+      evidence: [
+        { url: 'https://example.com/rep1', selector: '>>>not a selector' },
+      ],
+    }], paths);
+    const { stdout } = await runCli(paths)('check-evidence', 't1');
+    const out = JSON.parse(stdout);
+    assert.equal(out.pass, false);
+    assert.deepEqual(out.missing.map((m) => m.name), ['broken']);
+  }
+);

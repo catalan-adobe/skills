@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { resolvePaths } from './paths.mjs';
-import { readJson, withLock, writeJsonAtomic } from './state.mjs';
+import { countBy, readJson, withLock, writeJsonAtomic } from './state.mjs';
 import { assertRecord } from './shapes.mjs';
 
 /**
@@ -27,15 +27,6 @@ export async function readRows(name, paths = resolvePaths()) {
     if (err.code === 'ENOENT') return [];
     throw err;
   }
-}
-
-function countBy(rows, field) {
-  const counts = {};
-  for (const row of rows) {
-    const k = String(row[field]);
-    counts[k] = (counts[k] ?? 0) + 1;
-  }
-  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 /** Builds the dashboard overview from state files and ledgers. */
