@@ -131,38 +131,36 @@ test(
         '--no-shots',
         '--concurrency', '1',
       );
-      assert.ok(
-        clu.remaining === 0,
-        'cluster should fingerprint all URLs',
-      );
-      assert.ok(
-        clu.finalized,
-        'cluster should finalize when remaining = 0',
-      );
-      // The fixture pre-defines a "product" template that matches specific URLs.
-      // For testing, we re-assign product URLs to that template manually
-      // (in production, Plan B's analyst would match URLs to templates).
-      const { upsertRecords, listRecords } = await import(
-        '#lib/state.mjs'
-      );
+      assert.equal(clu.errors, 0, 'every URL fingerprinted');
+      assert.equal(clu.failed, 0, 'no URL left without a fingerprint');
+      assert.ok(clu.finalized, 'cluster finalizes when nothing remains');
+      assert.equal(clu.templates, 2, 'products cluster apart from index/about');
+      // Templates get generic names (`<seed>-N`); the analyst names them in the template
+      // stage. Stand in for that step: find the cluster holding the product pages, check it
+      // holds exactly those, and rename it `product` so the hand-authored artefacts apply.
+      const { listRecords, upsertRecords } = await import('#lib/state.mjs');
       const paths = resolvePaths(
         { ...process.env, MIGRATION_PROJECT_DIR: path.join(repo, 'migration') },
         repo,
       );
       const allUrls = await listRecords('urls', { paths });
-      const productUrls = allUrls.filter(
-        (u) => /\/product-[a-z]+\.html$/.test(u.url),
+      const isProduct = (u) => /\/product-[a-z]+\.html$/.test(u.url);
+      const clusterName = allUrls.find(isProduct).template;
+      assert.ok(clusterName, 'product pages were assigned a template');
+      assert.deepEqual(
+        allUrls.filter((u) => u.template === clusterName).map((u) => u.path).sort(),
+        ['/product-a.html', '/product-b.html'],
+        'the product cluster holds exactly the product pages',
       );
-      if (productUrls.length) {
-        await upsertRecords(
-          'urls',
-          productUrls.map((u) => ({
-            url: u.url,
-            template: 'product',
-          })),
-          paths,
-        );
-      }
+      await upsertRecords(
+        'urls',
+        allUrls.filter((u) => u.template === clusterName)
+          .map((u) => ({ url: u.url, template: 'product' })),
+        paths,
+      );
+      const templates = await listRecords('templates', { paths });
+      const productTemplate = templates.find((t) => t.name === clusterName);
+      assert.equal(productTemplate.urlCount, 2);
 
       // Step 4: scaffold-block
       const scaffold = await run(

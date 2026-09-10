@@ -17,11 +17,25 @@ import {
 
 const POLL = '() => JSON.stringify(window.__treeResult || window.__treeError || null)';
 
-/** Snippet injected after the page-tree bundle: capture once, park result
- * or error. */
-export function treeBootstrap(minWidth = 900) {
-  return `try { window.__treeResult = window.__visualTree.captureVisualTree(${minWidth}); }
-catch (err) { window.__treeError = { error: String((err && err.stack) || err) }; }`;
+/**
+ * Snippet injected after the page-tree bundle. Init scripts run at document start, before any
+ * DOM exists, so the capture waits for `load` (plus a short settle for late layout) and parks
+ * the tree in `window.__treeResult` or the failure in `window.__treeError`.
+ *
+ * @param {number} [minWidth=900] Minimum box width the visual tree keeps.
+ * @param {number} [settleMs=500] Delay after `load` before capturing.
+ * @returns {string} JavaScript source for the browser.
+ */
+export function treeBootstrap(minWidth = 900, settleMs = 500) {
+  return `(() => {
+  const capture = () => {
+    try { window.__treeResult = window.__visualTree.captureVisualTree(${minWidth}); }
+    catch (err) { window.__treeError = { error: String((err && err.stack) || err) }; }
+  };
+  const later = () => setTimeout(capture, ${settleMs});
+  if (document.readyState === 'complete') later();
+  else window.addEventListener('load', later, { once: true });
+})();`;
 }
 
 /** Parses the poll payload; null while pending, throws on a captured error.
@@ -164,7 +178,11 @@ async function finalizeTemplates({ config, paths }) {
   const urls = (await listRecords('urls', { paths }))
     .filter((u) => !u.excluded && u.fingerprint !== undefined);
   const byUrl = new Map(urls.map((u) => [u.url, u]));
-  const clusters = clusterRecords(urls, { threshold: config.thresholds.clusterSimilarity });
+  // The coarse fingerprint (top-level boxes) tells site sections apart; the fine one (two
+  // levels, with layout and class tokens) tells templates apart — pages that share a header,
+  // one main box and a footer are not one template.
+  const fine = urls.map((u) => ({ ...u, fingerprint: u.fingerprintFine ?? u.fingerprint }));
+  const clusters = clusterRecords(fine, { threshold: config.thresholds.clusterSimilarity });
   const templates = clusters.map((cluster) => {
     const seed = config.templateSeeds[cluster.sitemapType] ?? cluster.sitemapType;
     const members = cluster.members
@@ -255,11 +273,12 @@ export async function runCluster({
         candidates, config, paths, browserFactory, initScripts: scripts, deadline, log,
       });
     }
-    const remaining = countRemaining(
-      await listRecords('urls', { paths }),
-      { type, force, startedAt },
-    );
+    const after = await listRecords('urls', { paths });
+    const remaining = countRemaining(after, { type, force, startedAt });
+    const failed = after.filter((u) => !u.excluded && u.fingerprintError).length;
     let templates = [];
+    // A URL that failed to fingerprint belongs to no template and is never migrated; `failed`
+    // makes that visible so the operator re-runs (`--force`) or excludes those URLs.
     if (remaining === 0) {
       templates = await finalizeTemplates({ config, paths });
       if (shots) {
@@ -272,6 +291,7 @@ export async function runCluster({
       processed: tally.processed,
       errors: tally.errors,
       remaining,
+      failed,
       finalized: remaining === 0,
       templates: templates.length,
     };
