@@ -1,4 +1,4 @@
-import { access, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { flag, positiveIntFlag } from './args.mjs';
@@ -107,14 +107,15 @@ async function fetchSource(ctx, url) {
 }
 
 /**
- * Keeps the fetched source page under `data/captures/<template>/<slug>.html` so evidence
- * checks and fidelity runs read the exact HTML the transformer saw. Existing files are kept.
+ * Mirrors the fetched source page under `data/captures/<template>/<slug>.html` so evidence
+ * checks and fidelity runs read the exact HTML the transformer saw. The file is rewritten
+ * only when the page changed, so an unchanged capture keeps its mtime.
  */
 async function captureSource(ctx, url, html) {
   const dir = path.join(ctx.paths.dataDir, 'captures', ctx.template);
   const file = path.join(dir, `${captureSlug(url)}.html`);
-  const exists = await access(file).then(() => true, () => false);
-  if (exists) return file;
+  const current = await readFile(file, 'utf8').catch(() => null);
+  if (current === html) return file;
   await mkdir(dir, { recursive: true });
   await writeFile(file, html);
   return file;
@@ -482,11 +483,13 @@ async function forceByFeedback(ctx, records, stored) {
 
 /**
  * Marks a `template:`/`page:` item applied when every URL it forced ended in a done status
- * this run (vacuously true when it forced none). `global` items are never auto-settled: they
- * may still be pending against templates that have not run yet, so an operator settles them
- * explicitly once every affected template has re-run.
+ * this run (vacuously true when it forced none). Nothing settles when `--limit` truncated the
+ * selection: URLs outside the batch were never re-run. `global` items are never auto-settled:
+ * they may still be pending against templates that have not run yet, so an operator settles
+ * them explicitly once every affected template has re-run.
  */
-async function settleFeedback(ctx, forced, results) {
+async function settleFeedback(ctx, forced, results, { truncated }) {
+  if (truncated) return;
   const byUrl = new Map(results.map((r) => [r.url, r]));
   for (const { item, urls } of forced) {
     if (item.scope === 'global') continue;
@@ -526,9 +529,14 @@ function resolveDirs(paths, io) {
   };
 }
 
+/** `bulk-<template>-<UTC timestamp>`: unique per run, sortable, safe in file names. */
+export function defaultRunId(template, now = new Date()) {
+  return `bulk-${template}-${now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}`;
+}
+
 function bulkOptions(options, template) {
   const {
-    force = false, concurrency = 4, maxMinutes = 30, runId = `bulk-${template}`,
+    force = false, concurrency = 4, maxMinutes = 30, runId = defaultRunId(template),
     acceptCoverage = false,
   } = options;
   return {
@@ -631,11 +639,12 @@ export async function runBulk({
   await ensureCoverage(ctx);
   const stored = await listRecords('urls', { where: { template }, paths: ctx.paths });
   const selected = selectRecords(stored, options);
+  const truncated = selected.length < selectRecords(stored).length;
   const forced = await forceByFeedback(ctx, selected, stored);
   const results = await runAll(ctx, selected, stored);
   const report = buildReport(ctx, results);
   await writeArtifacts(ctx, report, stored);
-  await settleFeedback(ctx, forced, results);
+  await settleFeedback(ctx, forced, results, { truncated });
   return report;
 }
 
@@ -651,7 +660,7 @@ function parseCli(argv) {
       force: argv.includes('--force'),
       concurrency: positiveIntFlag(argv, '--concurrency', 4),
       maxMinutes: positiveIntFlag(argv, '--max-minutes', 30),
-      runId: flag(argv, '--run-id', `bulk-${template}-cli`),
+      runId: flag(argv, '--run-id', defaultRunId(template)),
       acceptCoverage: argv.includes('--accept-coverage'),
     },
   };

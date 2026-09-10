@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import {
+  mkdir, mkdtemp, readFile, stat, writeFile,
+} from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
@@ -14,8 +16,8 @@ import {
   addFeedback, listFeedback, listRecords, setFeedback, upsertRecords,
 } from './state.mjs';
 import {
-  buildReport, classifyFailure, feedbackForces, longTailReport, mediaStats, runBulk,
-  selectRecords,
+  buildReport, classifyFailure, defaultRunId, feedbackForces, longTailReport, mediaStats,
+  runBulk, selectRecords,
 } from './bulk.mjs';
 
 const execFileP = promisify(execFile);
@@ -526,24 +528,28 @@ test('a dry run writes the long-tail report grouped by the stored fingerprints',
   assert.match(md, /- 2 pages share `h\|m\|f`\n {2}- .*\/boom\/\n {2}- .*\/boom-2\//);
 });
 
-test('the fetched source is captured once per URL and never overwritten', async () => {
-  const { paths, io } = await setup(['acme-flight-school']);
-  const file = path.join(
-    paths.dataDir, 'captures', 'case-study',
-    'case-study-acme-flight-school.html'
-  );
-  const run = () => runBulk({
-    template: 'case-study',
-    mode: 'dry-run',
-    options: { runId: 'bulk-cap', concurrency: 1 },
-    io: { ...io, http: httpStub().client },
+test('the capture mirrors the fetched source: unchanged pages keep it, changed pages refresh it',
+  async () => {
+    const { paths, io } = await setup(['acme-flight-school']);
+    const file = path.join(
+      paths.dataDir, 'captures', 'case-study', 'case-study-acme-flight-school.html',
+    );
+    const run = (http) => runBulk({
+      template: 'case-study',
+      mode: 'dry-run',
+      options: { runId: 'bulk-cap', concurrency: 1 },
+      io: { ...io, http },
+    });
+    await run(httpStub().client);
+    assert.equal(await readFile(file, 'utf8'), sourcePage('acme-flight-school'));
+    const before = (await stat(file)).mtimeMs;
+    await new Promise((r) => { setTimeout(r, 20); });
+    await run(httpStub().client);
+    assert.equal((await stat(file)).mtimeMs, before, 'unchanged source is not rewritten');
+    const changed = `${sourcePage('acme-flight-school')}<!-- v2 -->`;
+    await run({ get: async (url) => ({ url, status: 200, body: changed }) });
+    assert.equal(await readFile(file, 'utf8'), changed, 'changed source refreshes the capture');
   });
-  await run();
-  assert.equal(await readFile(file, 'utf8'), sourcePage('acme-flight-school'));
-  await writeFile(file, 'kept');
-  await run();
-  assert.equal(await readFile(file, 'utf8'), 'kept');
-});
 
 async function feedbackRun({ io, paths }, runId, slugs, http = httpStub().client) {
   const item = await addFeedback({
@@ -684,4 +690,24 @@ test('--accept-coverage proceeds below the threshold and records it in the ledge
   assert.equal(report.counts.previewed, 1);
   const units = await readRows('units', paths);
   assert.equal(units[0].detail, 'bulk run (coverage accepted)');
+});
+
+test('feedback is not settled when --limit left URLs out of the batch', async () => {
+  const { paths, io } = await setup(['acme-flight-school', 'harbour-clinic']);
+  const item = await addFeedback({ scope: 'template:case-study', decision: 'rerun' }, paths);
+  await setFeedback(item.id, { status: 'applied' }, paths);
+  await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'r-limit', concurrency: 1, limit: 1 },
+    io: { ...io, http: httpStub().client, da: daStub().client },
+  });
+  const [after] = await listFeedback({ id: item.id }, paths);
+  assert.equal(after.appliedRun, undefined, 'half a template is not an applied rerun');
+});
+
+test('defaultRunId is unique per run and names the template', () => {
+  const a = defaultRunId('case-study', new Date('2026-09-10T12:34:56.789Z'));
+  assert.equal(a, 'bulk-case-study-20260910T123456Z');
+  assert.notEqual(defaultRunId('case-study'), defaultRunId('case-study', new Date(0)));
 });
