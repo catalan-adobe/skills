@@ -204,7 +204,7 @@ test('headings rule rejects an empty heading element on any template', () => {
 });
 
 test('headings rule accepts a heading whose only content is an image', () => {
-  const html = page(`<h1><img src="${IMG}" alt="Knack"></h1><h2>Copy</h2>`);
+  const html = page(`<h1><img src="${IMG}" alt="Example"></h1><h2>Copy</h2>`);
   const issues = validateHtml({ html }).issues.filter((i) => i.rule === 'headings');
   assert.deepEqual(issues, []);
 });
@@ -248,8 +248,8 @@ test('leakage rule keeps a bracketed placeholder that the source itself writes',
     + '<p>Open with “Dear [First Name],” and keep it short.</p>'
     + '<ul><li>Ask [Company Name] for the signed copy.</li></ul>'
     + '<p>Manual handoffs leave undefined processes behind.</p>');
-  const sourceText = 'Jotform vs. Typeform [2026 Guide] Open with “Dear [First Name],” and keep '
-    + 'it short. Ask [Company Name] for the signed copy. Manual handoffs leave undefined '
+  const sourceText = 'Jotform vs. Typeform [2026 Guide] Open with “Dear [First Name],” '
+    + 'and keep it short. Ask [Company Name] for the signed copy. Manual handoffs leave undefined '
     + 'processes behind.';
   assert.deepEqual(
     validateHtml({ html, sourceText }).issues.filter((i) => i.rule === 'leakage'),

@@ -17,14 +17,15 @@ import { validateFile } from './validate.mjs';
 const execFileP = promisify(execFile);
 const cli = fileURLToPath(new URL('./transform.mjs', import.meta.url));
 
+const HOSTS = ['example.com'];
 const SOURCE = `<!doctype html><html><head>
-<title> Kingdom Air Corps Revamps Operations </title>
-<meta name="description" content="Kingdom Air Corps gets off spreadsheets.">
+<title> Acme Flight School Revamps Operations </title>
+<meta name="description" content="Acme Flight School gets off spreadsheets.">
 <meta property="og:image" content="https://www.example.com/uploads/2023/10/5639711_orig.jpg">
-<link rel="canonical" href="https://www.example.com/case-study/kingdom-air-corps/">
-</head><body><div id="contentCntr">
-<h1>Kingdom Air Corps</h1>
-<p class="lead" style="color:red">Flying <b>high</b> with Knack.</p>
+<link rel="canonical" href="https://www.example.com/case-study/acme-flight-school/">
+</head><body><div id="content">
+<h1>Acme Flight School</h1>
+<p class="lead" style="color:red">Flying <b>high</b> with Example.</p>
 <img src="/uploads/2023/10/plane.jpg">
 <script>window.dataLayer = [];</script>
 <a href="/pricing/">See pricing</a>
@@ -84,17 +85,18 @@ test('transformHtml serialises a DA skeleton that passes the content gate', asyn
   const transformer = await loadTransformer('case-study', { dir });
   const result = await transformHtml({
     html: SOURCE,
-    url: 'https://www.example.com/case-study/kingdom-air-corps/',
+    url: 'https://www.example.com/case-study/acme-flight-school/',
     transformer,
-    params: { sourceRoot: '#contentCntr' },
+    params: { sourceRoot: '#content' },
+    hosts: HOSTS,
   });
-  assert.equal(result.path, '/case-study/kingdom-air-corps');
+  assert.equal(result.path, '/case-study/acme-flight-school');
   assert.match(result.html, /^<body>\n {2}<header><\/header>\n {2}<main>\n/);
   assert.match(result.html, /<\/main>\n {2}<footer><\/footer>\n<\/body>\n$/);
-  assert.match(result.html, /<div class="columns hero"><div><div><h1>Kingdom Air Corps<\/h1>/);
+  assert.match(result.html, /<div class="columns hero"><div><div><h1>Acme Flight School<\/h1>/);
   assert.match(result.html, /<div class="section-metadata"><div><div>Style<\/div>/);
   assert.match(result.html, /<div class="metadata">/);
-  assert.match(result.html, /<div>description<\/div><div>Kingdom Air Corps gets off spreadsheets/);
+  assert.match(result.html, /<div>description<\/div><div>Acme Flight School gets off spreadsheets/);
   assert.ok(!result.html.includes('<script'), 'scripts are dropped');
   assert.ok(!result.html.includes('style='), 'style attributes are dropped');
   assert.ok(!result.html.includes('class="lead"'), 'default-content classes are dropped');
@@ -106,7 +108,7 @@ test('transformHtml serialises a DA skeleton that passes the content gate', asyn
     { code: 'media', message: `img ${planeSrc} had no alt attribute` },
     { code: 'skeleton', message: 'removed forbidden <script> element' },
   ]);
-  const file = path.join(dir, 'kingdom-air-corps.html');
+  const file = path.join(dir, 'acme-flight-school.html');
   await writeFile(file, result.html);
   const verdict = await validateFile(file, {
     origin: 'https://www.example.com',
@@ -124,9 +126,10 @@ test('internal links lose their trailing slash; the root and externals keep thei
     .map((href) => `<a href="${href}">link</a>`).join('');
   const result = await transformHtml({
     html: SOURCE.replace('<a href="/pricing/">See pricing</a>', links),
-    url: 'https://www.example.com/case-study/kingdom-air-corps/',
+    url: 'https://www.example.com/case-study/acme-flight-school/',
     transformer,
-    params: { sourceRoot: '#contentCntr' },
+    params: { sourceRoot: '#content' },
+    hosts: HOSTS,
   });
   const { document } = new JSDOM(`<!doctype html><html>${result.html}</html>`).window;
   assert.deepEqual([...document.querySelectorAll('main a')].map((a) => a.getAttribute('href')), [
@@ -148,9 +151,10 @@ test('the bare apex and the http spelling of the origin localise too', async () 
     .map((href) => `<a href="${href}">link</a>`).join('');
   const result = await transformHtml({
     html: SOURCE.replace('<a href="/pricing/">See pricing</a>', links),
-    url: 'https://www.example.com/case-study/kingdom-air-corps/',
+    url: 'https://www.example.com/case-study/acme-flight-school/',
     transformer,
-    params: { sourceRoot: '#contentCntr' },
+    params: { sourceRoot: '#content' },
+    hosts: HOSTS,
   });
   const { document } = new JSDOM(`<!doctype html><html>${result.html}</html>`).window;
   assert.deepEqual([...document.querySelectorAll('main a')].map((a) => a.getAttribute('href')), [
@@ -166,10 +170,10 @@ test('the bare apex and the http spelling of the origin localise too', async () 
 test('extractMetadata keeps only the fields the source carries', () => {
   const { document } = new JSDOM(SOURCE).window;
   assert.deepEqual(extractMetadata(document), {
-    title: 'Kingdom Air Corps Revamps Operations',
-    description: 'Kingdom Air Corps gets off spreadsheets.',
+    title: 'Acme Flight School Revamps Operations',
+    description: 'Acme Flight School gets off spreadsheets.',
     image: 'https://www.example.com/uploads/2023/10/5639711_orig.jpg',
-    canonical: 'https://www.example.com/case-study/kingdom-air-corps/',
+    canonical: 'https://www.example.com/case-study/acme-flight-school/',
   });
 });
 
@@ -177,29 +181,32 @@ test('transformHtml refuses out-of-scope URLs and bad transformDOM returns', asy
   const dir = await fixtureDir();
   const transformer = await loadTransformer('case-study', { dir });
   await assert.rejects(
-    () => transformHtml({ html: SOURCE, url: 'https://www.example.com/pricing/', transformer }),
+    () => transformHtml({
+      html: SOURCE, url: 'https://www.example.com/pricing/', transformer, hosts: HOSTS,
+    }),
     /does not match https:\/\/www\.example\.com\/pricing\/; the URL is outside the template scope/,
   );
   const broken = { ...transformer, transformDOM: () => null };
   await assert.rejects(
     () => transformHtml({
       html: SOURCE,
-      url: 'https://www.example.com/case-study/kingdom-air-corps/',
+      url: 'https://www.example.com/case-study/acme-flight-school/',
       transformer: broken,
-      params: { sourceRoot: '#contentCntr' },
+      params: { sourceRoot: '#content' },
+      hosts: HOSTS,
     }),
     /transformDOM returned object; it must return the main element or \{ element \}/,
   );
 });
 
 test('contentHash ignores scripts, comments and whitespace but tracks copy', () => {
-  const base = contentHash(SOURCE, '#contentCntr');
+  const base = contentHash(SOURCE, '#content');
   const noisy = SOURCE
     .replace('<script>window.dataLayer = [];</script>', '<script>other()</script>')
     .replace('<h1>', '<!-- hero -->\n   <h1>');
-  assert.equal(contentHash(noisy, '#contentCntr'), base);
-  const edited = SOURCE.replace('Kingdom Air Corps<', 'Kingdom Air<');
-  assert.notEqual(contentHash(edited, '#contentCntr'), base);
+  assert.equal(contentHash(noisy, '#content'), base);
+  const edited = SOURCE.replace('Acme Flight School<', 'Acme Air<');
+  assert.notEqual(contentHash(edited, '#content'), base);
   assert.equal(contentHash(SOURCE, 'main'), contentHash(SOURCE, 'body'));
 });
 

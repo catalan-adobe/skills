@@ -136,12 +136,11 @@ function internalHref(absolute) {
   return `${pathname.replace(/\/+$/, '') || '/'}${search}${hash}`;
 }
 
-// knack links to itself under four spellings: the canonical `https://www.knack.com` origin, the
-// same host over `http`, and both over the bare apex `knack.com` (census-bed-management's
-// `http://knack.com/health/contact/`, two video pages, one case study). All four are the same
-// site and localise; a different host that ends in the origin's name (`learn.knack.com`,
-// `notexample.com`) is external, so the comparison is on the whole hostname minus
-// `www.`.
+// A site links to itself under several spellings: the canonical `https://www.example.com`
+// origin, the same host over `http`, and both over the bare apex `example.com`. All of them are
+// the same site and localise; a different host that merely ends in the origin's name
+// (`learn.example.com`, `notexample.com`) is external, so the comparison is on the whole
+// hostname minus `www.`.
 const hostOf = (url) => url.hostname.replace(/^www\./i, '').toLowerCase();
 
 /** True when `absolute` points at one of the site's origin alias hosts. */
@@ -239,12 +238,14 @@ function rootElement(result, transformer) {
  * @param {string} options.url Source page URL (jsdom base URL).
  * @param {object} options.transformer Result of {@link loadTransformer}.
  * @param {object} [options.params] Transformer parameters; `sourceRoot` drives the hash.
+ * @param {string[]} [options.hosts] Hosts that count as the source site (see
+ *   {@link originAliasHosts}); read from `site.config.json` when omitted.
  * @returns {Promise<{path: string, html: string, metadata: object, hash: string,
  *   warnings: object[]}>} The DA document and its provenance.
  * @throws {Error} When `match` is false or `transformDOM` returns no element.
  */
 export async function transformHtml({
-  html, url, transformer, params = {},
+  html, url, transformer, params = {}, hosts,
 }) {
   const { document } = new JSDOM(html, { url }).window;
   if (!transformer.match(url, document)) {
@@ -258,8 +259,7 @@ export async function transformHtml({
     document, url, html, params,
   });
   const warnings = [...(result?.warnings ?? [])];
-  const config = await loadConfig();
-  const ctx = { hosts: originAliasHosts(config), warnings };
+  const ctx = { hosts: hosts ?? originAliasHosts(await loadConfig()), warnings };
   const sections = prepareSections(document, rootElement(result, transformer), ctx);
   appendMetadataBlock(document, sections, { ...metadata, ...(result?.metadata ?? {}) }, warnings);
   const docPath = FileUtils.sanitizePath(transformer.generateDocumentPath({ document, url }));
@@ -304,7 +304,7 @@ async function cli(argv) {
     ...JSON.parse(flag(argv, '--params', '{}')),
   };
   const result = await transformHtml({
-    html, url, transformer, params,
+    html, url, transformer, params, hosts: originAliasHosts(config),
   });
   const fallbackOut = path.join(paths.siteDir, 'content', `${result.path.slice(1)}.html`);
   const out = flag(argv, '--out', fallbackOut);

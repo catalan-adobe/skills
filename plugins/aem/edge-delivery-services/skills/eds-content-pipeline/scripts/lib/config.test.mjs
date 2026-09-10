@@ -67,7 +67,7 @@ const base = {
   },
   templates: {
     'case-study': {
-      sourceRoot: '#contentCntr',
+      sourceRoot: '#content',
       needsBrowser: false,
       sourceUrlPattern: '^/case-study/[^/]+/$',
     },
@@ -109,11 +109,11 @@ test('rejects config when da.sourceHost is missing', async () => {
 
 test('templates.case-study validates url pattern correctly', async () => {
   const caseStudy = {
-    sourceRoot: '#contentCntr',
+    sourceRoot: '#content',
     needsBrowser: false,
     sourceUrlPattern: '^/case-study/[^/]+/$',
   };
-  assert.equal(caseStudy.sourceRoot, '#contentCntr');
+  assert.equal(caseStudy.sourceRoot, '#content');
   assert.equal(caseStudy.needsBrowser, false);
   assert.match(
     '/case-study/example-corp/',
@@ -124,12 +124,12 @@ test('templates.case-study validates url pattern correctly', async () => {
 test('every template entry has required keys', async () => {
   const templates = {
     homepage: {
-      sourceRoot: '#contentCntr',
+      sourceRoot: '#content',
       needsBrowser: false,
       sourceUrlPattern: '^/$',
     },
     'case-study': {
-      sourceRoot: '#contentCntr',
+      sourceRoot: '#content',
       needsBrowser: false,
       sourceUrlPattern: '^/case-study/[^/]+/$',
     },
@@ -154,7 +154,7 @@ test('every template entry has required keys', async () => {
 
 test('templates.integration url pattern validation', async () => {
   const entry = {
-    sourceRoot: '#contentCntr',
+    sourceRoot: '#content',
     needsBrowser: false,
     sourceUrlPattern: '^/integrations/[^/]+/$',
   };
@@ -166,7 +166,7 @@ test('templates.integration url pattern validation', async () => {
 
 test('templates.template-detail url pattern validation', async () => {
   const detail = {
-    sourceRoot: '#contentCntr',
+    sourceRoot: '#content',
     needsBrowser: false,
     sourceUrlPattern: '^/templates/[^/]+/$',
   };
@@ -178,7 +178,7 @@ test('templates.template-detail url pattern validation', async () => {
 
 test('templates.page matches multiple path patterns correctly', async () => {
   const entry = {
-    sourceRoot: '#contentCntr, .elementor[data-elementor-type="wp-page"]',
+    sourceRoot: '#content, .elementor[data-elementor-type="wp-page"]',
     needsBrowser: false,
     sourceUrlPattern: '(^/health/|^/compare/)',
   };
@@ -191,7 +191,7 @@ test('templates.page matches multiple path patterns correctly', async () => {
 test('rejects config when a template entry is missing required fields', async () => {
   const file = await tmpConfig({
     ...base,
-    templates: { 'case-study': { sourceRoot: '#contentCntr' } },
+    templates: { 'case-study': { sourceRoot: '#content' } },
   });
   await assert.rejects(
     () => loadConfig(file),
@@ -204,7 +204,7 @@ test('rejects config when a template entry has a non-boolean needsBrowser', asyn
     ...base,
     templates: {
       'case-study': {
-        sourceRoot: '#contentCntr',
+        sourceRoot: '#content',
         needsBrowser: 'no',
         sourceUrlPattern: '^/x/$',
       },

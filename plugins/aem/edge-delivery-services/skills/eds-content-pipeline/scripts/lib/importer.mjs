@@ -38,7 +38,7 @@ function hasValue(value) {
 /**
  * Normalizes a URL or pathname to the EDS document path of the page.
  *
- * @param {string} input For example `https://www.knack.com/case-study/Kingdom-Air/` or `/x.html`.
+ * @param {string} input For example `https://www.example.com/case-study/Acme-Flight/` or `/x.html`.
  * @returns {string} Lower-case, hyphenated, no trailing slash; `/` becomes `/index`.
  */
 function sanitizePath(input) {
@@ -121,9 +121,9 @@ function srcsetCandidates(value) {
  * Picks the source an `<img>` should keep: the widest srcset candidate still within the cap.
  *
  * WordPress publishes the untouched camera original as the last `srcset` candidate — 20–31 MB
- * on knack — which Media Bus rejects. Only `w` descriptors carry a width; `x` descriptors and a
- * bare `srcset` fall through to `src`. When every candidate is over the cap the smallest one wins,
- * so the document never points at the original.
+ * on some sites — which Media Bus rejects. Only `w` descriptors carry a width; `x` descriptors
+ * and a bare `srcset` fall through to `src`. When every candidate is over the cap the smallest
+ * one wins, so the document never points at the original.
  *
  * @param {Element} img Source image element.
  * @param {{maxWidth?: number}} [options] `maxWidth` defaults to 2048 pixels.

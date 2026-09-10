@@ -10,10 +10,10 @@ const UPLOADS = 'https://www.example.com/uploads';
 const SOURCE = `<!doctype html><html><body>
 <div id="cookieNotice-wrap"><p>We use cookies</p></div>
 <main class="wp-site-blocks">
-  <div class="wp-block-cover" aria-label="Kingdom Air Corps"
+  <div class="wp-block-cover" aria-label="Acme Flight School"
     style="background-image:url(${UPLOADS}/hero.jpg?w=2000);color:#fff">
-    <h1>Kingdom Air Corps</h1>
-    <p>How a flight school runs on Knack</p>
+    <h1>Acme Flight School</h1>
+    <p>How a flight school runs on Example</p>
   </div>
   <!-- a comment -->
   <h2>The challenge</h2>
@@ -49,9 +49,9 @@ test('DOMUtils.replaceBackgroundByImg keeps content and replaces empty holders',
   const hero = main.querySelector('.wp-block-cover');
   assert.equal(hero.firstElementChild.tagName, 'IMG');
   assert.equal(hero.firstElementChild.getAttribute('src'), `${UPLOADS}/hero.jpg?w=2000`);
-  assert.equal(hero.firstElementChild.getAttribute('alt'), 'Kingdom Air Corps');
+  assert.equal(hero.firstElementChild.getAttribute('alt'), 'Acme Flight School');
   assert.equal(hero.getAttribute('style'), null);
-  assert.equal(hero.querySelector('h1').textContent, 'Kingdom Air Corps');
+  assert.equal(hero.querySelector('h1').textContent, 'Acme Flight School');
   assert.equal(main.lastElementChild.tagName, 'IMG');
   assert.equal(main.lastElementChild.getAttribute('src'), `${UPLOADS}/cta.png`);
   assert.equal(main.lastElementChild.getAttribute('alt'), '');
@@ -60,8 +60,8 @@ test('DOMUtils.replaceBackgroundByImg keeps content and replaces empty holders',
 
 test('FileUtils.sanitizePath makes an EDS document path from any URL or pathname', () => {
   const cases = [
-    ['https://www.example.com/case-study/Kingdom-Air/', '/case-study/kingdom-air'],
-    ['/case-study/hobsons-bay/', '/case-study/hobsons-bay'],
+    ['https://www.example.com/case-study/Acme-Flight/', '/case-study/acme-flight'],
+    ['/case-study/harbour-clinic/', '/case-study/harbour-clinic'],
     ['/', '/index'],
     ['', '/index'],
     ['/blog/post.html', '/blog/post'],
@@ -108,16 +108,16 @@ test('Blocks.getMetadataBlock lowercases keys, keeps nodes and skips empty value
   image.setAttribute('src', `${UPLOADS}/og.png`);
   image.setAttribute('alt', '');
   const block = Blocks.getMetadataBlock(document, {
-    Title: 'Kingdom Air Corps',
+    Title: 'Acme Flight School',
     description: '   ',
     image,
-    canonical: 'https://www.example.com/case-study/kingdom-air-corps/',
+    canonical: 'https://www.example.com/case-study/acme-flight-school/',
     robots: null,
   });
   assert.equal(block.className, 'metadata');
   assert.equal(block.children.length, 3);
   assert.equal(block.children[0].children[0].textContent, 'title');
-  assert.equal(block.children[0].children[1].textContent, 'Kingdom Air Corps');
+  assert.equal(block.children[0].children[1].textContent, 'Acme Flight School');
   assert.equal(block.children[1].children[0].textContent, 'image');
   assert.equal(block.children[1].children[1].firstElementChild.tagName, 'IMG');
   assert.equal(block.children[2].children[0].textContent, 'canonical');
@@ -170,14 +170,14 @@ test('the emitted document is what the content gate parser sees', () => {
   const { document } = load('<!doctype html><html><body><main></main></body></html>');
   const main = document.querySelector('main');
   const h1 = document.createElement('h1');
-  h1.textContent = 'Kingdom Air Corps';
+  h1.textContent = 'Acme Flight School';
   main.append(Blocks.createBlock(document, {
     name: 'columns', variants: ['hero'], cells: [[h1]],
   }));
   const p = document.createElement('p');
   p.textContent = 'Paper forms everywhere.';
   main.append(p);
-  main.append(Blocks.getMetadataBlock(document, { title: 'Kingdom Air Corps' }));
+  main.append(Blocks.getMetadataBlock(document, { title: 'Acme Flight School' }));
   const [hero] = splitSections(main, ['.columns']);
   hero.append(sectionMetadata(document, { style: 'hero' }));
   document.body.insertAdjacentHTML('afterbegin', '<header></header>');

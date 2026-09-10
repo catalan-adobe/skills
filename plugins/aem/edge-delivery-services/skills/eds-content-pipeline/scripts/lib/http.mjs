@@ -6,8 +6,7 @@ import { readJson, writeJsonAtomic } from './state.mjs';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const HEAD_FALLBACK_STATUSES = new Set([403, 405, 501]);
 const MAX_REDIRECTS = 5;
-const USER_AGENT = 'eds-migration-machine/0.1 '
-  + '(+https://github.com/catalan-adobe/eds-migration-test-20260902)';
+const USER_AGENT = 'eds-content-pipeline/0.1 (+https://github.com/adobe/skills)';
 const defaultSleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 const sha1 = (text) => createHash('sha1').update(text).digest('hex');
 
