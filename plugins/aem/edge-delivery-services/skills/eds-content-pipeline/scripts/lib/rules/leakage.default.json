@@ -1,0 +1,14 @@
+{
+  "leaks": [
+    "\\[[a-z0-9_-]+\\s[^\\]]*\\]",
+    "lorem ipsum",
+    "\\bTODO\\b",
+    "\\{\\{",
+    "\\[object Object\\]",
+    "\\bundefined\\b"
+  ],
+  "proseLeaks": [
+    "\\[[a-z0-9_-]+\\s[^\\]]*\\]",
+    "\\bundefined\\b"
+  ]
+}
