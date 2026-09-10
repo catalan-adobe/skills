@@ -147,15 +147,20 @@ export function countBy(rows, field) {
 }
 
 /**
- * Last path segment of a URL, `index` for the root — the capture
- * file name.
+ * Slugs the whole URL pathname: strips .html/.htm, drops leading/trailing
+ * slashes, lowercases, replaces runs of non [a-z0-9] with '-', collapses
+ * dashes, and maps '/' → 'index'. Used as the capture file name.
  */
 export function captureSlug(url) {
-  const seg = new URL(url).pathname
+  const pathname = new URL(url).pathname
     .replace(/\/+$/, '')
-    .split('/')
-    .pop();
-  return (seg || 'index').replace(/\.html?$/i, '');
+    .replace(/\.html?$/i, '')
+    .replace(/^\/+/, '');
+  if (!pathname) return 'index';
+  return pathname
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 /**

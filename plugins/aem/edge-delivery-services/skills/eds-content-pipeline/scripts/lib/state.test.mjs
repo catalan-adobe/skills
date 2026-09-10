@@ -8,7 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolvePaths } from './paths.mjs';
 import {
-  keyFieldFor, listRecords, updateJson, upsertRecords, withLock,
+  captureSlug, keyFieldFor, listRecords, updateJson, upsertRecords,
+  withLock,
 } from './state.mjs';
 import { assertRecord } from './shapes.mjs';
 
@@ -208,5 +209,38 @@ test('check-evidence treats a malformed selector as unresolved instead of throwi
     const out = JSON.parse(stdout);
     assert.equal(out.pass, false);
     assert.deepEqual(out.missing.map((m) => m.name), ['broken']);
+  }
+);
+
+test('captureSlug slugs the whole pathname excluding query/hash',
+  () => {
+    assert.equal(
+      captureSlug('https://x.test/de/corporate/home.html'),
+      'de-corporate-home'
+    );
+    assert.equal(
+      captureSlug('https://x.test/a/index.html'),
+      'a-index'
+    );
+    assert.equal(
+      captureSlug('https://x.test/b/index.html'),
+      'b-index'
+    );
+    assert.equal(captureSlug('https://x.test/'), 'index');
+    assert.equal(captureSlug('https://x.test'), 'index');
+    assert.equal(
+      captureSlug('https://x.test/path/to/Page.HTML'),
+      'path-to-page'
+    );
+  }
+);
+
+test('two URLs with identical last segment get distinct capture slugs',
+  () => {
+    const slug1 = captureSlug('https://x.test/a/index.html');
+    const slug2 = captureSlug('https://x.test/b/index.html');
+    assert.notEqual(slug1, slug2);
+    assert.equal(slug1, 'a-index');
+    assert.equal(slug2, 'b-index');
   }
 );

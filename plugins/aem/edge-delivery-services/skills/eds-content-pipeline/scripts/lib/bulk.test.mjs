@@ -515,7 +515,10 @@ test('a dry run writes the long-tail report grouped by the stored fingerprints',
 
 test('the fetched source is captured once per URL and never overwritten', async () => {
   const { paths, io } = await setup(['acme-flight-school']);
-  const file = path.join(paths.dataDir, 'captures', 'case-study', 'acme-flight-school.html');
+  const file = path.join(
+    paths.dataDir, 'captures', 'case-study',
+    'case-study-acme-flight-school.html'
+  );
   const run = () => runBulk({
     template: 'case-study',
     mode: 'dry-run',
