@@ -38,9 +38,10 @@ node .agents/skills/eds-content-pipeline/scripts/lib/init.mjs --origin https://w
 
 ## Runners
 
-Every runner is `node .agents/skills/eds-content-pipeline/scripts/lib/<name>.mjs …` and prints one
-JSON object. See `references/transformer-contract.md` for the transformer API and
-`references/content-model.md` for `blocks.json`.
+Every runner is `node .agents/skills/eds-content-pipeline/scripts/lib/<name>.mjs …` and prints
+one JSON object. See [references/transformer-contract.md](references/transformer-contract.md)
+for the transformer API and [references/content-model.md](references/content-model.md) for
+`blocks.json`.
 
 | Runner | Purpose |
 | --- | --- |
@@ -54,3 +55,8 @@ JSON object. See `references/transformer-contract.md` for the transformer API an
 | `bulk.mjs --template <t> --dry-run\|--run` | every URL of a template → DA preview (gated) |
 
 Stage execution (`stages/*.yaml`, `prompts/`) is documented in a later release.
+
+## Development
+
+Run tests: `npm test` (from `scripts/`). Lint and validate residue: `npm run check`.
+Validate the skill at repo level: `npm run validate` (from the repo root).

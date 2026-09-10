@@ -7,7 +7,9 @@
   "scripts": {
     "test": "node --test 'lib/*.test.mjs' 'fixtures/**/*.test.mjs'",
     "test:e2e": "node --test 'test/*.e2e.mjs'",
-    "check:residue": "! grep -ri knack .. --exclude-dir=node_modules"
+    "check:residue": "node check-residue.mjs",
+    "check:lines": "node check-lines.mjs",
+    "check": "npm run check:residue && npm run check:lines"
   },
   "dependencies": {
     "jsdom": "30.0.1",
