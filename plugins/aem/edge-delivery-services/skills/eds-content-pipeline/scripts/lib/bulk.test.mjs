@@ -575,3 +575,67 @@ test('feedback stays pending when one of the URLs it forced did not finish', asy
   assert.equal(report.counts['long-tail'], 1);
   assert.equal(after.appliedRun, undefined);
 });
+
+test('a template-scoped item settles when its only matching URL is excluded', async () => {
+  const { paths, io } = await setup(['acme-flight-school']);
+  await upsertRecords('urls', [{
+    url: urlFor('acme-flight-school'),
+    path: '/case-study/acme-flight-school/',
+    sitemapType: 'case-study',
+    template: 'case-study',
+    status: 'excluded',
+  }], paths);
+  const item = await addFeedback({ scope: 'template:case-study', decision: 'rerun' }, paths);
+  await setFeedback(item.id, { status: 'applied' }, paths);
+  await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'r-excluded', concurrency: 1 },
+    io: { ...io, http: httpStub().client, da: daStub().client },
+  });
+  const [after] = await listFeedback({ id: item.id }, paths);
+  assert.equal(after.appliedRun, 'r-excluded', 'zero forced URLs settle vacuously');
+});
+
+test('a global item forces its URLs but is never auto-settled', async () => {
+  const { paths, io } = await setup(['acme-flight-school']);
+  const item = await addFeedback({ scope: 'global', decision: 'rerun' }, paths);
+  await setFeedback(item.id, { status: 'applied' }, paths);
+  const first = daStub();
+  await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'r1', concurrency: 1 },
+    io: { ...io, http: httpStub().client, da: first.client },
+  });
+  const second = daStub();
+  const report = await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'r2', concurrency: 1 },
+    io: { ...io, http: httpStub().client, da: second.client },
+  });
+  assert.equal(report.counts.previewed, 1, 'the up-to-date URL was re-transformed');
+  assert.equal(second.calls.length, 2, 'a global item forces even up-to-date URLs');
+  const [after] = await listFeedback({ id: item.id }, paths);
+  assert.equal(after.appliedRun, undefined, 'global items are settled by the operator');
+});
+
+test('a page-scoped item for another template is neither forced nor settled', async () => {
+  const { paths, io } = await setup(['acme-flight-school']);
+  const item = await addFeedback({
+    scope: 'page:/other-template/some-page', decision: 'rerun',
+  }, paths);
+  await setFeedback(item.id, { status: 'applied' }, paths);
+  const report = await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'r-other', concurrency: 1 },
+    io: { ...io, http: httpStub().client, da: daStub().client },
+  });
+  assert.equal(report.counts.skipped ?? 0, 0, 'nothing was up to date yet');
+  assert.equal(report.counts.previewed, 1, 'the run proceeds unaffected');
+  const [after] = await listFeedback({ id: item.id }, paths);
+  assert.equal(after.appliedRun, undefined);
+  assert.equal(after.status, 'applied', 'left exactly as it was');
+});

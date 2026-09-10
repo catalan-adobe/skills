@@ -43,6 +43,9 @@ one JSON object. See [references/transformer-contract.md](references/transformer
 for the transformer API and [references/content-model.md](references/content-model.md) for
 `blocks.json`.
 
+Global feedback (`scope: global`) is never auto-settled; an operator settles it with
+`state.mjs feedback set <id> appliedRun=<run>`.
+
 | Runner | Purpose |
 | --- | --- |
 | `inventory.mjs` | sitemaps → `migration/data/urls.json` |

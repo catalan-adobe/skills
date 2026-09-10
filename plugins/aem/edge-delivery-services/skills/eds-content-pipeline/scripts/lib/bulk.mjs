@@ -455,25 +455,41 @@ export function feedbackForces(item, { template, path: sourcePath, docPath }) {
 /**
  * Applied feedback that has not been re-run yet forces its URLs through the pipeline again.
  *
+ * A `global` item always qualifies; a `template:<t>` item qualifies when `<t>` is this
+ * template; a `page:<p>` item qualifies only when `<p>` matches a record of THIS template in
+ * `stored` (every stored record, not just the eligible `records`) — a page owned by another
+ * template is left untouched. Forced URLs are still only those found in `records`.
+ *
+ * @param {object} ctx
+ * @param {object[]} records Eligible URL records for this pass (`selectRecords` output).
+ * @param {object[]} stored Every stored record of this template; decides page ownership.
  * @returns {Promise<{item: object, urls: string[]}[]>} Items with the URLs they force.
  */
-async function forceByFeedback(ctx, records) {
+async function forceByFeedback(ctx, records, stored) {
   if (ctx.mode !== 'run') return [];
   const pending = (await listFeedback({ status: 'applied' }, ctx.paths))
     .filter((item) => !item.appliedRun);
-  const forced = pending.map((item) => ({
-    item,
-    urls: records.filter((r) => feedbackForces(item, { template: ctx.template, ...r }))
-      .map((r) => r.url),
-  })).filter((f) => f.urls.length);
-  for (const { urls } of forced) urls.forEach((url) => ctx.forcedUrls.add(url));
-  return forced;
+  const target = (r) => ({ template: ctx.template, ...r });
+  const owned = (item) => item.scope === 'global'
+    || item.scope === `template:${ctx.template}`
+    || stored.some((r) => feedbackForces(item, target(r)));
+  return pending.filter(owned).map((item) => {
+    const urls = records.filter((r) => feedbackForces(item, target(r))).map((r) => r.url);
+    urls.forEach((url) => ctx.forcedUrls.add(url));
+    return { item, urls };
+  });
 }
 
-/** Marks an item applied only when every URL it forced ended in a done status this run. */
+/**
+ * Marks a `template:`/`page:` item applied when every URL it forced ended in a done status
+ * this run (vacuously true when it forced none). `global` items are never auto-settled: they
+ * may still be pending against templates that have not run yet, so an operator settles them
+ * explicitly once every affected template has re-run.
+ */
 async function settleFeedback(ctx, forced, results) {
   const byUrl = new Map(results.map((r) => [r.url, r]));
   for (const { item, urls } of forced) {
+    if (item.scope === 'global') continue;
     const clean = urls.every((url) => {
       const r = byUrl.get(url);
       return r && !r.skipped && DONE_STATUSES.has(r.status);
@@ -595,7 +611,7 @@ export async function runBulk({
   });
   const stored = await listRecords('urls', { where: { template }, paths: ctx.paths });
   const selected = selectRecords(stored, options);
-  const forced = await forceByFeedback(ctx, selected);
+  const forced = await forceByFeedback(ctx, selected, stored);
   const results = await runAll(ctx, selected, stored);
   const report = buildReport(ctx, results);
   await writeArtifacts(ctx, report, stored);
