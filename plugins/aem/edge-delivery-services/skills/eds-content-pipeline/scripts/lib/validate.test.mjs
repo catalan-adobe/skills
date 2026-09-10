@@ -3,11 +3,17 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import {
   blocksOf, loadLeakRules, loadSiteRules, parseHtml, validateFile, validateHtml,
   validateHtmlAsync, createRemoteSizer, isFragmentPath, MAX_RASTER_BYTES,
 } from './validate.mjs';
 import { resolvePaths } from './paths.mjs';
+
+const execFileP = promisify(execFile);
+const validateCli = fileURLToPath(new URL('./validate.mjs', import.meta.url));
 
 const IMG = 'https://content.da.live/o/s/media/a.png';
 
@@ -417,3 +423,27 @@ test(
     assert.equal(leaks.length, 0);
   },
 );
+
+test('CLI with no arguments exits 1 and shows usage', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'validate-cli-test-'));
+  const configPath = path.join(dir, 'site.config.json');
+  await writeFile(configPath, JSON.stringify({
+    origin: 'https://example.com',
+    sitemapIndex: 'https://example.com/sitemap.xml',
+    exclusions: {},
+    overlaySelectors: [],
+    viewports: [1440],
+    concurrency: { fetch: 2, browser: 2, da: 2 },
+    rateLimit: { requestsPerSecond: 2 },
+    thresholds: {},
+    bundles: { pageTree: 'page-tree-bundle.js' },
+    templateSeeds: {},
+    da: {},
+    templates: {},
+  }));
+  const env = { ...process.env, MIGRATION_CONFIG: configPath };
+  const result = await execFileP(process.execPath, [validateCli], { env })
+    .catch((e) => e);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Usage: validate\.mjs <file\.html>/);
+});

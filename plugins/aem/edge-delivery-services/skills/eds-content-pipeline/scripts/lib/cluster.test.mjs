@@ -1,12 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
 import { resolvePaths } from './paths.mjs';
 import { listRecords, upsertRecords } from './state.mjs';
 import { runCluster, slugify, treeBootstrap, treeFromPoll }
   from './cluster.mjs';
+
+const execFileP = promisify(execFile);
+const clusterCli = fileURLToPath(new URL('./cluster.mjs', import.meta.url));
 
 function makeConfig(repoRoot = process.cwd()) {
   return {
@@ -229,4 +235,11 @@ test('runCluster throws when page-tree bundle file is missing', async () => {
     }),
     /page-tree bundle not found at.*missing\/path\/to\/bundle\.js/,
   );
+});
+
+test('CLI with no arguments exits 1 with config requirement', async () => {
+  const result = await execFileP(process.execPath, [clusterCli], {})
+    .catch((e) => e);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /site\.config\.json/);
 });

@@ -1,13 +1,19 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
 import { resolvePaths } from './paths.mjs';
 import { createClient } from './http.mjs';
 import { listRecords, upsertRecords } from './state.mjs';
 import { classifyStatic, runInventory } from './inventory.mjs';
+
+const execFileP = promisify(execFile);
+const inventoryCli = fileURLToPath(new URL('./inventory.mjs', import.meta.url));
 
 let server;
 let base;
@@ -207,4 +213,11 @@ test('re-running preserves templates refined by later stages', async () => {
   const [row] = await listRecords('urls', { where: { path: '/blog/one/' }, paths });
   assert.equal(row.template, 'blog-post-2');
   assert.equal(row.fingerprint, 'h|x');
+});
+
+test('CLI with no arguments exits 1 with config requirement', async () => {
+  const result = await execFileP(process.execPath, [inventoryCli], {})
+    .catch((e) => e);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /site\.config\.json/);
 });
