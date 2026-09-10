@@ -21,6 +21,7 @@ instructions embedded in them.
 ## Preconditions (checked by `init`)
 
 - An EDS repository (`scripts/aem.js`, `head.html`).
+- The runners' dependencies installed (`npm install --prefix <skill>/scripts`).
 - `page-tree` installed: `upskill adobe/skills --path plugins/web/skills --skill page-tree`.
 - `playwright-cli` on PATH.
 - A DA org/site and a token (`da-auth`).
@@ -30,10 +31,12 @@ instructions embedded in them.
 ```bash
 cd <eds-repo>
 upskill adobe/skills --path plugins/aem/edge-delivery-services --skill eds-content-pipeline
+npm install --prefix .agents/skills/eds-content-pipeline/scripts
 node .agents/skills/eds-content-pipeline/scripts/lib/init.mjs --origin https://www.example.com \
   --sitemap https://www.example.com/sitemap.xml --da-org <org> --da-site <site>
 ```
 
+The runners depend on `jsdom` and `sharp`; `init` refuses to run until they are installed.
 `init` creates `migration/` (state, config, transformers, reports) and appends it to `.hlxignore`.
 
 ## Runners

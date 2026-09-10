@@ -11,6 +11,17 @@ import { loadToken } from './da.mjs';
 const execFileP = promisify(execFile);
 const exists = (p) => access(p).then(() => true, () => false);
 const PAGE_TREE = '.agents/skills/page-tree/scripts/page-tree-bundle.js';
+const SCRIPTS_DIR = path.resolve(import.meta.dirname, '..');
+
+/** True when the runners' npm dependencies are installed next to this file. */
+async function depsInstalled() {
+  try {
+    await import('jsdom');
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function whichBinary(name) {
   try {
@@ -28,11 +39,13 @@ async function whichBinary(name) {
  * @param {object} [options.env] Environment variables (not used).
  * @param {Function} [options.which] Function to find binaries on PATH.
  * @param {Function} [options.token] Function to load DA token.
+ * @param {Function} [options.deps] Function reporting whether the runners' dependencies are
+ *   installed.
  * @returns {Promise<Array>} Array of checks with name, ok, and hint.
  */
 export async function checkPreconditions(
   repoRoot,
-  { which = whichBinary, token = loadToken } = {},
+  { which = whichBinary, token = loadToken, deps = depsInstalled } = {},
 ) {
   const eds = (await exists(path.join(repoRoot, 'scripts', 'aem.js')))
     && (await exists(path.join(repoRoot, 'head.html')));
@@ -44,7 +57,13 @@ export async function checkPreconditions(
   } catch {
     da = false;
   }
+  const installed = await deps();
   return [
+    {
+      name: 'runner-deps',
+      ok: installed,
+      hint: `run: npm install --prefix ${SCRIPTS_DIR}`,
+    },
     {
       name: 'eds-repo',
       ok: eds,

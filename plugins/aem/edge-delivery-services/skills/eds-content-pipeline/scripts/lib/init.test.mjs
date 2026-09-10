@@ -29,10 +29,13 @@ test('preconditions name what is missing with an install hint', async () => {
       env: {},
       which: async () => null,
       token: async () => { throw new Error('no'); },
+      deps: async () => false,
     },
   );
   const byName = Object.fromEntries(checks.map((c) => [c.name, c]));
   assert.equal(byName['eds-repo'].ok, true);
+  assert.equal(byName['runner-deps'].ok, false);
+  assert.match(byName['runner-deps'].hint, /npm install --prefix .*\/scripts$/);
   assert.equal(byName['page-tree'].ok, false);
   assert.match(
     byName['page-tree'].hint,
