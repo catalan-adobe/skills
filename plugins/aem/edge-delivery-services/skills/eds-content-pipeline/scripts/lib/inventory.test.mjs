@@ -138,7 +138,7 @@ test('include patterns exclude everything else', () => {
 
 test('runInventory writes urls.json with exclusions, probes and redirect targets', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'migration-inventory-'));
-  const paths = resolvePaths({ MIGRATION_DATA_DIR: dir });
+  const paths = resolvePaths({ MIGRATION_DATA_DIR: dir, MIGRATION_PROJECT_DIR: dir });
   const client = createClient({ requestsPerSecond: 1000 });
   const summary = await runInventory({ config: config(), client, paths });
   const rows = Object.fromEntries((await listRecords('urls', { paths })).map((r) => [r.path, r]));
@@ -165,7 +165,7 @@ test('runInventory writes urls.json with exclusions, probes and redirect targets
 
 test('a sitemap index that errors fails the run with the HTTP status', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'migration-inventory-'));
-  const paths = resolvePaths({ MIGRATION_DATA_DIR: dir });
+  const paths = resolvePaths({ MIGRATION_DATA_DIR: dir, MIGRATION_PROJECT_DIR: dir });
   const client = createClient({
     requestsPerSecond: 1000, retries: 1, sleep: async () => {},
   });
@@ -182,7 +182,7 @@ test('a sitemap index that errors fails the run with the HTTP status', async () 
 
 test('a probe failure is recorded on the record and counted in the summary', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'migration-inventory-'));
-  const paths = resolvePaths({ MIGRATION_DATA_DIR: dir });
+  const paths = resolvePaths({ MIGRATION_DATA_DIR: dir, MIGRATION_PROJECT_DIR: dir });
   const inner = createClient({ requestsPerSecond: 1000 });
   const client = {
     get: inner.get,
@@ -199,7 +199,7 @@ test('a probe failure is recorded on the record and counted in the summary', asy
 
 test('re-running preserves templates refined by later stages', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'migration-inventory-'));
-  const paths = resolvePaths({ MIGRATION_DATA_DIR: dir });
+  const paths = resolvePaths({ MIGRATION_DATA_DIR: dir, MIGRATION_PROJECT_DIR: dir });
   const client = createClient({ requestsPerSecond: 1000 });
   await runInventory({
     config: config(), client, paths, probe: false,

@@ -32,7 +32,8 @@ const journal = (runId, overrides = {}) => ({
 async function tmpDirs() {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'migration-retro-data-'));
   const runsDir = await mkdtemp(path.join(os.tmpdir(), 'migration-retro-runs-'));
-  return { paths: resolvePaths({ MIGRATION_DATA_DIR: dataDir }), runsDir };
+  const paths = resolvePaths({ MIGRATION_DATA_DIR: dataDir, MIGRATION_PROJECT_DIR: dataDir });
+  return { paths, runsDir };
 }
 
 async function writeJournals(runsDir, journals) {

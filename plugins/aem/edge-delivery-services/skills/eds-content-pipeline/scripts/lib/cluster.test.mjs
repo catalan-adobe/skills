@@ -217,10 +217,7 @@ test('slugify converts URL pathnames to filesystem-safe slugs', () => {
 
 test('runCluster throws when page-tree bundle file is missing', async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'test-'));
-  const paths = resolvePaths({
-    MIGRATION_DATA_DIR: temp,
-    MIGRATION_REPO_ROOT: temp,
-  });
+  const paths = resolvePaths({ MIGRATION_DATA_DIR: temp, MIGRATION_PROJECT_DIR: temp }, temp);
   const missingBundleConfig = {
     ...config,
     bundles: { pageTree: 'missing/path/to/bundle.js' },

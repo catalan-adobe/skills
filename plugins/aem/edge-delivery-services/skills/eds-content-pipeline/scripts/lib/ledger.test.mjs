@@ -11,7 +11,7 @@ import {
 
 async function tmpPaths() {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'migration-ledger-'));
-  return resolvePaths({ MIGRATION_DATA_DIR: dir });
+  return resolvePaths({ MIGRATION_DATA_DIR: path.join(dir, 'data'), MIGRATION_PROJECT_DIR: dir });
 }
 
 test('appends validated rows and reads them back in order', async () => {
