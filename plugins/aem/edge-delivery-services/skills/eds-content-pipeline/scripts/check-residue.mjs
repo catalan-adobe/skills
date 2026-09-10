@@ -36,5 +36,5 @@ function checkResidue(dir, basePath = dir) {
   return found;
 }
 
-if (checkResidue('.')) process.exit(1);
+if (checkResidue(path.resolve(import.meta.dirname, '..'))) process.exit(1);
 process.exit(0);

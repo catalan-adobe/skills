@@ -34,5 +34,5 @@ function checkLines(dir) {
   return found;
 }
 
-if (checkLines('.')) process.exit(1);
+if (checkLines(path.resolve(import.meta.dirname, '..'))) process.exit(1);
 process.exit(0);

@@ -22,9 +22,10 @@ export function match(url) {
 }
 ```
 
-### `transformDOM({ document, url, html, params, importer }) → Element | { element, metadata?, warnings? }`
+### `transformDOM({ document, url, html, params, importer })`
 
-Transforms the source DOM into a new tree of EDS sections. Returns either:
+Transforms the source DOM into a new tree of EDS sections. Returns
+`Element | { element, metadata?, warnings? }` — either:
 - A detached DOM element (usually `<main>` or a `<div>`).
 - An object with:
   - `element`: required, the detached root element.
