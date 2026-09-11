@@ -5,7 +5,9 @@
   "engines": { "node": ">=22" },
   "imports": { "#lib/*": "./lib/*" },
   "scripts": {
-    "test": "node --test 'lib/*.test.mjs' 'fixtures/**/*.test.mjs' '../workflows/pi/tools/*.test.mjs'",
+    "test": "npm run test:lib && npm run test:tools",
+    "test:lib": "node --test 'lib/*.test.mjs' 'fixtures/**/*.test.mjs'",
+    "test:tools": "node --test '../workflows/pi/tools/*.test.mjs'",
     "test:e2e": "node --test 'test/*.e2e.mjs'",
     "check:residue": "node check-residue.mjs",
     "check:lines": "node check-lines.mjs",

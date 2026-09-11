@@ -9,7 +9,10 @@ for (const file of ['stage.mjs', 'templates.mjs']) {
   test(`${file} is a self-contained pi workflow script`, async () => {
     const src = await readFile(`${root}${file}`, 'utf8');
     assert.match(src, /^export const meta = \{ name: '[a-z_]+', description: '.+' \}/m);
-    for (const banned of ['import ', 'require(', 'fs.', 'child_process', 'Date.now(', 'Math.random(']) {
+    const bannedPatterns = [
+      'import ', 'require(', 'fs.', 'child_process', 'Date.now(', 'Math.random(',
+    ];
+    for (const banned of bannedPatterns) {
       assert.ok(!src.includes(banned), `${file} uses ${banned}`);
     }
     assert.ok((src.match(/agent\(/g) ?? []).length >= 1 || file === 'templates.mjs');

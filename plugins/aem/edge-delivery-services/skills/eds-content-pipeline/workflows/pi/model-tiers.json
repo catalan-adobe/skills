@@ -1,0 +1,5 @@
+{
+  "map": { "low": "small", "medium": "medium", "high": "big" },
+  "probe": "node scripts/lib/stage.mjs validate",
+  "note": "Mirrors TIERS in workflows/pi/stage.mjs; run the probe before a long stage run."
+}
