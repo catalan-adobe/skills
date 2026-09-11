@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
@@ -8,8 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolvePaths } from './paths.mjs';
 import {
-  captureSlug, keyFieldFor, listRecords, updateJson, upsertRecords,
-  withLock,
+  captureSlug, keyFieldFor, listRecords, loadPrepRecipe, updateJson, upsertRecords, withLock,
 } from './state.mjs';
 import { assertRecord } from './shapes.mjs';
 
@@ -274,4 +273,23 @@ test('feedback add and list feedback read the same project file', async () => {
   assert.deepEqual(viaFeedback.map((r) => r.id), [item.id]);
   const onDisk = JSON.parse(await readFile(path.join(paths.projectDir, 'feedback.json'), 'utf8'));
   assert.equal(onDisk[0].id, item.id, 'feedback lives at the project root, not in data/');
+});
+
+test('loadPrepRecipe reads the overlay recipe or returns an empty one', async () => {
+  const paths = await tmpPaths();
+  assert.deepEqual(await loadPrepRecipe(paths), { selectors: [], css: [], scrollFix: null });
+  await mkdir(paths.projectDir, { recursive: true });
+  await writeFile(path.join(paths.projectDir, 'page-prep.json'), JSON.stringify({
+    checked: ['https://example.com/'],
+    overlays: [
+      { id: 'cmp', selector: '#cmp', hide: { css: ['#cmp { display: none !important; }'] } },
+      { id: 'promo', selector: '.promo-modal' },
+    ],
+    scroll_fix: 'html, body { overflow: auto !important; }',
+  }));
+  assert.deepEqual(await loadPrepRecipe(paths), {
+    selectors: ['#cmp', '.promo-modal'],
+    css: ['#cmp { display: none !important; }'],
+    scrollFix: 'html, body { overflow: auto !important; }',
+  });
 });

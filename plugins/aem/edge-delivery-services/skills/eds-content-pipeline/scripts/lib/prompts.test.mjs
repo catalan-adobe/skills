@@ -23,8 +23,10 @@ async function unitsByRole() {
 test('every prompt is bounded, safe, structured and ends in its unit\'s done_when', async () => {
   const roles = await unitsByRole();
   const files = (await readdir(path.join(skillRoot, 'prompts'))).filter((f) => f.endsWith('.md'));
-  assert.deepEqual(files.sort(), ['analyst.md', 'discover-report.md', 'retro-writer.md',
-    'reviewer.md', 'transformer-author.md']);
+  assert.deepEqual(files.sort(), [
+    'analyst.md', 'discover-report.md', 'page-prep.md', 'retro-writer.md', 'reviewer.md',
+    'transformer-author.md',
+  ]);
   for (const file of files) {
     const text = await readFile(path.join(skillRoot, 'prompts', file), 'utf8');
     const lines = text.split('\n');

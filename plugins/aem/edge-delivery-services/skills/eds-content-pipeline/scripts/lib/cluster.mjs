@@ -12,7 +12,7 @@ import {
 } from './fingerprint.mjs';
 import { resolvePaths } from './paths.mjs';
 import {
-  captureSlug, listRecords, upsertRecords, writeJsonAtomic,
+  captureSlug, listRecords, loadPrepRecipe, upsertRecords, writeJsonAtomic,
 } from './state.mjs';
 
 const POLL = '() => JSON.stringify(window.__treeResult || window.__treeError || null)';
@@ -35,6 +35,33 @@ export function treeBootstrap(minWidth = 900, settleMs = 500) {
   const later = () => setTimeout(capture, ${settleMs});
   if (document.readyState === 'complete') later();
   else window.addEventListener('load', later, { once: true });
+})();`;
+}
+
+/**
+ * Snippet injected before the tree bootstrap when the site has an overlay recipe
+ * (`page-prep.json`): at `load` it injects the recipe's hide CSS, removes the overlay
+ * elements and applies the scroll fix, so the visual tree sees the page, not the banner.
+ * Returns an empty string when there is nothing to do.
+ *
+ * @param {{selectors: string[], css: string[], scrollFix: string|null}} recipe
+ * @returns {string} JavaScript source for the browser.
+ */
+export function prepBootstrap(recipe) {
+  const { selectors = [], css = [], scrollFix = null } = recipe;
+  if (!selectors.length && !css.length && !scrollFix) return '';
+  const rules = [...css, ...(scrollFix ? [scrollFix] : [])].join('\n');
+  return `(() => {
+  const prep = () => {
+    const style = document.createElement('style');
+    style.textContent = ${JSON.stringify(rules)};
+    document.head.appendChild(style);
+    for (const sel of ${JSON.stringify(selectors)}) {
+      document.querySelectorAll(sel).forEach((el) => el.remove());
+    }
+  };
+  if (document.readyState === 'complete') prep();
+  else window.addEventListener('load', prep, { once: true });
 })();`;
 }
 
@@ -62,10 +89,16 @@ async function writeInitScripts(config, paths) {
   );
   const bootstrap = path.join(dir, 'bootstrap.js');
   await writeFile(bootstrap, treeBootstrap());
-  return {
-    dir,
-    scripts: [bundleFile, bootstrap],
-  };
+  // Overlay removal registers its load handler first, so it runs before the tree capture.
+  const prep = prepBootstrap(await loadPrepRecipe(paths));
+  const scripts = [bundleFile];
+  if (prep) {
+    const prepFile = path.join(dir, 'prep.js');
+    await writeFile(prepFile, prep);
+    scripts.push(prepFile);
+  }
+  scripts.push(bootstrap);
+  return { dir, scripts };
 }
 
 function selectCandidates(urls, { limit, type, force }) {

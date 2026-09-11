@@ -195,6 +195,24 @@ export async function writeCapture(paths, template, url, html) {
 }
 
 /**
+ * The site's overlay recipe (`<project>/page-prep.json`, written by the `prep` unit from the
+ * page-prep skill): selectors to strip from fetched pages, CSS to hide them in a browser, and
+ * the scroll fix. An absent file means "no overlays".
+ *
+ * @param {ReturnType<typeof resolvePaths>} [paths]
+ * @returns {Promise<{selectors: string[], css: string[], scrollFix: string|null}>}
+ */
+export async function loadPrepRecipe(paths = resolvePaths()) {
+  const recipe = await readJson(path.join(paths.projectDir, 'page-prep.json'), null);
+  const overlays = recipe?.overlays ?? [];
+  return {
+    selectors: overlays.map((o) => o.selector).filter(Boolean),
+    css: overlays.flatMap((o) => o.hide?.css ?? []),
+    scrollFix: recipe?.scroll_fix ?? null,
+  };
+}
+
+/**
  * Verifies every block of `template` has ≥ 1 evidence selector
  * resolving on a captured representative. Captures are
  * `data/captures/<template>/<slug>.html`.

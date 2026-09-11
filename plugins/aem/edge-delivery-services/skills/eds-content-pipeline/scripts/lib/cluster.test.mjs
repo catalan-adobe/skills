@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolvePaths } from './paths.mjs';
 import { listRecords, upsertRecords } from './state.mjs';
-import { runCluster, treeBootstrap, treeFromPoll }
+import { prepBootstrap, runCluster, treeBootstrap, treeFromPoll }
   from './cluster.mjs';
 
 const execFileP = promisify(execFile);
@@ -94,6 +94,20 @@ test('bootstrap calls page-tree and parks the result on window', () => {
   assert.match(js, /window\.__visualTree\.captureVisualTree\(900\)/);
   assert.match(js, /window\.__treeResult\s*=/);
   assert.match(js, /window\.__treeError\s*=/);
+});
+
+test('prepBootstrap hides, removes and unlocks overlays before the capture runs', () => {
+  const js = prepBootstrap({
+    selectors: ['#cmp', '.promo'],
+    css: ['#cmp { display: none !important; }'],
+    scrollFix: 'html, body { overflow: auto !important; }',
+  });
+  assert.match(js, /#cmp \{ display: none !important; \}/, 'hide css injected');
+  assert.match(js, /querySelectorAll\("#cmp"\)|querySelectorAll\(sel\)/, 'selectors removed');
+  assert.match(js, /overflow: auto !important/, 'scroll fix applied');
+  assert.match(js, /addEventListener\('load'/, 'runs at load, not document start');
+  assert.equal(prepBootstrap({ selectors: [], css: [], scrollFix: null }), '',
+    'no overlays, no script');
 });
 
 test('treeFromPoll returns the tree or throws the captured error', () => {

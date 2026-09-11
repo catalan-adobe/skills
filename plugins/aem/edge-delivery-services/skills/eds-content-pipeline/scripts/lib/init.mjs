@@ -11,6 +11,7 @@ import { loadToken } from './da.mjs';
 const execFileP = promisify(execFile);
 const exists = (p) => access(p).then(() => true, () => false);
 const PAGE_TREE = '.agents/skills/page-tree/scripts/page-tree-bundle.js';
+const PAGE_PREP = '.agents/skills/page-prep/SKILL.md';
 const SCRIPTS_DIR = path.resolve(import.meta.dirname, '..');
 
 /** True when the runners' npm dependencies are installed next to this file. */
@@ -50,6 +51,7 @@ export async function checkPreconditions(
   const eds = (await exists(path.join(repoRoot, 'scripts', 'aem.js')))
     && (await exists(path.join(repoRoot, 'head.html')));
   const tree = await exists(path.join(repoRoot, PAGE_TREE));
+  const prep = await exists(path.join(repoRoot, PAGE_PREP));
   const pw = await which('playwright-cli');
   let da = true;
   try {
@@ -75,6 +77,11 @@ export async function checkPreconditions(
       ok: tree,
       hint: 'upskill adobe/skills --path plugins/web/skills '
         + '--skill page-tree',
+    },
+    {
+      name: 'page-prep',
+      ok: prep,
+      hint: 'upskill adobe/skills --path plugins/web/skills --skill page-prep',
     },
     {
       name: 'playwright-cli',

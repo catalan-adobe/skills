@@ -28,6 +28,8 @@ export async function fixtureRepo() {
   await mkdir(path.join(repo, 'migration/data'), { recursive: true });
   const blocksSrc = path.join(fixture, 'migration/data/blocks.json');
   await cp(blocksSrc, path.join(repo, 'migration/data/blocks.json'));
+  const recipe = 'migration/page-prep.json';
+  await cp(path.join(fixture, recipe), path.join(repo, recipe));
   const cfg = JSON.parse(await readFile(path.join(fixture, 'migration/site.config.json'), 'utf8'));
   cfg.origin = server.origin;
   cfg.sitemapIndex = `${server.origin}/sitemap.xml`;

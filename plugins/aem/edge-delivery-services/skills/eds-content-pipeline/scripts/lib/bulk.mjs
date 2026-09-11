@@ -10,7 +10,7 @@ import { fixDocument } from './media.mjs';
 import { resolvePaths } from './paths.mjs';
 import { mapPool } from './pool.mjs';
 import {
-  listFeedback, listRecords, readJson, setFeedback, upsertRecords, writeCapture,
+  listFeedback, listRecords, loadPrepRecipe, readJson, setFeedback, upsertRecords, writeCapture,
 } from './state.mjs';
 import { contentHash, loadTransformer, transformHtml } from './transform.mjs';
 import { validateFile } from './validate.mjs';
@@ -111,7 +111,12 @@ async function transformOne(ctx, record, html) {
     // `transformHtml` is async: without the await the rejection escapes this try and `doc` is
     // a Promise, so `writeDocument` would throw and every URL would land in the long tail.
     return await transformHtml({
-      html, url: record.url, transformer: ctx.transformer, params: ctx.params, hosts: ctx.hosts,
+      html,
+      url: record.url,
+      transformer: ctx.transformer,
+      params: ctx.params,
+      hosts: ctx.hosts,
+      strip: ctx.strip,
     });
   } catch (err) {
     throw new BulkStepError('transform', err.message);
@@ -596,6 +601,7 @@ async function createContext({
     transformer,
     origin: config.origin,
     hosts: originAliasHosts(config),
+    strip: (await loadPrepRecipe(paths)).selectors,
     thresholds: config.thresholds,
     daConfig: config.da,
     forcedUrls: new Set(),

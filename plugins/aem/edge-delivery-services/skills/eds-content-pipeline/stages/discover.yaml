@@ -7,9 +7,17 @@ units:
     depends_on: []
     outputs: [data/urls.json]
     done_when: node scripts/lib/state.mjs list urls --count-min 1
+  - id: prep
+    role: prompts/page-prep.md
+    tier: medium
+    parallel: false
+    depends_on: [inventory]
+    inputs: [data/urls.json]
+    outputs: [page-prep.json]
+    done_when: node scripts/lib/stage.mjs check-prep
   - id: cluster
     run: node scripts/lib/cluster.mjs --no-shots
-    depends_on: [inventory]
+    depends_on: [prep]
     outputs: [data/templates.json, data/visual-trees/]
     done_when: node scripts/lib/state.mjs list templates --count-min 1
   - id: report

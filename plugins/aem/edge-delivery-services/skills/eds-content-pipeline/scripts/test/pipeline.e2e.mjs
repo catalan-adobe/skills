@@ -124,6 +124,12 @@ test(
       assert.equal(inv.total, 4, 'should find 4 URLs');
       assert.deepEqual(inv.sitemaps.failed, []);
 
+      // Step 2b: the overlay recipe the prep unit would write (hand-authored for the fixture)
+      await cp(
+        path.join(fixture, 'migration/page-prep.json'),
+        path.join(repo, 'migration/page-prep.json'),
+      );
+
       // Step 3: cluster
       const clu = await run(
         repo,
@@ -135,6 +141,14 @@ test(
       assert.equal(clu.failed, 0, 'no URL left without a fingerprint');
       assert.ok(clu.finalized, 'cluster finalizes when nothing remains');
       assert.equal(clu.templates, 2, 'products cluster apart from index/about');
+      const aboutTree = JSON.parse(await readFile(
+        path.join(repo, 'migration/data/visual-trees/about.json'), 'utf8',
+      ));
+      assert.ok(
+        !JSON.stringify(aboutTree).toLowerCase().includes('cookie'),
+        'the recipe removed the cookie banner before the tree was captured',
+      );
+      assert.deepEqual(aboutTree.data.children.map((c) => c.tag), ['HEADER', 'MAIN', 'FOOTER']);
       // Templates get generic names (`<seed>-N`); the analyst names them in the template
       // stage. Stand in for that step: find the cluster holding the product pages, check it
       // holds exactly those, and rename it `product` so the hand-authored artefacts apply.

@@ -7,6 +7,7 @@ import { JSDOM } from 'jsdom';
 import { flag } from './args.mjs';
 import { loadConfig, originAliasHosts } from './config.mjs';
 import { resolvePaths } from './paths.mjs';
+import { loadPrepRecipe } from './state.mjs';
 import { createClient } from './http.mjs';
 import * as importer from './importer.mjs';
 const { FileUtils } = importer;
@@ -253,17 +254,20 @@ function rootElement(result, transformer) {
  * @param {object} [options.params] Transformer parameters; `sourceRoot` drives the hash.
  * @param {string[]} options.hosts Hosts that count as the source site
  *   (`originAliasHosts(config)`); required, so no runner reads config behind a caller's back.
+ * @param {string[]} [options.strip] Selectors of site overlays (cookie banners, modals — the
+ *   `page-prep.json` recipe) removed from the source document before anything reads it.
  * @returns {Promise<{path: string, html: string, metadata: object, hash: string,
  *   warnings: object[]}>} The DA document and its provenance.
  * @throws {Error} When `match` is false or `transformDOM` returns no element.
  */
 export async function transformHtml({
-  html, url, transformer, params = {}, hosts,
+  html, url, transformer, params = {}, hosts, strip = [],
 }) {
   if (!hosts) {
     throw new Error('transformHtml needs hosts (originAliasHosts(config))');
   }
   const { document } = new JSDOM(html, { url }).window;
+  for (const selector of strip) document.querySelectorAll(selector).forEach((el) => el.remove());
   if (!transformer.match(url, document)) {
     throw new Error(`Transformer "${transformer.template}" does not match ${url}; the URL is `
       + 'outside the template scope');
@@ -323,6 +327,7 @@ async function cli(argv) {
   };
   const result = await transformHtml({
     html, url, transformer, params, hosts: originAliasHosts(config),
+    strip: (await loadPrepRecipe(paths)).selectors,
   });
   const fallbackOut = path.join(paths.siteDir, 'content', `${result.path.slice(1)}.html`);
   const out = flag(argv, '--out', fallbackOut);

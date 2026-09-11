@@ -1,0 +1,16 @@
+{
+  "checked": [
+    "https://fixture.example/",
+    "https://fixture.example/product-a.html",
+    "https://fixture.example/about.html"
+  ],
+  "overlays": [
+    {
+      "id": "cookie-banner",
+      "selector": "#cookie-banner",
+      "hide": { "css": ["#cookie-banner { display: none !important; }"] },
+      "dismiss": { "steps": [{ "action": "click", "selector": "#cookie-banner button" }] }
+    }
+  ],
+  "scroll_fix": null
+}

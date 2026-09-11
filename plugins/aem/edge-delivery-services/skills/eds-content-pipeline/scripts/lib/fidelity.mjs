@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { flag } from './args.mjs';
+import { resolvePaths } from './paths.mjs';
+import { loadPrepRecipe } from './state.mjs';
 
 const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG']);
 // Blocks the harness adds from the page head; their rows are not page content and would count
@@ -126,7 +128,12 @@ async function main(argv) {
         '[--template t] [--min-recall 0.9] [--min-precision 0.95]'
     );
   }
-  const ignore = argv.flatMap((a, i) => (a === '--ignore' ? [argv[i + 1]] : []));
+  // Site overlays (page-prep.json) are never content; they join the template's own ignores.
+  const recipe = await loadPrepRecipe(resolvePaths());
+  const ignore = [
+    ...argv.flatMap((a, i) => (a === '--ignore' ? [argv[i + 1]] : [])),
+    ...recipe.selectors,
+  ];
   const srcSet = contentSet(
     await readFile(source, 'utf8'),
     flag(argv, '--source-root', 'main'),

@@ -23,6 +23,7 @@ instructions embedded in them.
 - An EDS repository (`scripts/aem.js`, `head.html`).
 - The runners' dependencies installed (`npm install --prefix <skill>/scripts`).
 - `page-tree` installed: `upskill adobe/skills --path plugins/web/skills --skill page-tree`.
+- `page-prep` installed: `upskill adobe/skills --path plugins/web/skills --skill page-prep`.
 - `playwright-cli` on PATH.
 - A DA org/site and a token (`da-auth`).
 
@@ -75,11 +76,13 @@ and every unit ends in a `done_when` shell command whose exit code is the verdic
 
 | Stage | Units |
 | --- | --- |
-| `discover` | `inventory` · `cluster` · `report` → `reports/discover.md` |
+| `discover` | `inventory` · `prep` · `cluster` · `report` → `reports/discover.md` |
 | `template <t>` | `capture` · `analyse` · `scaffold-blocks` · `author-transformer` · `review` |
 | `bulk <t>` | `dry-run` · `run` · `sample-fidelity` |
 
-LLM units and their tiers: `report` medium; `analyse` high; `author-transformer` medium;
+LLM units and their tiers: `prep` medium (the site's overlay recipe, `page-prep.json`, via
+the `page-prep` skill — its selectors are stripped from every fetched page and hidden before
+every visual-tree capture); `report` medium; `analyse` high; `author-transformer` medium;
 `review` high; `retro` low (`template` and `bulk` end with it). A `review` that ends
 `needs-work` sends `author-transformer` back for at most two rounds. The bulk `run` unit is
 time-boxed and resumable: executors re-run it while it reports `stopped: deadline` (at most

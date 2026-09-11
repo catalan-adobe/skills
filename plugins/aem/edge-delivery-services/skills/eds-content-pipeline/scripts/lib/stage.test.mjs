@@ -345,3 +345,23 @@ test('exhausting resume rounds fails the unit with resume-exhausted', async () =
     assert.equal(out.reason, 'resume-exhausted');
   } finally { await server.close(); }
 });
+
+test('check-prep gates on the overlay recipe: missing, unchecked, no selector, ok', async () => {
+  const { repo, server, paths } = await fixtureRepo();
+  try {
+    const file = path.join(paths.projectDir, 'page-prep.json');
+    await rm(file, { force: true });
+    const missing = await cli(repo, 'check-prep').catch((e) => e);
+    assert.equal(missing.code, 1);
+    assert.match(missing.stderr, /No overlay recipe/);
+    await writeFile(file, JSON.stringify({ checked: [], overlays: [] }));
+    const unchecked = await cli(repo, 'check-prep').catch((e) => e);
+    assert.equal(unchecked.code, 1);
+    assert.match(unchecked.stdout, /"pass":\s*false/);
+    await writeFile(file, JSON.stringify({ checked: ['u'], overlays: [{ id: 'x' }] }));
+    const noSelector = await cli(repo, 'check-prep').catch((e) => e);
+    assert.equal(noSelector.code, 1);
+    await writeFile(file, JSON.stringify({ checked: ['u'], overlays: [] }));
+    assert.equal((await cli(repo, 'check-prep')).pass, true, 'a site without overlays is fine');
+  } finally { await server.close(); }
+});

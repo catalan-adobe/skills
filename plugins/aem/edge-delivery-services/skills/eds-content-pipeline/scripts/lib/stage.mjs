@@ -28,7 +28,7 @@ import { compare, contentSet } from './fidelity.mjs';
 import { appendRow, readRows } from './ledger.mjs';
 import { resolvePaths } from './paths.mjs';
 import { writeProgress } from './progress.mjs';
-import { captureSlug, listRecords } from './state.mjs';
+import { captureSlug, listRecords, loadPrepRecipe } from './state.mjs';
 import { loadTransformer, transformHtml } from './transform.mjs';
 
 const execFileP = promisify(execFile);
@@ -252,7 +252,8 @@ export async function checkTransformer(template, paths = resolvePaths()) {
   const transformer = await loadTransformer(template, {
     dir: path.join(paths.siteDir, 'transformers'),
   });
-  const ignore = await ignoreSelectors(template, paths);
+  const recipe = await loadPrepRecipe(paths);
+  const ignore = [...(await ignoreSelectors(template, paths)), ...recipe.selectors];
   const dir = path.join(paths.dataDir, 'captures', template);
   const files = (await readdir(dir).catch(() => [])).filter((f) => f.endsWith('.html')).sort();
   const bySlug = new Map(
@@ -265,7 +266,7 @@ export async function checkTransformer(template, paths = resolvePaths()) {
     const html = await readFile(path.join(dir, file), 'utf8');
     const doc = await transformHtml({
       html, url: record.url, transformer, params: { sourceRoot: templateConfig.sourceRoot },
-      hosts: originAliasHosts(config),
+      hosts: originAliasHosts(config), strip: recipe.selectors,
     });
     const { recall, precision } = compare(
       contentSet(html, templateConfig.sourceRoot, ignore), contentSet(doc.html, 'main'),
@@ -361,7 +362,8 @@ export async function sampleFidelity(template, paths = resolvePaths(), { pages =
   const da = createDaClient({
     da: config.da, token, expiresAt, tokenSource: source,
   });
-  const ignore = await ignoreSelectors(template, paths);
+  const recipe = await loadPrepRecipe(paths);
+  const ignore = [...(await ignoreSelectors(template, paths)), ...recipe.selectors];
   const eligible = (await listRecords('urls', { where: { template }, paths }))
     .filter((u) => DONE_URL_STATUSES.includes(u.status))
     .slice(0, pages);
@@ -390,6 +392,30 @@ export async function sampleFidelity(template, paths = resolvePaths(), { pages =
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(report, null, 2)}\n`);
   return report;
+}
+
+/**
+ * Gates the discover `prep` unit on `<project>/page-prep.json`: the unit must have looked at
+ * ≥ 1 page, and every overlay it lists must carry the selector the runners strip.
+ *
+ * @param {ReturnType<typeof resolvePaths>} [paths]
+ * @returns {Promise<{checked: number, overlays: number, problems: string[], pass: boolean}>}
+ */
+export async function checkPrep(paths = resolvePaths()) {
+  const file = path.join(paths.projectDir, 'page-prep.json');
+  const recipe = JSON.parse(await readFile(file, 'utf8').catch(() => {
+    throw new Error(`No overlay recipe at ${file}; run the prep unit (prompts/page-prep.md)`);
+  }));
+  const problems = [];
+  const checked = Array.isArray(recipe.checked) ? recipe.checked : [];
+  if (!checked.length) problems.push('checked must list at least one URL that was inspected');
+  const overlays = Array.isArray(recipe.overlays) ? recipe.overlays : [];
+  overlays.forEach((o, i) => {
+    if (typeof o?.selector !== 'string' || !o.selector) {
+      problems.push(`overlays[${i}] (${o?.id ?? '?'}) has no selector`);
+    }
+  });
+  return { checked: checked.length, overlays: overlays.length, problems, pass: !problems.length };
 }
 
 /**
@@ -643,7 +669,8 @@ export async function runStage(stageName, params, options = {}) {
 
 const USAGE = 'Usage: stage.mjs plan <stage> [key=value ...] | stage.mjs validate | '
   + 'stage.mjs check-transformer <template> | stage.mjs check-review <template> | '
-  + 'stage.mjs check-coverage <template> | stage.mjs check-run <template> | '
+  + 'stage.mjs check-prep | stage.mjs check-coverage <template> | '
+  + 'stage.mjs check-run <template> | '
   + 'stage.mjs check-fidelity <template> | '
   + 'stage.mjs sample-fidelity <template> [--pages N] | stage.mjs run <stage> [key=value ...] | '
   + 'stage.mjs record-run <stage> --run-id <id> --outcome <outcome>';
@@ -676,6 +703,11 @@ const COMMANDS = {
   'check-coverage': async (argv) => {
     const [template] = argv;
     const result = await checkCoverage(template, resolvePaths());
+    if (!result.pass) process.exitCode = 1;
+    return result;
+  },
+  'check-prep': async () => {
+    const result = await checkPrep(resolvePaths());
     if (!result.pass) process.exitCode = 1;
     return result;
   },

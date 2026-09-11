@@ -41,6 +41,8 @@ test('preconditions name what is missing with an install hint', async () => {
     byName['page-tree'].hint,
     /upskill adobe\/skills.*page-tree/,
   );
+  assert.equal(byName['page-prep'].ok, false);
+  assert.match(byName['page-prep'].hint, /upskill adobe\/skills.*page-prep/);
   assert.equal(byName['playwright-cli'].ok, false);
   assert.equal(byName['da-token'].ok, false);
 });

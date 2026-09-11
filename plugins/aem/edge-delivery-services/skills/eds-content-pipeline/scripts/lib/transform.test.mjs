@@ -273,3 +273,19 @@ export function transformDOM({ document, importer }) {
   });
   assert.ok(result, 'transformHtml should succeed with importer helpers');
 });
+
+test('strip removes overlay markup before the transformer sees the page', async () => {
+  const dir = await fixtureDir();
+  const transformer = await loadTransformer('case-study', { dir });
+  const banner = '<div id="cookie-banner"><p>We use cookies.</p><button>Accept</button></div>';
+  const html = SOURCE.replace('<div id="content">', `<div id="content">${banner}`);
+  const base = {
+    html, url: 'https://www.example.com/case-study/acme-flight-school/', transformer,
+    params: { sourceRoot: '#content' }, hosts: HOSTS,
+  };
+  const kept = await transformHtml(base);
+  assert.ok(kept.html.includes('We use cookies'), 'without strip the banner leaks through');
+  const stripped = await transformHtml({ ...base, strip: ['#cookie-banner'] });
+  assert.ok(!stripped.html.includes('We use cookies'), 'strip removes it before transformDOM');
+  assert.equal(stripped.hash, kept.hash, 'the content hash is computed on the fetched page');
+});
