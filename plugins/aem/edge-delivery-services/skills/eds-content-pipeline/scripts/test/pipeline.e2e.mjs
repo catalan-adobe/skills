@@ -122,6 +122,7 @@ test(
       // Step 2: inventory
       const inv = await run(repo, 'inventory.mjs', '--no-probe');
       assert.equal(inv.total, 4, 'should find 4 URLs');
+      assert.deepEqual(inv.sitemaps.failed, []);
 
       // Step 3: cluster
       const clu = await run(

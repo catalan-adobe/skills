@@ -66,23 +66,50 @@ async function fetchXml(client, url) {
   return res.body;
 }
 
-async function collectEntries(client, config) {
+async function collectEntries(client, config, log) {
+  const failed = [];
+  const failedSet = new Set();
+  let rootError = null;
+  const textWithTracking = async (u) => {
+    try {
+      return await fetchXml(client, u);
+    } catch (err) {
+      if (u === config.sitemapIndex) rootError = err;
+      failedSet.add(u);
+      failed.push({ url: u, error: err.message });
+      log(`sitemap ${u} skipped: ${err.message}`);
+      return '';
+    }
+  };
   const sitemaps = await collectSitemaps(
-    { text: (u) => fetchXml(client, u) },
+    { text: textWithTracking },
     config.sitemapIndex
   );
+  if (rootError) throw rootError;
   const perSitemap = await mapPool(
-    sitemaps,
+    sitemaps.filter((s) => !failedSet.has(s)),
     config.concurrency.fetch,
     async (loc) => {
-      const parsed = parseSitemap(await fetchXml(client, loc));
-      return parsed.entries.map((e) => ({
-        ...e,
-        sitemapType: sitemapTypeFromUrl(loc),
-      }));
+      try {
+        const parsed = parseSitemap(await fetchXml(client, loc));
+        return parsed.entries.map((e) => ({
+          ...e,
+          sitemapType: sitemapTypeFromUrl(loc),
+        }));
+      } catch (err) {
+        if (!failedSet.has(loc)) {
+          failed.push({ url: loc, error: err.message });
+          failedSet.add(loc);
+        }
+        log(`sitemap ${loc} skipped: ${err.message}`);
+        return [];
+      }
     }
   );
-  return perSitemap.flat();
+  return {
+    entries: perSitemap.flat(),
+    sitemaps: { total: sitemaps.length, failed },
+  };
 }
 
 function toRecord(entry, config, existing) {
@@ -133,7 +160,7 @@ async function probeRecords(records, client, config, log) {
   );
 }
 
-function summarize(records) {
+function summarize(records, sitemaps) {
   const excludedByReason = {};
   const byType = {};
   for (const r of records) {
@@ -153,6 +180,7 @@ function summarize(records) {
     byType: sortKeys(byType),
     excludedByReason: sortKeys(excludedByReason),
     probeErrors: records.filter((r) => r.probeError).length,
+    sitemaps,
   };
 }
 
@@ -166,18 +194,21 @@ function summarize(records) {
  * @param {number} [options.limit=Infinity] Cap on entries (smoke runs).
  * @param {boolean} [options.probe=true] Probe each URL for status and redirects.
  * @param {(msg: string) => void} [options.log]
- * @returns {Promise<object>} Summary counts by type and exclusion reason.
+ * @returns {Promise<{total: number, active: number, byType: object,
+ *   excludedByReason: object, probeErrors: number, sitemaps: {total:
+ *   number, failed: {url: string, error: string}[]}}>} Summary.
  */
 export async function runInventory({
   config, client, paths, limit = Infinity, probe = true, log = () => {},
 }) {
-  const entries = (await collectEntries(client, config)).slice(0, limit);
+  const result = await collectEntries(client, config, log);
+  const entries = result.entries.slice(0, limit);
   log(`discovered ${entries.length} sitemap entries`);
   const existing = new Map((await readJson(paths.stateFile('urls'), [])).map((r) => [r.url, r]));
   const records = entries.map((e) => toRecord(e, config, existing.get(e.loc)));
   if (probe) await probeRecords(records, client, config, log);
   await upsertRecords('urls', records, paths);
-  return summarize(records);
+  return summarize(records, result.sitemaps);
 }
 
 async function cli(argv) {

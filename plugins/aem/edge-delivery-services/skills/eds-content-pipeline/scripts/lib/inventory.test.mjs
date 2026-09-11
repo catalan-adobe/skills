@@ -215,6 +215,39 @@ test('re-running preserves templates refined by later stages', async () => {
   assert.equal(row.fingerprint, 'h|x');
 });
 
+test('a failing child sitemap is recorded and the others are inventoried', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'migration-inventory-'));
+  const paths = resolvePaths({ MIGRATION_DATA_DIR: dir, MIGRATION_PROJECT_DIR: dir });
+  const pages = {
+    'https://example.com/sitemapindex.xml': '<sitemapindex><sitemap><loc>https://example.com/a.xml'
+      + '</loc></sitemap><sitemap><loc>https://example.com/b.xml</loc></sitemap></sitemapindex>',
+    'https://example.com/a.xml': '<urlset><url><loc>https://example.com/x</loc></url></urlset>',
+  };
+  const client = {
+    get: async (url) => (pages[url]
+      ? { url, status: 200, body: pages[url], finalUrl: url }
+      : { url, status: 500, body: '', finalUrl: url }),
+  };
+  const cfg = config();
+  const testConfig = {
+    ...cfg,
+    sitemapIndex: 'https://example.com/sitemapindex.xml',
+  };
+  const summary = await runInventory({
+    config: testConfig,
+    client,
+    paths,
+    probe: false,
+  });
+  assert.equal(summary.total, 1);
+  assert.equal(summary.sitemaps.total, 2);
+  assert.deepEqual(
+    summary.sitemaps.failed.map((f) => f.url),
+    ['https://example.com/b.xml']
+  );
+  assert.match(summary.sitemaps.failed[0].error, /HTTP 500/);
+});
+
 test('CLI with no arguments exits 1 with config requirement', async () => {
   const result = await execFileP(process.execPath, [inventoryCli], {})
     .catch((e) => e);
