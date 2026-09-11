@@ -58,7 +58,12 @@ The result is `{ stage, params, units: [{ id, verdict }], stopped: null | id }`.
 Call the `workflow` tool with `templates.mjs` (or `name: 'eds-templates'` once saved)
 and `{ templates: ['product', 'page'], skill, repo }`. Pass `concurrency: 2` as a
 workflow-tool option (not a script argument) to bound how many templates run at once;
-`parallel()` inside the script has no concurrency option of its own.
+`parallel()` inside the script has no concurrency option of its own:
+
+```json
+{ "name": "eds-templates", "concurrency": 2,
+  "args": { "templates": ["product", "page"], "skill": "/abs/skill", "repo": "/abs/repo" } }
+```
 
 ## The 30-second probe before a long run
 

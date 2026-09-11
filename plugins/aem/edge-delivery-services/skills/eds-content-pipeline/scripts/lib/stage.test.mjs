@@ -249,3 +249,66 @@ test('rename-template renames the templates.json record and every URL', async ()
     await rm(repo, { recursive: true, force: true });
   }
 });
+
+test('plan via the CLI resolves params and refuses shell metacharacters in values', async () => {
+  const { repo, server } = await fixtureRepo();
+  try {
+    const plan = await cli(repo, 'plan', 'bulk', 'template=product');
+    assert.deepEqual(plan.units.map((u) => u.id), ['dry-run', 'run', 'sample-fidelity', 'retro']);
+    assert.match(plan.units[0].command, /--template product --dry-run$/);
+    const bad = await cli(repo, 'plan', 'bulk', 'template=x;rm -rf /').catch((e) => e);
+    assert.equal(bad.code, 1);
+    assert.match(bad.stderr, /param "template" may only contain/);
+  } finally { await server.close(); }
+});
+
+test('check-coverage fails below the threshold; check-fidelity on a failing page', async () => {
+  const { repo, server } = await fixtureRepo();
+  try {
+    await cli(repo, 'run', 'bulk', 'template=product', '--skip-llm');
+    const ok = await cli(repo, 'check-coverage', 'product');
+    assert.equal(ok.pass, true);
+    const dryRun = path.join(repo, 'migration/data/bulk/product-dryrun.json');
+    const report = JSON.parse(await readFile(dryRun, 'utf8'));
+    await writeFile(dryRun, JSON.stringify({ ...report, coverage: 0.5 }));
+    const low = await cli(repo, 'check-coverage', 'product').catch((e) => e);
+    assert.equal(low.code, 1);
+    assert.match(low.stdout, /"pass":\s*false/);
+    const fidelity = path.join(repo, 'migration/reports/bulk-product-fidelity.json');
+    await mkdir(path.dirname(fidelity), { recursive: true });
+    await writeFile(fidelity, JSON.stringify({ template: 'product', pages: [
+      { url: 'u', recall: 1, precision: 1, pass: true }, { url: 'v', recall: 0.4, pass: false },
+    ] }));
+    const fail = await cli(repo, 'check-fidelity', 'product').catch((e) => e);
+    assert.equal(fail.code, 1);
+    assert.match(fail.stdout, /"pages":\s*2/);
+    const missing = await cli(repo, 'check-fidelity', 'page').catch((e) => e);
+    assert.equal(missing.code, 1);
+    assert.match(missing.stderr, /No fidelity report/);
+  } finally { await server.close(); }
+});
+
+test('sample-fidelity compares produced content with the captures when a token is present',
+  async () => {
+    const { repo, server } = await fixtureRepo();
+    try {
+      await cli(repo, 'run', 'bulk', 'template=product', '--skip-llm');
+      const paths = resolvePaths({ MIGRATION_PROJECT_DIR: path.join(repo, 'migration') }, repo);
+      const { listRecords } = await import('./state.mjs');
+      const records = await listRecords('urls', { where: { template: 'product' }, paths });
+      await upsertRecords('urls', records.map((u) => ({
+        url: u.url,
+        status: 'previewed',
+        docPath: u.docPath ?? new URL(u.url).pathname.replace(/\.html$/, ''),
+      })), paths);
+      const { stdout } = await execFileP('node',
+        [path.join(lib, 'stage.mjs'), 'sample-fidelity', 'product', '--pages', '1'],
+        { cwd: repo, env: { ...process.env, DA_TOKEN: 'test-token' } });
+      const report = JSON.parse(stdout);
+      assert.equal(report.pages.length, 1);
+      assert.equal(report.pages[0].source, 'content');
+      assert.equal(report.pages[0].pass, true, JSON.stringify(report));
+      const check = await cli(repo, 'check-fidelity', 'product');
+      assert.equal(check.pass, true);
+    } finally { await server.close(); }
+  });

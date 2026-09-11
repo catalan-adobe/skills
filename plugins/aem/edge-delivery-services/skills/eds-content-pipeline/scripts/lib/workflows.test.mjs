@@ -27,7 +27,7 @@ for (const file of ['stage.mjs', 'templates.mjs']) {
 
 test('every agent command carries its own cd into the repo', async () => {
   const src = await readFile(`${root}stage.mjs`, 'utf8');
-  assert.match(src, /const inRepo = \(repo, command\) => `cd \$\{repo\} && \$\{command\}`/);
+  assert.match(src, /const inRepo = \(repo, command\) => `cd '\$\{repo\.replace/, 'repo quoted');
   assert.match(src, /inRepo\(ctx\.repo, unit\.resolvedCommand\)/);
   assert.match(src, /inRepo\(ctx\.repo, unit\.resolvedDoneWhen\)/);
   assert.match(src, /Run exactly: cd \$\{repo\} && node/, 'plan prompt cds too');

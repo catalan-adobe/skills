@@ -84,6 +84,19 @@ function schemaErrors(spec, label) {
   return errors;
 }
 
+// Params are spliced into shell commands unescaped, so their values are restricted to the
+// characters a template name or path needs; anything else is refused before any command runs.
+const PARAM_VALUE = /^[A-Za-z0-9._\/-]+$/;
+
+function assertParamValues(params) {
+  for (const [key, value] of Object.entries(params)) {
+    if (!PARAM_VALUE.test(String(value))) {
+      throw new Error(`param "${key}" may only contain letters, digits, ., _, / and - `
+        + `(got "${value}")`);
+    }
+  }
+}
+
 const resolve = (text, params) => String(text).replace(/<([a-z_]+)>/g, (m, key) => {
   if (!(key in params)) throw new Error(`param "${key}" is required`);
   return params[key];
@@ -132,6 +145,7 @@ export function orderUnits(units) {
  * @throws {Error} When a param is missing or a `depends_on` id is unknown/cyclic.
  */
 export function planStage(spec, params, { skillRoot }) {
+  assertParamValues(params);
   for (const name of spec.params ?? []) {
     if (!(name in params)) {
       throw new Error(`param "${name}" is required by stage ${spec.stage}`);

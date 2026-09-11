@@ -72,7 +72,7 @@ const CHECK_RULES = 'Run exactly this command, unchanged, to check whether a uni
   + 'the command exits 0), exitCode, stderrTail (the last few lines of stderr, or an empty '
   + 'string). Command: ';
 
-const inRepo = (repo, command) => `cd ${repo} && ${command}`;
+const inRepo = (repo, command) => `cd '${repo.replace(/'/g, `'\\''`)}' && ${command}`;
 
 /** Prompt for an `llm` unit: point the agent at the skill's prompt file, not at the text of it. */
 function llmPrompt(unit, ctx) {

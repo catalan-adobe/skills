@@ -49,7 +49,7 @@ transformer API and [references/content-model.md](references/content-model.md) f
 | Runner | Purpose |
 | --- | --- |
 | `init.mjs --origin <u> --sitemap <u> --da-org <o> --da-site <s>` | preconditions; scaffold |
-| `inventory.mjs [--no-probe] [--limit n]` | sitemaps → `migration/data/urls.json` |
+| `inventory.mjs [--no-probe] [--limit n]` | sitemaps → `urls.json` (+ `sitemaps.failed`) |
 | `cluster.mjs [--limit n] [--type t] [--force] [--no-shots]` | visual trees → templates |
 | `state.mjs list\|set\|check-evidence\|feedback` | inspect and correct state; feedback channel |
 | `scaffold-block.mjs --template <t> \| --name <n> [--force]` | block stubs from `blocks.json` |
