@@ -29,6 +29,7 @@ const SHAPES = {
   },
   runs: { required: ['runId', 'stage', 'startedAt', 'outcome'], enums: {} },
   units: { required: ['unitId', 'runId', 'kind', 'ref', 'verdict'], enums: {} },
+  rework: { required: ['runId', 'stage', 'unit', 'template', 'round', 'reason'], enums: {} },
 };
 
 /**

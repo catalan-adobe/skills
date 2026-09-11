@@ -1,4 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+  access, mkdir, readFile, writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { flag } from './args.mjs';
@@ -93,6 +95,25 @@ export async function scaffold(blocks, repoRoot, { force = false } = {}) {
   return { written, skipped };
 }
 
+/**
+ * Checks whether every block of a template has both stub files on disk (regardless of whether
+ * they are still the generated stub or a real implementation).
+ *
+ * @param {object[]} blocks Block records for the template.
+ * @param {string} repoRoot The repository root path.
+ * @returns {Promise<{blocks: string[], missing: string[]}>}
+ */
+export async function checkScaffolded(blocks, repoRoot) {
+  const missing = [];
+  for (const block of blocks) {
+    const dir = path.join(repoRoot, 'blocks', block.name);
+    const files = [path.join(dir, `${block.name}.js`), path.join(dir, `${block.name}.css`)];
+    const present = await Promise.all(files.map((f) => access(f).then(() => true, () => false)));
+    if (!present.every(Boolean)) missing.push(block.name);
+  }
+  return { blocks: blocks.map((b) => b.name), missing };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const argv = process.argv.slice(2);
   const paths = resolvePaths();
@@ -100,7 +121,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const name = flag(argv, '--name');
   if (!template && !name) {
     console.error(
-      'Usage: scaffold-block.mjs --template <t> | --name <n> [--force]',
+      'Usage: scaffold-block.mjs --template <t> | --name <n> [--force] | '
+        + 'scaffold-block.mjs --template <t> --check',
     );
     process.exit(1);
   }
@@ -112,8 +134,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.error(`Unknown block "${name}" in blocks.json`);
     process.exit(1);
   }
-  const result = await scaffold(blocks, paths.repoRoot, {
-    force: argv.includes('--force'),
-  });
-  process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (argv.includes('--check')) {
+    const { missing } = await checkScaffolded(blocks, paths.repoRoot);
+    const result = { template, blocks: blocks.map((b) => b.name), missing };
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    if (missing.length) process.exit(1);
+  } else {
+    const result = await scaffold(blocks, paths.repoRoot, {
+      force: argv.includes('--force'),
+    });
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+  }
 }

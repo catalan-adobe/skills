@@ -271,6 +271,33 @@ export async function listFeedback(
   );
 }
 
+/**
+ * Renames a template: the `templates.json` record and every URL that carries it.
+ *
+ * @param {string} oldName Existing template name.
+ * @param {string} newName New template name; must not already exist.
+ * @param {ReturnType<typeof resolvePaths>} [paths]
+ * @returns {Promise<{from: string, to: string, urls: string[]}>}
+ * @throws {Error} When `oldName` is unknown or `newName` already exists.
+ */
+export async function renameTemplate(oldName, newName, paths = resolvePaths()) {
+  const templates = await listRecords('templates', { paths });
+  if (!templates.some((t) => t.name === oldName)) {
+    throw new Error(`Unknown template "${oldName}"`);
+  }
+  if (templates.some((t) => t.name === newName)) {
+    throw new Error(`Template "${newName}" already exists`);
+  }
+  await updateJson(stateFileFor('templates', paths), [], (all) => all.map(
+    (t) => (t.name === oldName ? { ...t, name: newName, updatedAt: new Date().toISOString() } : t),
+  ));
+  const urls = await listRecords('urls', { where: { template: oldName }, paths });
+  if (urls.length) {
+    await upsertRecords('urls', urls.map((u) => ({ url: u.url, template: newName })), paths);
+  }
+  return { from: oldName, to: newName, urls: urls.map((u) => u.url) };
+}
+
 export async function setFeedback(
   id,
   fields,
@@ -301,6 +328,21 @@ async function cli(argv) {
     );
     const where = parseAssignments(filter);
     const rows = await listRecords(nameOrSub, { where });
+    const countMinRaw = flag(rest, '--count-min');
+    const countMaxRaw = flag(rest, '--count-max');
+    if (countMinRaw !== undefined || countMaxRaw !== undefined) {
+      const min = countMinRaw === undefined ? -Infinity : Number.parseInt(countMinRaw, 10);
+      const max = countMaxRaw === undefined ? Infinity : Number.parseInt(countMaxRaw, 10);
+      if (rows.length < min) {
+        console.error(`expected \u2265 ${min}, got ${rows.length}`);
+        process.exitCode = 1;
+      } else if (rows.length > max) {
+        console.error(`expected \u2264 ${max}, got ${rows.length}`);
+        process.exitCode = 1;
+      }
+      console.log(JSON.stringify({ count: rows.length }, null, 2));
+      return;
+    }
     if (rest.includes('--count')) {
       console.log(JSON.stringify({ count: rows.length }, null, 2));
       return;
@@ -308,6 +350,11 @@ async function cli(argv) {
     const countByIdx = rest.indexOf('--count-by');
     const result = countByIdx >= 0 ?
       countBy(rows, rest[countByIdx + 1]) : rows;
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (cmd === 'rename-template' && nameOrSub && rest[0]) {
+    const result = await renameTemplate(nameOrSub, rest[0]);
     console.log(JSON.stringify(result, null, 2));
     return;
   }
@@ -329,6 +376,7 @@ async function cli(argv) {
   if (cmd === 'check-evidence' && nameOrSub) {
     const result = await checkEvidence(nameOrSub);
     console.log(JSON.stringify(result, null, 2));
+    if (!result.pass) process.exitCode = 1;
     return;
   }
   if (cmd === 'feedback') {
@@ -359,8 +407,9 @@ async function cli(argv) {
   }
   throw new Error(
     'Usage: state.mjs list <urls|templates|blocks|feedback> ' +
-    '[field=value ...] [--count] [--count-by field] | ' +
+    '[field=value ...] [--count] [--count-by field] [--count-min N] [--count-max N] | ' +
     'state.mjs set <name> <key> field=value ... | ' +
+    'state.mjs rename-template <old> <new> | ' +
     'state.mjs check-evidence <template> | ' +
     'state.mjs feedback list|add|set'
   );

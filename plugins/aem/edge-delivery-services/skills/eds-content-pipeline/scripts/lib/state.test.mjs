@@ -163,7 +163,11 @@ test('check-evidence fails a block whose selector missing on capture',
         evidence: [{ url: 'https://example.com/rep1', selector: '.nope' }],
       },
     ], paths);
-    const { stdout } = await runCli(paths)('check-evidence', 't1');
+    // check-evidence exits 1 when the check fails; the verdict is still on stdout.
+    const { stdout } = await runCli(paths)('check-evidence', 't1').catch((e) => {
+      assert.equal(e.code, 1);
+      return e;
+    });
     const out = JSON.parse(stdout);
     assert.equal(out.pass, false);
     assert.deepEqual(out.missing.map((m) => m.name), ['ghost']);
@@ -215,7 +219,11 @@ test('check-evidence treats a malformed selector as unresolved instead of throwi
         { url: 'https://example.com/rep1', selector: '>>>not a selector' },
       ],
     }], paths);
-    const { stdout } = await runCli(paths)('check-evidence', 't1');
+    // check-evidence exits 1 when the check fails; the verdict is still on stdout.
+    const { stdout } = await runCli(paths)('check-evidence', 't1').catch((e) => {
+      assert.equal(e.code, 1);
+      return e;
+    });
     const out = JSON.parse(stdout);
     assert.equal(out.pass, false);
     assert.deepEqual(out.missing.map((m) => m.name), ['broken']);
