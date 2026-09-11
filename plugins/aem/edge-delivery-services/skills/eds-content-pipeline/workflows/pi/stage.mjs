@@ -60,15 +60,19 @@ const CHECK_SCHEMA = {
 
 const RECORD_SCHEMA = { type: 'object', required: ['ok'], properties: { ok: { type: 'boolean' } } };
 
-const RUN_RULES = 'Run exactly this command from the repo root (cwd = the repo). Do not edit, '
-  + 'create or delete any files. Return only JSON matching the schema: exitCode (the command\'s '
-  + 'exit code), stdoutJson (its stdout parsed as JSON, or null when it is not JSON), stderrTail '
-  + '(the last few lines of stderr, or an empty string). Command: ';
+// Every command an agent runs starts with `cd <repo> &&`: an instruction about the working
+// directory is not enough, the command must carry it.
+const RUN_RULES = 'Run exactly this command, unchanged. Do not edit, create or delete any files '
+  + 'yourself. Return only JSON matching the schema: exitCode (the command\'s exit code), '
+  + 'stdoutJson (its stdout parsed as JSON, or null when it is not JSON), stderrTail (the last '
+  + 'few lines of stderr, or an empty string). Command: ';
 
-const CHECK_RULES = 'Run exactly this command from the repo root (cwd = the repo) to check '
-  + 'whether a unit is done. Do not edit, create or delete any files. Return only JSON matching '
-  + 'the schema: ok (true when the command exits 0), exitCode, stderrTail (the last few lines '
-  + 'of stderr, or an empty string). Command: ';
+const CHECK_RULES = 'Run exactly this command, unchanged, to check whether a unit is done. Do '
+  + 'not edit, create or delete any files. Return only JSON matching the schema: ok (true when '
+  + 'the command exits 0), exitCode, stderrTail (the last few lines of stderr, or an empty '
+  + 'string). Command: ';
+
+const inRepo = (repo, command) => `cd ${repo} && ${command}`;
 
 /** Prompt for an `llm` unit: point the agent at the skill's prompt file, not at the text of it. */
 function llmPrompt(unit, ctx) {
@@ -86,8 +90,8 @@ function llmPrompt(unit, ctx) {
 async function settleUnit(unit, ctx, tag = '', isolation) {
   const iso = isolation ? { isolation } : {};
   const base = `${unit.id}${tag}`;
-  const runPrompt = `${RUN_RULES}${unit.resolvedCommand}`;
-  const checkPrompt = `${CHECK_RULES}${unit.resolvedDoneWhen}`;
+  const runPrompt = `${RUN_RULES}${inRepo(ctx.repo, unit.resolvedCommand)}`;
+  const checkPrompt = `${CHECK_RULES}${inRepo(ctx.repo, unit.resolvedDoneWhen)}`;
   const act = (n) => {
     const label = `${base}:act${n}`;
     return unit.kind === 'run'
@@ -100,12 +104,17 @@ async function settleUnit(unit, ctx, tag = '', isolation) {
     const label = `${base}:check${n}`;
     return agent(checkPrompt, { tier: 'small', schema: CHECK_SCHEMA, label: label, ...iso });
   };
-  await act(1);
-  let result = await check(1);
-  if (!result.ok) {
-    await act(2);
-    result = await check(2);
-  }
+  // A `run:` unit whose command exits non-zero has failed whatever `done_when` says: the check
+  // may be vacuously true on state the command never touched.
+  const attempt = async (n) => {
+    const acted = await act(n);
+    if (unit.kind === 'run' && acted?.exitCode !== 0) {
+      return { ok: false, stderrTail: acted?.stderrTail ?? `exit ${acted?.exitCode}` };
+    }
+    return check(n);
+  };
+  let result = await attempt(1);
+  if (!result.ok) result = await attempt(2);
   if (result.ok) return { id: unit.id, verdict: 'done' };
   return {
     id: unit.id,

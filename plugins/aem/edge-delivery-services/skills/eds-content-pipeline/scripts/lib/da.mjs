@@ -218,7 +218,7 @@ async function runPreflight({
  *
  * @param {object} options
  * @param {{org: string, site: string, ref: string, adminHost: string, sourceHost: string}}
- *   options.da The `da` block of `site.config.json` (Task 1).
+ *   options.da The `da` block of `site.config.json`.
  * @param {string} options.token Bearer token from {@link loadToken}.
  * @param {number|null} [options.expiresAt] Token expiry in ms, used by `preflight`.
  * @param {string} [options.tokenSource] Where the token came from, reported by `preflight`.

@@ -25,6 +25,15 @@ for (const file of ['stage.mjs', 'templates.mjs']) {
   });
 }
 
+test('every agent command carries its own cd into the repo', async () => {
+  const src = await readFile(`${root}stage.mjs`, 'utf8');
+  assert.match(src, /const inRepo = \(repo, command\) => `cd \$\{repo\} && \$\{command\}`/);
+  assert.match(src, /inRepo\(ctx\.repo, unit\.resolvedCommand\)/);
+  assert.match(src, /inRepo\(ctx\.repo, unit\.resolvedDoneWhen\)/);
+  assert.match(src, /Run exactly: cd \$\{repo\} && node/, 'plan prompt cds too');
+  assert.match(src, /Run exactly: cd \$\{ctx\.repo\} && node/, 'record-run prompt cds too');
+});
+
 test('model-tiers.json maps low/medium/high to pi tiers', async () => {
   const tiers = JSON.parse(await readFile(`${root}model-tiers.json`, 'utf8'));
   assert.deepEqual(tiers.map, { low: 'small', medium: 'medium', high: 'big' });

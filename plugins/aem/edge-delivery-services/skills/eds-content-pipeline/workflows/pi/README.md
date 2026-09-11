@@ -6,7 +6,7 @@ metadata:
 # The pi executor
 
 An LLM-driven alternative to `scripts/lib/stage.mjs run --skip-llm` (the deterministic,
-no-LLM runner from Task 5). `workflows/pi/stage.mjs` runs one stage's `llm:` units for
+no-LLM runner). `workflows/pi/stage.mjs` runs one stage's `llm:` units for
 real, through small/medium/big pi subagents, instead of skipping them.
 
 ## Files
