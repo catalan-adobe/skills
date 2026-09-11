@@ -42,9 +42,9 @@ The runners depend on `jsdom` and `sharp`; `init` refuses to run until they are 
 ## Runners
 
 Every runner is `node .agents/skills/eds-content-pipeline/scripts/lib/<name>.mjs …` and prints
-one JSON object. See [references/transformer-contract.md](references/transformer-contract.md)
-for the transformer API and [references/content-model.md](references/content-model.md) for
-`blocks.json`.
+one JSON object. See [references/method.md](references/method.md) for how a template is
+decomposed, [references/transformer-contract.md](references/transformer-contract.md) for the
+transformer API and [references/content-model.md](references/content-model.md) for `blocks.json`.
 
 | Runner | Purpose |
 | --- | --- |
