@@ -547,10 +547,6 @@ export async function runStage(stageName, params, options = {}) {
   return { stage: stageName, runId, units, ...(stop ?? {}) };
 }
 
-const NOT_IMPLEMENTED = (name) => async () => {
-  throw new Error(`${name}: not implemented yet`);
-};
-
 const USAGE = 'Usage: stage.mjs plan <stage> [key=value ...] | stage.mjs validate | '
   + 'stage.mjs check-transformer <template> | stage.mjs check-review <template> | '
   + 'stage.mjs check-coverage <template> | stage.mjs check-fidelity <template> | '
@@ -608,7 +604,21 @@ const COMMANDS = {
     const params = Object.fromEntries(kvPairs.map((kv) => kv.split(/=(.*)/s).slice(0, 2)));
     return runStage(stageName, params, { skillRoot, skipLlm, runId });
   },
-  'record-run': NOT_IMPLEMENTED('record-run'),
+  async 'record-run'(argv) {
+    const [stage, ...rest] = argv;
+    if (!stage) throw new Error(USAGE);
+    const runId = flag(rest, '--run-id');
+    const outcome = flag(rest, '--outcome');
+    if (!runId) throw new Error('Missing --run-id');
+    if (!['complete', 'stopped'].includes(outcome)) {
+      throw new Error('--outcome must be complete or stopped');
+    }
+    const row = {
+      runId, stage, startedAt: new Date().toISOString(), outcome,
+    };
+    await appendRow('runs', row, resolvePaths());
+    return { ok: true, ...row };
+  },
 };
 
 async function cli(argv) {

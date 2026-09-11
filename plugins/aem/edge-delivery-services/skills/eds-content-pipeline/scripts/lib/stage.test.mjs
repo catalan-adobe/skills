@@ -206,6 +206,31 @@ test('list --count-min and --count-max gate on the count', async () => {
   }
 });
 
+test('record-run appends a runs ledger row for the given stage and outcome', async () => {
+  const { repo, server } = await fixtureRepo();
+  try {
+    const out = await cli(
+      repo, 'record-run', 'bulk', '--run-id', 'bulk-product-1', '--outcome', 'complete',
+    );
+    assert.equal(out.ok, true);
+    const rows = await readRows(
+      'runs',
+      resolvePaths({ MIGRATION_PROJECT_DIR: path.join(repo, 'migration') }, repo),
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].runId, 'bulk-product-1');
+    assert.equal(rows[0].stage, 'bulk');
+    assert.equal(rows[0].outcome, 'complete');
+    assert.ok(rows[0].startedAt);
+    const bad = await cli(repo, 'record-run', 'bulk', '--run-id', 'x', '--outcome', 'nope')
+      .catch((e) => e);
+    assert.equal(bad.code, 1);
+  } finally {
+    await server.close();
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
 test('rename-template renames the templates.json record and every URL', async () => {
   const { repo, server } = await fixtureRepo();
   try {

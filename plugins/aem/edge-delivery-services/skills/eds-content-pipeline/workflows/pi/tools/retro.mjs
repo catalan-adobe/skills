@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { resolvePaths } from './paths.mjs';
-import { readJson, updateJson } from './state.mjs';
-import { flag } from './args.mjs';
+import { resolvePaths } from '../../../scripts/lib/paths.mjs';
+import { readJson, updateJson } from '../../../scripts/lib/state.mjs';
+import { flag } from '../../../scripts/lib/args.mjs';
 
 const ESCAPES = {
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',

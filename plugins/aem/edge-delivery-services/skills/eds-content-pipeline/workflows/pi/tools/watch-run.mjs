@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { flag } from './args.mjs';
-import { readJson } from './state.mjs';
+import { flag } from '../../../scripts/lib/args.mjs';
+import { readJson } from '../../../scripts/lib/state.mjs';
 
 const FINAL = new Set(['completed', 'failed', 'aborted']);
 

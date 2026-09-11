@@ -6,8 +6,8 @@ import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolvePaths } from './paths.mjs';
-import { readJson } from './state.mjs';
+import { resolvePaths } from '../../../scripts/lib/paths.mjs';
+import { readJson } from '../../../scripts/lib/state.mjs';
 import {
   collectRuns, relativeLink, renderRetro, summarizeRun, writeReport,
   summarizeSession,

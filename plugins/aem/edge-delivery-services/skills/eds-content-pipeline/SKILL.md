@@ -60,7 +60,7 @@ transformer API and [references/content-model.md](references/content-model.md) f
 | `media.mjs fix <document.html> --scope <name>` | repair over-cap images and SVGs via DA |
 | `da.mjs preflight\|get\|put\|preview <path>` | DA source and preview calls (never publish) |
 | `index.mjs push --confirm \| check <path>` | operator-gated query-index config push |
-| `retro.mjs`, `watch-run.mjs` | pi-dynamic-workflows executor tooling over pi run journals only |
+| `workflows/pi/tools/retro.mjs`, `watch-run.mjs` | pi executor tooling over pi run journals only |
 
 `--run` refuses below the last `--dry-run`'s `thresholds.coverage`; `--accept-coverage`
 bypasses the gate and is recorded in `units`. Global feedback (`scope: global`) is never
