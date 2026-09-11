@@ -1,6 +1,6 @@
 ---
 name: eds-content-pipeline
-description: Deterministic runners for site-scale content migration to AEM Edge Delivery Services — inventory a site from its sitemaps, cluster pages into templates from their visual tree, run one transformer per template over every URL into DA preview with coverage, validity and fidelity gates, and hand a verified block content model (blocks.json) to downstream skills. The transformer per template is authored by an agent or a developer against the documented contract. Use for site-scale migrations; use page-import for a single page.
+description: Site-scale content migration to AEM Edge Delivery Services as three stages with runner-checked exits — discover (inventory a site from its sitemaps, cluster pages into templates from their visual tree), template (decompose each template into sections, layouts, default content and blocks, author its transformer, review content fidelity) and bulk (run the transformer over every URL into DA preview behind coverage, validity and fidelity gates) — handing a verified block content model (blocks.json) to downstream skills. Deterministic runners do the work at scale; agent prompts touch only representative pages. Use for site-scale migrations; use page-import for a single page.
 license: Apache-2.0
 metadata:
   version: "0.1.0"
@@ -66,20 +66,64 @@ transformer API and [references/content-model.md](references/content-model.md) f
 bypasses the gate and is recorded in `units`. Global feedback (`scope: global`) is never
 auto-settled; an operator settles it with `state.mjs feedback set <id> appliedRun=<run>`.
 
-## What this release does not include
+## Stages
 
-The template analysis stage — an agent reading representatives, decomposing them into
-sections, layouts, default content and blocks, and authoring the transformer — is not part of
-this release. The runners expect `migration/transformers/<t>.mjs`,
-`migration/templates/<t>/analysis.md` and `migration/data/blocks.json` to exist; author them
-against
-[references/transformer-contract.md](references/transformer-contract.md) and
-[references/content-model.md](references/content-model.md). The fixture site
-(`scripts/fixtures/example-site/`) shows a complete, hand-authored example.
+Control flow lives in `stages/*.yaml`, not in prose. Each stage is a list of units; a unit is
+either `run:` (a runner command, no LLM) or `role:` (a prompt under `prompts/`, with a `tier`),
+and every unit ends in a `done_when` shell command whose exit code is the verdict.
+
+| Stage | Units |
+| --- | --- |
+| `discover` | `inventory` · `cluster` · `report` → `reports/discover.md` |
+| `template <t>` | `analyse` · `scaffold-blocks` · `author-transformer` · `review` |
+| `bulk <t>` | `dry-run` · `run` · `sample-fidelity` |
+
+LLM units and their tiers: `report` medium; `analyse` high; `author-transformer` medium;
+`review` high; `retro` low (`template` and `bulk` end with it). A `review` that ends
+`needs-work` sends `author-transformer` back for at most two rounds.
+
+Prompts (`prompts/*.md`) are short, name their inputs and bounds, point at
+[references/method.md](references/method.md) for the method, and end in the same `done_when`
+the stage uses. `templates/<t>/analysis.md`, `data/blocks.json` and `transformers/<t>.mjs` are
+what the `template` stage produces; the fixture site (`scripts/fixtures/example-site/`) holds a
+complete hand-authored example.
+
+## Executing a stage
+
+From the EDS repository root, with `S=.agents/skills/eds-content-pipeline`:
+
+1. Plan it: `node $S/scripts/lib/stage.mjs plan <stage> [template=<t>]` prints the units in
+   dependency order with every placeholder resolved and each command made absolute.
+2. Execute `run:` units yourself, from the repository root, exactly as printed.
+3. For each `role:` unit, hand one subagent the prompt file (`$S/prompts/<role>.md`), the
+   unit's `inputs` and `outputs`, and nothing else; pick the model from the unit's `tier`.
+4. After every unit run its `done_when`; retry the unit once, then stop at that unit and say
+   so. Never advance past a failed check.
+5. State is files under `migration/`; re-running a stage resumes where it stopped.
+6. `node $S/scripts/lib/stage.mjs run <stage> [template=<t>] --skip-llm` does steps 1, 2 and 4
+   for you and skips `role:` units — enough to run `bulk` end to end, and to run `template`
+   once the analysis, transformer and review have been authored by hand or elsewhere. Without
+   a DA token the bulk `run` and `sample-fidelity` units report `skipped-no-da`.
+
+Gates the runners enforce: `stage.mjs check-transformer <t>` (every representative transforms
+with zero warnings and passes `thresholds.fidelity`), `check-review <t>` (`review.md` starts
+with `verdict: ready`; `needs-work` records a rework request), `check-coverage <t>`,
+`check-fidelity <t>`, and `state.mjs check-evidence <t>` (every block's evidence resolves).
+
+## pi executor
+
+`workflows/pi/stage.mjs` runs a whole stage — LLM units included — as a pi dynamic workflow;
+`workflows/pi/templates.mjs` fans the `template` stage out over several templates. See
+[workflows/pi/README.md](workflows/pi/README.md) for the arguments, the one-time
+`eds-stage` save, and the probe to run before a long stage.
+
+## Not in this release
+
+A run against a real site. Everything above has been exercised on the fixture site only.
 
 ## Development
 
-Run tests: `npm test` (from `scripts/`). Lint and validate residue: `npm run check`.
+Run tests: `npm test` (from `scripts/`). Residue, line length and stage specs: `npm run check`.
 Validate the skill at repo level: `npm run validate` (from the repo root).
 `npm run test:e2e` in `scripts/` runs the fixture pipeline end-to-end (init → bulk
 --dry-run); needs `playwright-cli` and `PAGE_TREE_BUNDLE=<path>`.
