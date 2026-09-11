@@ -73,3 +73,31 @@ test('rework loop does not duplicate a unit entry when transformer fails mid-rew
     stopped: 'author-transformer',
   });
 });
+
+test('a run unit whose command exits non-zero fails even if done_when would pass', async () => {
+  const run = await loadStageRunner();
+  const plan = {
+    stage: 'bulk',
+    params: { template: 'product' },
+    timeouts: {},
+    units: [{
+      id: 'run', kind: 'run', dependsOn: [],
+      resolvedCommand: 'cmd-run', doneWhen: 'dw-run', resolvedDoneWhen: 'dw-run-resolved',
+    }],
+  };
+  const seen = [];
+  const agentStub = async (prompt, { label }) => {
+    seen.push(label);
+    if (label === 'plan') return plan;
+    if (label === 'record-run') return { ok: true };
+    if (label.includes(':check')) return { ok: true };
+    return { exitCode: 1, stdoutJson: null, stderrTail: 'DA_TOKEN is unset' };
+  };
+  const args = { stage: 'bulk', params: { template: 'product' }, skill: '/skill', repo: '/repo' };
+  const result = await run(agentStub, async (fns) => Promise.all(fns.map((f) => f())),
+    async () => {}, () => {}, () => {}, args, '/repo');
+  assert.deepEqual(result.units, [{ id: 'run', verdict: 'failed' }]);
+  assert.equal(result.stopped, 'run');
+  assert.ok(!seen.some((l) => l.includes(':check')), 'done_when not consulted after a failure');
+  assert.deepEqual(seen.filter((l) => l.startsWith('run:act')), ['run:act1', 'run:act2']);
+});
