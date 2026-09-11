@@ -18,8 +18,9 @@ All paths are relative to `migration/` in the EDS repository. `<template>` is th
 - `data/visual-trees/<slug>.json` for each representative (`<slug>` is the URL path slugged:
   `/de/corporate/home.html` → `de-corporate-home`, `/` → `index`). Read each whole file; they
   are small by construction.
-- `data/captures/<template>/<slug>.html` for each representative. Do **not** read a capture
-  top to bottom: open it at the selectors the visual tree gives you (see Method).
+- `data/captures/<template>/<slug>.html` for each representative, fetched by the `capture` unit
+  that runs before you. Do **not** read a capture top to bottom: open it at the selectors the
+  visual tree gives you (see Method).
 - `data/blocks.json` — existing block records, to reuse a block another template already
   modelled. Read it whole.
 - `references/method.md` and `references/content-model.md` in the skill directory.

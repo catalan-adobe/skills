@@ -52,6 +52,7 @@ transformer API and [references/content-model.md](references/content-model.md) f
 | `inventory.mjs [--no-probe] [--limit n]` | sitemaps → `urls.json` (+ `sitemaps.failed`) |
 | `cluster.mjs [--limit n] [--type t] [--force] [--no-shots]` | visual trees → templates |
 | `state.mjs list\|set\|check-evidence\|feedback` | inspect and correct state; feedback channel |
+| `capture.mjs <t> [--limit 3] [--check]` | fetch a template's representatives into `captures/` |
 | `scaffold-block.mjs --template <t> \| --name <n> [--force]` | block stubs from `blocks.json` |
 | `transform.mjs <url\|file> --template <t> [--out f]` | one page → DA document |
 | `validate.mjs <file.html> [--origin u]` | content gate for one DA document |
@@ -75,7 +76,7 @@ and every unit ends in a `done_when` shell command whose exit code is the verdic
 | Stage | Units |
 | --- | --- |
 | `discover` | `inventory` · `cluster` · `report` → `reports/discover.md` |
-| `template <t>` | `analyse` · `scaffold-blocks` · `author-transformer` · `review` |
+| `template <t>` | `capture` · `analyse` · `scaffold-blocks` · `author-transformer` · `review` |
 | `bulk <t>` | `dry-run` · `run` · `sample-fidelity` |
 
 LLM units and their tiers: `report` medium; `analyse` high; `author-transformer` medium;

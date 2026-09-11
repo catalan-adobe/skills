@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { flag, positiveIntFlag } from './args.mjs';
@@ -10,7 +10,7 @@ import { fixDocument } from './media.mjs';
 import { resolvePaths } from './paths.mjs';
 import { mapPool } from './pool.mjs';
 import {
-  captureSlug, listFeedback, listRecords, readJson, setFeedback, upsertRecords,
+  listFeedback, listRecords, readJson, setFeedback, upsertRecords, writeCapture,
 } from './state.mjs';
 import { contentHash, loadTransformer, transformHtml } from './transform.mjs';
 import { validateFile } from './validate.mjs';
@@ -106,21 +106,6 @@ async function fetchSource(ctx, url) {
   return res.body;
 }
 
-/**
- * Mirrors the fetched source page under `data/captures/<template>/<slug>.html` so evidence
- * checks and fidelity runs read the exact HTML the transformer saw. The file is rewritten
- * only when the page changed, so an unchanged capture keeps its mtime.
- */
-async function captureSource(ctx, url, html) {
-  const dir = path.join(ctx.paths.dataDir, 'captures', ctx.template);
-  const file = path.join(dir, `${captureSlug(url)}.html`);
-  const current = await readFile(file, 'utf8').catch(() => null);
-  if (current === html) return file;
-  await mkdir(dir, { recursive: true });
-  await writeFile(file, html);
-  return file;
-}
-
 async function transformOne(ctx, record, html) {
   try {
     // `transformHtml` is async: without the await the rejection escapes this try and `doc` is
@@ -202,7 +187,7 @@ async function publishDocument(ctx, doc) {
 
 async function processUrl(ctx, record) {
   const html = await fetchSource(ctx, record.url);
-  await captureSource(ctx, record.url, html).catch(rethrow('capture'));
+  await writeCapture(ctx.paths, ctx.template, record.url, html).catch(rethrow('capture'));
   const hash = contentHash(html, ctx.params.sourceRoot);
   if (isUpToDate(ctx, record, hash)) {
     return {

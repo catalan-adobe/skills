@@ -14,7 +14,7 @@ import {
 import { resolvePaths } from './paths.mjs';
 import { upsertRecords } from './state.mjs';
 import { readRows } from './ledger.mjs';
-import { startFixtureServer } from '../fixtures/example-site/serve.mjs';
+import { fixtureRepo } from './testing/fixture-repo.mjs';
 
 const execFileP = promisify(execFile);
 const skillRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -65,64 +65,6 @@ test('validateStages names a bad spec precisely', async () => {
   assert.ok(result.errors.some((e) => /tier "huge"/.test(e)));
   assert.ok(result.errors.some((e) => /unknown key "colour"/.test(e)));
 });
-
-/**
- * Builds a temp EDS repo seeded exactly like the fixture site, without cluster: `urls.json`
- * assigns the four fixture URLs directly to templates `product`/`page` via `upsertRecords`, and
- * the hand-authored `migration/` artefacts (transformers, templates, blocks.json) are copied in.
- */
-async function fixtureRepo() {
-  const server = await startFixtureServer();
-  const repo = await mkdtemp(path.join(os.tmpdir(), 'ecp-stage-'));
-  await mkdir(path.join(repo, 'scripts'), { recursive: true });
-  await writeFile(path.join(repo, 'scripts/aem.js'), '');
-  await writeFile(path.join(repo, 'head.html'), '');
-  await mkdir(path.join(repo, 'migration'), { recursive: true });
-  const transformersDir = path.join(repo, 'migration/transformers');
-  await cp(path.join(fixture, 'migration/transformers'), transformersDir, { recursive: true });
-  await cp(path.join(fixture, 'migration/templates'), path.join(repo, 'migration/templates'), {
-    recursive: true,
-  });
-  await mkdir(path.join(repo, 'migration/data'), { recursive: true });
-  const blocksSrc = path.join(fixture, 'migration/data/blocks.json');
-  await cp(blocksSrc, path.join(repo, 'migration/data/blocks.json'));
-  const cfg = JSON.parse(await readFile(path.join(fixture, 'migration/site.config.json'), 'utf8'));
-  cfg.origin = server.origin;
-  cfg.sitemapIndex = `${server.origin}/sitemap.xml`;
-  await writeFile(path.join(repo, 'migration/site.config.json'), JSON.stringify(cfg, null, 2));
-  const paths = resolvePaths({ MIGRATION_PROJECT_DIR: path.join(repo, 'migration') }, repo);
-  await upsertRecords('urls', [
-    {
-      url: `${server.origin}/`, path: '/', sitemapType: 'page', template: 'page', status: 'todo',
-    },
-    {
-      url: `${server.origin}/about.html`,
-      path: '/about.html',
-      sitemapType: 'page',
-      template: 'page',
-      status: 'todo',
-    },
-    {
-      url: `${server.origin}/product-a.html`,
-      path: '/product-a.html',
-      sitemapType: 'page',
-      template: 'product',
-      status: 'todo',
-    },
-    {
-      url: `${server.origin}/product-b.html`,
-      path: '/product-b.html',
-      sitemapType: 'page',
-      template: 'product',
-      status: 'todo',
-    },
-  ], paths);
-  await upsertRecords('templates', [
-    { name: 'product', status: 'todo' },
-    { name: 'page', status: 'todo' },
-  ], paths);
-  return { repo, server };
-}
 
 /** Runs `stage.mjs`, parsing stdout as JSON; rejects (with `.code/.stdout/.stderr`) on failure. */
 async function cli(repo, ...args) {

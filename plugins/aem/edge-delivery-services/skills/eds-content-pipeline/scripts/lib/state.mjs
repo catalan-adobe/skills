@@ -174,6 +174,27 @@ export function captureSlug(url) {
 }
 
 /**
+ * Mirrors a fetched source page under `data/captures/<template>/<slug>.html` so evidence checks,
+ * the analyst and fidelity runs read the exact HTML the pipeline saw. The file is rewritten only
+ * when the page changed, so an unchanged capture keeps its mtime.
+ *
+ * @param {ReturnType<typeof resolvePaths>} paths
+ * @param {string} template Template name.
+ * @param {string} url Source URL.
+ * @param {string} html Fetched page.
+ * @returns {Promise<string>} The capture file.
+ */
+export async function writeCapture(paths, template, url, html) {
+  const dir = path.join(paths.dataDir, 'captures', template);
+  const file = path.join(dir, `${captureSlug(url)}.html`);
+  const current = await readFile(file, 'utf8').catch(() => null);
+  if (current === html) return file;
+  await mkdir(dir, { recursive: true });
+  await writeFile(file, html);
+  return file;
+}
+
+/**
  * Verifies every block of `template` has ≥ 1 evidence selector
  * resolving on a captured representative. Captures are
  * `data/captures/<template>/<slug>.html`.

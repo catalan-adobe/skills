@@ -2,11 +2,16 @@ stage: template
 params: [template]
 timeouts: { unit_minutes: 45 }
 units:
+  - id: capture
+    run: node scripts/lib/capture.mjs <template>
+    depends_on: []
+    outputs: [data/captures/<template>/]
+    done_when: node scripts/lib/capture.mjs <template> --check
   - id: analyse
     role: prompts/analyst.md
     tier: high
     parallel: false
-    depends_on: []
+    depends_on: [capture]
     inputs: [data/templates.json, data/captures/<template>/]
     outputs: [templates/<template>/analysis.md, data/blocks.json]
     done_when: node scripts/lib/state.mjs check-evidence <template>
