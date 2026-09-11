@@ -242,13 +242,19 @@ test(
         `fidelity should pass: ${JSON.stringify(fid)}`,
       );
 
-      // Step 7: bulk --dry-run for product
-      const dry = await run(
+      // Step 7: run the bulk stage for product, no LLM and no DA available.
+      const bulkProduct = await run(
         repo,
-        'bulk.mjs',
-        '--template', 'product',
-        '--dry-run',
+        'stage.mjs',
+        'run', 'bulk', 'template=product', '--skip-llm',
       );
+      assert.deepEqual(bulkProduct.units.map((u) => [u.id, u.verdict]), [
+        ['dry-run', 'done'], ['run', 'skipped-no-da'], ['sample-fidelity', 'skipped-no-da'],
+        ['retro', 'skipped'],
+      ]);
+      const dry = JSON.parse(await readFile(
+        path.join(repo, 'migration/data/bulk/product-dryrun.json'), 'utf8',
+      ));
       assert.equal(dry.coverage, 1, 'coverage should be 100%');
       assert.equal(
         dry.longTail.length,
@@ -288,13 +294,19 @@ test(
         JSON.stringify(fidAbout),
       );
 
-      // Step 10: bulk --dry-run for page
-      const dryPage = await run(
+      // Step 10: run the bulk stage for page, no LLM and no DA available.
+      const bulkPage = await run(
         repo,
-        'bulk.mjs',
-        '--template', 'page',
-        '--dry-run',
+        'stage.mjs',
+        'run', 'bulk', 'template=page', '--skip-llm',
       );
+      assert.deepEqual(bulkPage.units.map((u) => [u.id, u.verdict]), [
+        ['dry-run', 'done'], ['run', 'skipped-no-da'], ['sample-fidelity', 'skipped-no-da'],
+        ['retro', 'skipped'],
+      ]);
+      const dryPage = JSON.parse(await readFile(
+        path.join(repo, 'migration/data/bulk/page-dryrun.json'), 'utf8',
+      ));
       assert.equal(dryPage.total, 2);
       assert.equal(dryPage.coverage, 1);
 
