@@ -51,7 +51,7 @@ say so in your final message.
 Run this from the EDS repository root before you finish:
 
 ```sh
-test -s LEARNINGS.md
+test -s migration/LEARNINGS.md
 ```
 
 ## Do not

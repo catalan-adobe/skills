@@ -19,4 +19,4 @@ units:
     depends_on: [cluster]
     inputs: [data/templates.json, data/urls.json]
     outputs: [reports/discover.md]
-    done_when: test -s reports/discover.md
+    done_when: test -s migration/reports/discover.md

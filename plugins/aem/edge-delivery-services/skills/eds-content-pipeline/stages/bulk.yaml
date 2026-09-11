@@ -28,4 +28,4 @@ units:
       - data/ledger/runs.jsonl
       - reports/bulk-<template>-longtail.md
     outputs: [LEARNINGS.md]
-    done_when: test -s LEARNINGS.md
+    done_when: test -s migration/LEARNINGS.md

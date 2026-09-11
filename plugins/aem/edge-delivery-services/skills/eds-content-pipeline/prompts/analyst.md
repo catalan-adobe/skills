@@ -65,13 +65,12 @@ Run this from the EDS repository root before you finish; if it fails, fix the ou
 the check:
 
 ```sh
-node scripts/lib/state.mjs list blocks template=<template> --count-min 1
-&& node scripts/lib/state.mjs check-evidence <template>
+node scripts/lib/state.mjs check-evidence <template>
 ```
 
-(`scripts/lib` is the installed skill's `scripts/lib`.) The first command fails when no block
-record lists this template; the second names every block whose evidence does not resolve on
-its capture, with the selector it tried.
+(`scripts/lib` is the installed skill's `scripts/lib`.) It fails when no block record lists
+this template, and names every block whose evidence does not resolve on its capture, with the
+selector it tried.
 
 ## Do not
 

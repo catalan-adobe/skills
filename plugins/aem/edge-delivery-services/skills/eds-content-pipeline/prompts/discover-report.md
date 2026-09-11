@@ -51,7 +51,7 @@ Templates you renamed appear under their new name; keep the old one in parenthes
 Run this from the EDS repository root before you finish:
 
 ```sh
-test -s reports/discover.md
+test -s migration/reports/discover.md
 ```
 
 ## Do not

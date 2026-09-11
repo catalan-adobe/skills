@@ -24,6 +24,8 @@ content area.
 
 Breadcrumb navigation not migrated; header/footer markup not migrated.
 
+selector: nav.breadcrumbs
+
 ## Open Operator Decisions
 
 None at this stage.
