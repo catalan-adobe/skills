@@ -1,0 +1,50 @@
+stage: template
+params: [template]
+timeouts: { unit_minutes: 45 }
+units:
+  - id: analyse
+    role: prompts/analyst.md
+    tier: high
+    parallel: false
+    depends_on: []
+    inputs: [data/templates.json, data/captures/<template>/]
+    outputs: [templates/<template>/analysis.md, data/blocks.json]
+    done_when: >
+      node scripts/lib/state.mjs list blocks template=<template> --count-min 1
+      && node scripts/lib/state.mjs check-evidence <template>
+  - id: scaffold-blocks
+    run: node scripts/lib/scaffold-block.mjs --template <template>
+    depends_on: [analyse]
+    outputs: [blocks/]
+    done_when: node scripts/lib/scaffold-block.mjs --template <template> --check
+  - id: author-transformer
+    role: prompts/transformer-author.md
+    tier: medium
+    parallel: false
+    depends_on: [scaffold-blocks]
+    inputs:
+      - templates/<template>/analysis.md
+      - data/blocks.json
+      - data/captures/<template>/
+    outputs: [transformers/<template>.mjs]
+    done_when: node scripts/lib/stage.mjs check-transformer <template>
+    rework: { max_rounds: 2 }
+  - id: review
+    role: prompts/reviewer.md
+    tier: high
+    parallel: false
+    depends_on: [author-transformer]
+    inputs:
+      - templates/<template>/analysis.md
+      - transformers/<template>.mjs
+      - data/captures/<template>/
+    outputs: [templates/<template>/review.md]
+    done_when: node scripts/lib/stage.mjs check-review <template>
+  - id: retro
+    role: prompts/retro-writer.md
+    tier: low
+    parallel: false
+    depends_on: [review]
+    inputs: [data/ledger/units.jsonl, data/ledger/runs.jsonl]
+    outputs: [LEARNINGS.md]
+    done_when: test -s LEARNINGS.md

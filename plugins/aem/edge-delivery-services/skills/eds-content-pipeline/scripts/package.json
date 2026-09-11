@@ -9,10 +9,12 @@
     "test:e2e": "node --test 'test/*.e2e.mjs'",
     "check:residue": "node check-residue.mjs",
     "check:lines": "node check-lines.mjs",
-    "check": "npm run check:residue && npm run check:lines"
+    "validate:stages": "node lib/stage.mjs validate",
+    "check": "npm run check:residue && npm run check:lines && npm run validate:stages"
   },
   "dependencies": {
     "jsdom": "30.0.1",
-    "sharp": "0.35.4"
+    "sharp": "0.35.4",
+    "yaml": "2.9.0"
   }
 }

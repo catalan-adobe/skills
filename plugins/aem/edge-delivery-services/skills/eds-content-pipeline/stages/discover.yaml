@@ -1,0 +1,22 @@
+stage: discover
+params: []
+timeouts: { unit_minutes: 30 }
+units:
+  - id: inventory
+    run: node scripts/lib/inventory.mjs
+    depends_on: []
+    outputs: [data/urls.json]
+    done_when: node scripts/lib/state.mjs list urls --count-min 1
+  - id: cluster
+    run: node scripts/lib/cluster.mjs --no-shots
+    depends_on: [inventory]
+    outputs: [data/templates.json, data/visual-trees/]
+    done_when: node scripts/lib/state.mjs list templates --count-min 1
+  - id: report
+    role: prompts/discover-report.md
+    tier: medium
+    parallel: false
+    depends_on: [cluster]
+    inputs: [data/templates.json, data/urls.json]
+    outputs: [reports/discover.md]
+    done_when: test -s reports/discover.md

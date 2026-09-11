@@ -1,0 +1,31 @@
+stage: bulk
+params: [template]
+timeouts: { unit_minutes: 120 }
+units:
+  - id: dry-run
+    run: node scripts/lib/bulk.mjs --template <template> --dry-run
+    depends_on: []
+    outputs: [data/bulk/<template>-dryrun.json, reports/bulk-<template>-dryrun.md]
+    done_when: node scripts/lib/stage.mjs check-coverage <template>
+  - id: run
+    run: node scripts/lib/bulk.mjs --template <template> --run
+    depends_on: [dry-run]
+    done_when: >
+      node scripts/lib/state.mjs list urls template=<template> status=long-tail
+      --count-max 0
+  - id: sample-fidelity
+    run: node scripts/lib/stage.mjs sample-fidelity <template> --pages 5
+    depends_on: [run]
+    outputs: [reports/bulk-<template>-fidelity.json]
+    done_when: node scripts/lib/stage.mjs check-fidelity <template>
+  - id: retro
+    role: prompts/retro-writer.md
+    tier: low
+    parallel: false
+    depends_on: [sample-fidelity]
+    inputs:
+      - data/ledger/units.jsonl
+      - data/ledger/runs.jsonl
+      - reports/bulk-<template>-longtail.md
+    outputs: [LEARNINGS.md]
+    done_when: test -s LEARNINGS.md
