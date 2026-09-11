@@ -1,4 +1,5 @@
-export const meta = { name: 'eds_stage', description: 'Runs a stage: plan, units, gate, rework.' }
+export const meta = { name: 'eds_stage', description: 'Runs a stage.', phases: [{ title: 'Plan' },
+  { title: 'Units' }, { title: 'Ledger' }] };
 
 // args: { stage: 'discover'|'template'|'bulk', params: object, skill: string, repo: string }
 // skill = absolute path of the installed skill; repo = absolute path of the EDS repo.

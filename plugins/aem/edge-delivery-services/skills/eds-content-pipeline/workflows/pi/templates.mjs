@@ -1,4 +1,5 @@
-export const meta = { name: 'eds_templates', description: 'Runs many templates via eds-stage.' }
+export const meta = { name: 'templates', description: 'Templates.', phases: [{ title: 'Templates' }]
+};
 
 // args: { templates: string[], skill: string, repo: string }
 // Requires the saved workflow `eds-stage` (see README.md: "Save stage.mjs as eds-stage").
