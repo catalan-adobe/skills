@@ -161,6 +161,23 @@ test(
       const templates = await listRecords('templates', { paths });
       const productTemplate = templates.find((t) => t.name === clusterName);
       assert.equal(productTemplate.urlCount, 2);
+      // Find and rename the page template (root + about)
+      const isPage = (u) => !isProduct(u) &&
+        (u.path === '/' || u.path === '/about.html');
+      const pageClusterName = allUrls.find(isPage).template;
+      assert.ok(pageClusterName, 'root and about were assigned a template');
+      assert.deepEqual(
+        allUrls.filter((u) => u.template === pageClusterName)
+          .map((u) => u.path).sort(),
+        ['/', '/about.html'],
+        'the page cluster holds exactly root and about',
+      );
+      await upsertRecords(
+        'urls',
+        allUrls.filter((u) => u.template === pageClusterName)
+          .map((u) => ({ url: u.url, template: 'page' })),
+        paths,
+      );
 
       // Step 4: scaffold-block
       const scaffold = await run(
@@ -225,7 +242,7 @@ test(
         `fidelity should pass: ${JSON.stringify(fid)}`,
       );
 
-      // Step 7: bulk --dry-run
+      // Step 7: bulk --dry-run for product
       const dry = await run(
         repo,
         'bulk.mjs',
@@ -238,6 +255,48 @@ test(
         0,
         'long tail should be empty',
       );
+
+      // Step 8: transform page (about.html)
+      const outAbout = path.join(repo, 'migration/data/out-about.html');
+      await run(repo, 'transform.mjs', `${server.origin}/about.html`,
+        '--template', 'page', '--out', outAbout);
+
+      // Step 9: fidelity for page
+      const srcAbout = path.join(
+        repo,
+        'migration/data/src-about.html',
+      );
+      const srcAboutHtml = await (
+        await fetch(`${server.origin}/about.html`)
+      ).text();
+      await writeFile(srcAbout, srcAboutHtml);
+      const fidAbout = await run(
+        repo,
+        'fidelity.mjs',
+        srcAbout,
+        outAbout,
+        '--source-root', '#maincontent',
+      );
+      assert.equal(
+        fidAbout.recall,
+        1,
+        JSON.stringify(fidAbout),
+      );
+      assert.equal(
+        fidAbout.precision,
+        1,
+        JSON.stringify(fidAbout),
+      );
+
+      // Step 10: bulk --dry-run for page
+      const dryPage = await run(
+        repo,
+        'bulk.mjs',
+        '--template', 'page',
+        '--dry-run',
+      );
+      assert.equal(dryPage.total, 2);
+      assert.equal(dryPage.coverage, 1);
 
       // Ruling 3: check capture and report paths
       const captureFile = path.join(

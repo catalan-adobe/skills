@@ -20,6 +20,10 @@
     "sourceHost": "content.da.live"
   },
   "templates": {
+    "page": {
+      "sourceRoot": "#maincontent",
+      "sourceUrlPattern": "^/(about\\.html)?$"
+    },
     "product": {
       "sourceRoot": "#maincontent",
       "sourceUrlPattern": "^/product-[a-z]+\\.html$"
