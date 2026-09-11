@@ -411,15 +411,47 @@ export function longTailReport(results, urls, { newTemplateMin }) {
   return { groups: list, markdown: `${md.join('\n')}\n` };
 }
 
-async function writeArtifacts(ctx, report, urls) {
+const TERMINAL_STATUSES = new Set([...DONE_STATUSES, 'long-tail', 'failed']);
+
+/**
+ * What a `--run` pass leaves behind, for the stage gate: every selected URL must be terminal
+ * (done, long-tail or failed) before the `run` unit counts as finished. `remaining` covers URLs
+ * the deadline skipped and URLs still in a pre-run status.
+ *
+ * @param {object} ctx Run context.
+ * @param {object} report Report from {@link buildReport}.
+ * @param {object[]} results Per-URL outcomes, in selection order.
+ * @returns {object} The run report written to `data/bulk/<template>-run.json`.
+ */
+export function runReport(ctx, report, results) {
+  const terminal = results.filter((r) => TERMINAL_STATUSES.has(r.status)).length;
+  return {
+    template: ctx.template,
+    runId: ctx.runId,
+    generatedAt: ctx.generatedAt,
+    selected: results.length,
+    terminal,
+    remaining: results.length - terminal,
+    longTail: report.longTail.length,
+    failed: results.filter((r) => r.status === 'failed').length,
+    stopped: report.stopped,
+  };
+}
+
+async function writeArtifacts(ctx, report, urls, results) {
   await mkdir(ctx.reportsDir, { recursive: true });
   const longTail = path.join(ctx.reportsDir, `bulk-${ctx.template}-longtail.md`);
-  const results = report.longTail.map((url) => ({ url, status: 'long-tail' }));
-  await writeFile(longTail, longTailReport(results, urls, ctx.thresholds).markdown);
-  if (ctx.mode !== 'dry-run') return;
+  const tail = report.longTail.map((url) => ({ url, status: 'long-tail' }));
+  await writeFile(longTail, longTailReport(tail, urls, ctx.thresholds).markdown);
+  const bulkDir = path.join(ctx.paths.dataDir, 'bulk');
+  await mkdir(bulkDir, { recursive: true });
+  if (ctx.mode === 'run') {
+    const file = path.join(bulkDir, `${ctx.template}-run.json`);
+    await writeFile(file, `${JSON.stringify(runReport(ctx, report, results), null, 2)}\n`);
+    return;
+  }
   const json = path.join(ctx.paths.dataDir, 'bulk', `${ctx.template}-dryrun.json`);
   const md = path.join(ctx.reportsDir, `bulk-${ctx.template}-dryrun.md`);
-  await mkdir(path.dirname(json), { recursive: true });
   await writeFile(json, `${JSON.stringify(report, null, 2)}\n`);
   await writeFile(md, renderDryRunReport(report));
 }
@@ -552,7 +584,8 @@ async function createContext({
 }) {
   const paths = io.paths ?? resolvePaths();
   const config = await loadConfig(paths.configPath);
-  const transformer = io.transformer ?? await loadTransformer(template);
+  const transformer = io.transformer
+    ?? await loadTransformer(template, { dir: path.join(paths.siteDir, 'transformers') });
   const clients = await resolveClients({
     config, mode, io, paths,
   });
@@ -592,7 +625,8 @@ async function runAll(ctx, records, urls) {
       results[index] = await runOne(ctx, record);
     });
   } catch (err) {
-    await writeArtifacts(ctx, buildReport(ctx, results.filter(Boolean)), urls);
+    const partial = results.filter(Boolean);
+    await writeArtifacts(ctx, buildReport(ctx, partial), urls, partial);
     throw err;
   }
   return results;
@@ -628,7 +662,7 @@ export async function runBulk({
   const forced = await forceByFeedback(ctx, selected, stored);
   const results = await runAll(ctx, selected, stored);
   const report = buildReport(ctx, results);
-  await writeArtifacts(ctx, report, stored);
+  await writeArtifacts(ctx, report, stored, results);
   await settleFeedback(ctx, forced, results, { truncated });
   return report;
 }

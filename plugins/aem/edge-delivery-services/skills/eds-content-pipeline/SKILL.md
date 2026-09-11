@@ -81,7 +81,11 @@ and every unit ends in a `done_when` shell command whose exit code is the verdic
 
 LLM units and their tiers: `report` medium; `analyse` high; `author-transformer` medium;
 `review` high; `retro` low (`template` and `bulk` end with it). A `review` that ends
-`needs-work` sends `author-transformer` back for at most two rounds.
+`needs-work` sends `author-transformer` back for at most two rounds. The bulk `run` unit is
+time-boxed and resumable: executors re-run it while it reports `stopped: deadline` (at most
+eight times) and it counts as done only when every selected URL is terminal
+(`stage.mjs check-run <t>`) — "selected" being what the run was asked to process, not the
+whole site.
 
 Prompts (`prompts/*.md`) are short, name their inputs and bounds, point at
 [references/method.md](references/method.md) for the method, and end in the same `done_when`

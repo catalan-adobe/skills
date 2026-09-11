@@ -182,3 +182,49 @@ test('a repo path with spaces and quotes is quoted in every agent command', asyn
   const act = prompts.find((p) => p.endsWith('node x'));
   assert.ok(act.includes(`cd '/tmp/it'\\''s a repo' && node x`), act);
 });
+
+function resumePlan(maxRounds) {
+  return {
+    stage: 'bulk', params: { template: 'p' }, timeouts: {},
+    units: [{
+      id: 'run', kind: 'run', dependsOn: [], resolvedCommand: 'node bulk --run',
+      doneWhen: 'check-run', resolvedDoneWhen: 'check-run',
+      resume: { while: 'deadline', max_rounds: maxRounds },
+    }],
+  };
+}
+
+/** The command reports stopped: deadline twice, then stopped: null; checks pass. */
+function resumeStub(plan, seen) {
+  let acts = 0;
+  return async (prompt, { label }) => {
+    seen.push(label);
+    if (label === 'plan') return plan;
+    if (label === 'record-run') return { ok: true };
+    if (label.includes(':check')) return { ok: true };
+    acts += 1;
+    return { exitCode: 0, stdoutJson: { stopped: acts <= 2 ? 'deadline' : null }, stderrTail: '' };
+  };
+}
+
+test('the interpreter resumes a run unit while it reports the resume reason', async () => {
+  const seen = [];
+  const result = await runtime(resumeStub(resumePlan(5), seen), {
+    stage: 'bulk', params: { template: 'p' }, skill: '/s', repo: '/r',
+  });
+  assert.deepEqual(result.units, [{ id: 'run', verdict: 'done', resumed: 2 }]);
+  const runs = seen.filter((l) => /^run:(act|resume)/.test(l));
+  assert.deepEqual(runs, ['run:act1', 'run:resume1', 'run:resume2'], 'three runs');
+  assert.equal(seen.filter((l) => l.startsWith('run:check')).length, 1);
+});
+
+test('the interpreter fails a run unit when resume rounds are exhausted', async () => {
+  const seen = [];
+  const result = await runtime(resumeStub(resumePlan(1), seen), {
+    stage: 'bulk', params: { template: 'p' }, skill: '/s', repo: '/r',
+  });
+  assert.deepEqual(result.units, [{ id: 'run', verdict: 'failed', resumed: 1 }]);
+  assert.equal(result.stopped, 'run');
+  assert.equal(result.reason, 'resume-exhausted');
+  assert.equal(seen.filter((l) => l.startsWith('run:check')).length, 0, 'never gated');
+});

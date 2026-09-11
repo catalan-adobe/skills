@@ -710,3 +710,32 @@ test('defaultRunId is unique per run and names the template', () => {
   assert.equal(a, 'bulk-case-study-20260910T123456Z');
   assert.notEqual(defaultRunId('case-study'), defaultRunId('case-study', new Date(0)));
 });
+
+test('--run writes a run report saying what was selected, what is terminal and what remains',
+  async () => {
+    const { paths, io } = await setup(['acme-flight-school', 'harbour-clinic']);
+    const runOptions = (runId, extra = {}) => ({
+      template: 'case-study',
+      mode: 'run',
+      options: { runId, concurrency: 1, ...extra },
+      io: { ...io, http: httpStub().client, da: daStub().client },
+    });
+    const partial = await runBulk(runOptions('r-deadline', { maxMinutes: 0 }));
+    assert.equal(partial.stopped, 'deadline');
+    const file = path.join(paths.dataDir, 'bulk', 'case-study-run.json');
+    const first = JSON.parse(await readFile(file, 'utf8'));
+    assert.equal(first.selected, 2);
+    assert.ok(first.remaining >= 1, 'the deadline left at least one URL untouched');
+    assert.equal(first.terminal + first.remaining, first.selected);
+    assert.equal(first.stopped, 'deadline');
+    assert.equal(first.runId, 'r-deadline');
+    await runBulk(runOptions('r-full'));
+    const second = JSON.parse(await readFile(file, 'utf8'));
+    assert.deepEqual(
+      { selected: second.selected, terminal: second.terminal, remaining: second.remaining },
+      { selected: 2, terminal: 2, remaining: 0 },
+    );
+    assert.equal(second.stopped, null);
+    assert.equal(second.longTail, 0);
+    assert.equal(second.failed, 0);
+  });

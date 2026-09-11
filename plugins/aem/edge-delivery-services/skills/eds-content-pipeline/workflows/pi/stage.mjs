@@ -32,6 +32,7 @@ const PLAN_SCHEMA = {
           doneWhen: { type: 'string' },
           resolvedDoneWhen: { type: 'string' },
           rework: { type: ['object', 'null'] },
+          resume: { type: ['object', 'null'] },
         },
       },
     },
@@ -106,20 +107,44 @@ async function settleUnit(unit, ctx, tag = '', isolation) {
   };
   // A `run:` unit whose command exits non-zero has failed whatever `done_when` says: the check
   // may be vacuously true on state the command never touched.
+  // A resumable command (bulk --run at its deadline) is re-run while its stdout JSON reports
+  // `resume.while`, at most `resume.max_rounds` more times, before its done_when is consulted.
+  let resumed = 0;
+  const runResumable = async (n) => {
+    let acted = await act(n);
+    const wantsResume = (a) => unit.resume && a?.exitCode === 0
+      && a?.stdoutJson?.stopped === unit.resume.while;
+    while (wantsResume(acted)) {
+      if (resumed >= unit.resume.max_rounds) return { ...acted, exhausted: true };
+      resumed += 1;
+      const label = `${base}:resume${resumed}`;
+      acted = await agent(runPrompt, { tier: 'small', schema: RUN_SCHEMA, label: label, ...iso });
+    }
+    return acted;
+  };
   const attempt = async (n) => {
-    const acted = await act(n);
+    const acted = unit.kind === 'run' ? await runResumable(n) : await act(n);
     if (unit.kind === 'run' && acted?.exitCode !== 0) {
       return { ok: false, stderrTail: acted?.stderrTail ?? `exit ${acted?.exitCode}` };
+    }
+    if (acted?.exhausted) {
+      return { ok: false, reason: 'resume-exhausted',
+        stderrTail: `still "${unit.resume.while}" after ${resumed} resumes` };
     }
     return check(n);
   };
   let result = await attempt(1);
-  if (!result.ok) result = await attempt(2);
-  if (result.ok) return { id: unit.id, verdict: 'done' };
+  if (!result.ok && !result.reason) result = await attempt(2);
+  const tally = unit.resume ? { resumed } : {};
+  if (result.ok) return { id: unit.id, verdict: 'done', ...tally };
   return {
     id: unit.id,
     verdict: 'failed',
-    stop: { stopped: unit.id, doneWhen: unit.doneWhen, stderrTail: result.stderrTail ?? '' },
+    ...tally,
+    stop: {
+      stopped: unit.id, doneWhen: unit.doneWhen, stderrTail: result.stderrTail ?? '',
+      ...(result.reason ? { reason: result.reason } : {}),
+    },
   };
 }
 
@@ -195,7 +220,10 @@ while (i < plan.units.length && !stopped) {
     i += 1;
   } else {
     const outcome = await settleUnit(unit, ctx);
-    results.push({ id: outcome.id, verdict: outcome.verdict });
+    results.push({
+      id: outcome.id, verdict: outcome.verdict,
+      ...(outcome.resumed === undefined ? {} : { resumed: outcome.resumed }),
+    });
     if (outcome.stop) stopped = outcome.stop;
     i += 1;
   }
@@ -205,5 +233,9 @@ phase('Ledger');
 await recordRun(ctx, stopped ? 'stopped' : 'complete');
 
 return {
-  stage, params: plan.params, units: results, stopped: stopped?.stopped ?? null,
+  stage,
+  params: plan.params,
+  units: results,
+  stopped: stopped?.stopped ?? null,
+  ...(stopped?.reason ? { reason: stopped.reason } : {}),
 };

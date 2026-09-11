@@ -254,3 +254,94 @@ test('sample-fidelity compares produced content with the captures when a token i
       assert.equal(check.pass, true);
     } finally { await server.close(); }
   });
+
+test('check-run gates on the run report: missing, remaining, clean', async () => {
+  const { repo, server, paths } = await fixtureRepo();
+  try {
+    const missing = await cli(repo, 'check-run', 'product').catch((e) => e);
+    assert.equal(missing.code, 1);
+    assert.match(missing.stderr, /No run report/);
+    const file = path.join(paths.dataDir, 'bulk', 'product-run.json');
+    await mkdir(path.dirname(file), { recursive: true });
+    const base = {
+      template: 'product', selected: 2, terminal: 1, remaining: 1, longTail: 0, failed: 0,
+      stopped: 'deadline',
+    };
+    await writeFile(file, JSON.stringify(base));
+    const partial = await cli(repo, 'check-run', 'product').catch((e) => e);
+    assert.equal(partial.code, 1);
+    assert.match(partial.stdout, /"pass":\s*false/);
+    await writeFile(file, JSON.stringify({ ...base, stopped: null }));
+    const leftover = await cli(repo, 'check-run', 'product').catch((e) => e);
+    assert.equal(leftover.code, 1, 'a URL left non-terminal fails even without a deadline');
+    await writeFile(file, JSON.stringify({ ...base, terminal: 2, remaining: 0, stopped: null }));
+    const clean = await cli(repo, 'check-run', 'product');
+    assert.equal(clean.pass, true);
+    await writeFile(file, JSON.stringify({
+      ...base, terminal: 2, remaining: 0, stopped: null, longTail: 1,
+    }));
+    const tail = await cli(repo, 'check-run', 'product').catch((e) => e);
+    assert.equal(tail.code, 1, 'a long tail fails the run gate');
+  } finally { await server.close(); }
+});
+
+test('resume is accepted on run units only', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ecp-stage-'));
+  await mkdir(path.join(root, 'stages'), { recursive: true });
+  await mkdir(path.join(root, 'prompts'), { recursive: true });
+  await writeFile(path.join(root, 'prompts', 'p.md'), '# p');
+  await writeFile(path.join(root, 'stages', 'odd.yaml'), [
+    'stage: odd', 'params: []', 'units:',
+    '  - id: x', '    role: prompts/p.md', '    tier: low', '    done_when: true',
+    '    resume: { while: deadline, max_rounds: 2 }',
+  ].join('\n'));
+  const result = await validateStages({ skillRoot: root });
+  assert.ok(result.errors.some((e) => /resume only on run units/.test(e)), result.errors.join());
+});
+
+async function resumeStage(maxRounds) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'ecp-resume-'));
+  await mkdir(path.join(root, 'stages'), { recursive: true });
+  await mkdir(path.join(root, 'scripts', 'lib'), { recursive: true });
+  const counter = path.join(root, 'count.txt');
+  // Prints stopped: deadline twice, then stopped: null — a resumable command that needs 3 runs.
+  await writeFile(path.join(root, 'scripts', 'lib', 'flaky.mjs'), [
+    "import { readFileSync, writeFileSync } from 'node:fs';",
+    `const f = '${counter}';`,
+    "let n = 0; try { n = Number(readFileSync(f, 'utf8')); } catch {}",
+    'writeFileSync(f, String(n + 1));',
+    "console.log(JSON.stringify({ stopped: n < 2 ? 'deadline' : null, run: n + 1 }));",
+  ].join('\n'));
+  await writeFile(path.join(root, 'stages', 'flaky.yaml'), [
+    'stage: flaky', 'params: []', 'units:',
+    '  - id: work', '    run: node scripts/lib/flaky.mjs', '    depends_on: []',
+    `    resume: { while: deadline, max_rounds: ${maxRounds} }`,
+    `    done_when: test "$(cat ${counter})" = "3"`,
+  ].join('\n'));
+  return root;
+}
+
+test('a resumable run unit is re-run while it reports the resume reason, then gated', async () => {
+  const { repo, server } = await fixtureRepo();
+  try {
+    const root = await resumeStage(5);
+    const args = [path.join(lib, 'stage.mjs'), 'run', 'flaky', '--skill-root', root];
+    const { stdout } = await execFileP('node', args, { cwd: repo });
+    const out = JSON.parse(stdout);
+    assert.deepEqual(out.units, [{ id: 'work', verdict: 'done', resumed: 2 }]);
+    assert.equal(out.stopped, undefined);
+  } finally { await server.close(); }
+});
+
+test('exhausting resume rounds fails the unit with resume-exhausted', async () => {
+  const { repo, server } = await fixtureRepo();
+  try {
+    const root = await resumeStage(1);
+    const args = [path.join(lib, 'stage.mjs'), 'run', 'flaky', '--skill-root', root];
+    const failed = await execFileP('node', args, { cwd: repo });
+    const out = JSON.parse(failed.stdout);
+    assert.deepEqual(out.units, [{ id: 'work', verdict: 'failed', resumed: 1 }]);
+    assert.equal(out.stopped, 'work');
+    assert.equal(out.reason, 'resume-exhausted');
+  } finally { await server.close(); }
+});

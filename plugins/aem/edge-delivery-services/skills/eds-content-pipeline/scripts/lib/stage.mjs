@@ -38,7 +38,7 @@ const TIERS = new Set(['low', 'medium', 'high']);
 const STAGE_KEYS = new Set(['stage', 'params', 'timeouts', 'units']);
 const UNIT_KEYS = new Set([
   'id', 'role', 'run', 'tier', 'parallel', 'depends_on', 'inputs', 'outputs', 'done_when',
-  'rework',
+  'rework', 'resume',
 ]);
 const exists = (p) => access(p).then(() => true, () => false);
 
@@ -80,6 +80,13 @@ function schemaErrors(spec, label) {
     }
     if (unit.run && unit.tier) errors.push(`${at}: run units take no tier`);
     if (!unit.done_when) errors.push(`${at}: done_when required`);
+    if (unit.resume !== undefined) {
+      if (!unit.run) errors.push(`${at}: resume only on run units`);
+      const { while: reason, max_rounds: rounds } = unit.resume ?? {};
+      if (typeof reason !== 'string' || !Number.isInteger(rounds) || rounds < 1) {
+        errors.push(`${at}: resume needs { while: <string>, max_rounds: <integer ≥ 1> }`);
+      }
+    }
   }
   return errors;
 }
@@ -166,6 +173,7 @@ export function planStage(spec, params, { skillRoot }) {
     doneWhen: resolve(u.done_when, params).trim(),
     resolvedDoneWhen: resolveCommand(resolve(u.done_when, params).trim()),
     rework: u.rework ?? null,
+    resume: u.resume ?? null,
   }));
   return {
     stage: spec.stage, params, timeouts: spec.timeouts ?? {}, units,
@@ -385,6 +393,32 @@ export async function sampleFidelity(template, paths = resolvePaths(), { pages =
 }
 
 /**
+ * Gates the bulk `run` unit on `data/bulk/<template>-run.json`: every selected URL terminal,
+ * nothing long-tailed or failed, and the run not stopped by its deadline.
+ *
+ * @param {string} template Template name.
+ * @param {ReturnType<typeof resolvePaths>} [paths]
+ * @returns {Promise<{template: string, selected: number, remaining: number, longTail: number,
+ *   failed: number, stopped: string|null, pass: boolean}>}
+ */
+export async function checkRun(template, paths = resolvePaths()) {
+  const file = path.join(paths.dataDir, 'bulk', `${template}-run.json`);
+  const report = JSON.parse(await readFile(file, 'utf8').catch(() => {
+    throw new Error(`No run report at ${file}; run bulk.mjs --template ${template} --run`);
+  }));
+  const { selected, remaining, longTail, failed, stopped } = report;
+  return {
+    template,
+    selected,
+    remaining,
+    longTail,
+    failed,
+    stopped: stopped ?? null,
+    pass: remaining === 0 && longTail === 0 && failed === 0 && !stopped,
+  };
+}
+
+/**
  * Gates the bulk `sample-fidelity` unit: every sampled page of the report must pass.
  *
  * @param {string} template Template name.
@@ -436,18 +470,53 @@ export async function evalDoneWhen(unit, cwd) {
   }
 }
 
-async function attemptUnit(unit, cwd) {
-  const result = await runOnce(unit.resolvedCommand, cwd);
-  if (result.ok === 'no-da') return { verdict: 'skipped-no-da' };
-  if (!result.ok) return { verdict: 'failed', exitCode: result.exitCode, stderr: result.stderr };
-  const done = await evalDoneWhen(unit, cwd);
-  if (done.ok) return { verdict: 'done' };
-  return { verdict: 'failed', exitCode: done.exitCode, stderr: done.stderr };
+const stoppedIn = (stdout) => {
+  try { return JSON.parse(stdout)?.stopped ?? null; } catch { return null; }
+};
+
+/**
+ * Runs the unit's command, re-running it while its stdout JSON reports `resume.while` (a
+ * resumable runner such as `bulk --run` stops at its deadline and continues on the next call),
+ * at most `resume.max_rounds` more times. Returns how many resumes happened.
+ */
+async function runCommand(unit, cwd) {
+  let result = await runOnce(unit.resolvedCommand, cwd);
+  let resumed = 0;
+  const max = unit.resume?.max_rounds ?? 0;
+  while (result.ok === true && unit.resume && stoppedIn(result.stdout) === unit.resume.while) {
+    if (resumed >= max) return { ...result, resumed, exhausted: true };
+    resumed += 1;
+    result = await runOnce(unit.resolvedCommand, cwd);
+  }
+  return { ...result, resumed };
 }
 
-async function recordUnit(ctx, unit, verdict) {
+async function attemptUnit(unit, cwd) {
+  const result = await runCommand(unit, cwd);
+  const tally = unit.resume ? { resumed: result.resumed } : {};
+  if (result.ok === 'no-da') return { verdict: 'skipped-no-da', ...tally };
+  if (!result.ok) {
+    return { verdict: 'failed', exitCode: result.exitCode, stderr: result.stderr, ...tally };
+  }
+  if (result.exhausted) {
+    return {
+      verdict: 'failed', reason: 'resume-exhausted', ...tally,
+      stderr: `still "${unit.resume.while}" after ${result.resumed} resumes`,
+    };
+  }
+  const done = await evalDoneWhen(unit, cwd);
+  if (done.ok) return { verdict: 'done', ...tally };
+  return { verdict: 'failed', exitCode: done.exitCode, stderr: done.stderr, ...tally };
+}
+
+async function recordUnit(ctx, unit, verdict, resumed) {
   await appendRow('units', {
-    unitId: `${ctx.runId}:${unit.id}`, runId: ctx.runId, kind: 'stage-unit', ref: unit.id, verdict,
+    unitId: `${ctx.runId}:${unit.id}`,
+    runId: ctx.runId,
+    kind: 'stage-unit',
+    ref: unit.id,
+    verdict,
+    ...(resumed ? { detail: `resumed ${resumed} times` } : {}),
   }, ctx.paths);
   await writeProgress({
     runId: ctx.runId, stage: ctx.stage, unit: unit.id, status: verdict,
@@ -464,13 +533,19 @@ async function recordUnit(ctx, unit, verdict) {
  */
 export async function runUnit(unit, ctx) {
   let outcome = await attemptUnit(unit, ctx.cwd);
-  if (outcome.verdict === 'failed') outcome = await attemptUnit(unit, ctx.cwd);
-  await recordUnit(ctx, unit, outcome.verdict);
-  if (outcome.verdict !== 'failed') return { verdict: outcome.verdict };
+  if (outcome.verdict === 'failed' && !outcome.reason) outcome = await attemptUnit(unit, ctx.cwd);
+  await recordUnit(ctx, unit, outcome.verdict, outcome.resumed);
+  const tally = outcome.resumed === undefined ? {} : { resumed: outcome.resumed };
+  if (outcome.verdict !== 'failed') return { verdict: outcome.verdict, ...tally };
   return {
     verdict: 'failed',
+    ...tally,
     stop: {
-      stopped: unit.id, doneWhen: unit.doneWhen, exitCode: outcome.exitCode, stderr: outcome.stderr,
+      stopped: unit.id,
+      doneWhen: unit.doneWhen,
+      exitCode: outcome.exitCode,
+      stderr: outcome.stderr,
+      ...(outcome.reason ? { reason: outcome.reason } : {}),
     },
   };
 }
@@ -549,7 +624,12 @@ export async function runStage(stageName, params, options = {}) {
     remaining.splice(remaining.indexOf(unit), 1);
     const outcome = await settleUnit(unit, ctx);
     settledIds.add(unit.id);
-    if (outcome.verdict !== null) units.push({ id: unit.id, verdict: outcome.verdict });
+    if (outcome.verdict !== null) {
+      units.push({
+        id: unit.id, verdict: outcome.verdict,
+        ...(outcome.resumed === undefined ? {} : { resumed: outcome.resumed }),
+      });
+    }
     if (outcome.stop) stop = outcome.stop;
   }
   await appendRow('runs', {
@@ -563,7 +643,8 @@ export async function runStage(stageName, params, options = {}) {
 
 const USAGE = 'Usage: stage.mjs plan <stage> [key=value ...] | stage.mjs validate | '
   + 'stage.mjs check-transformer <template> | stage.mjs check-review <template> | '
-  + 'stage.mjs check-coverage <template> | stage.mjs check-fidelity <template> | '
+  + 'stage.mjs check-coverage <template> | stage.mjs check-run <template> | '
+  + 'stage.mjs check-fidelity <template> | '
   + 'stage.mjs sample-fidelity <template> [--pages N] | stage.mjs run <stage> [key=value ...] | '
   + 'stage.mjs record-run <stage> --run-id <id> --outcome <outcome>';
 
@@ -598,6 +679,12 @@ const COMMANDS = {
     if (!result.pass) process.exitCode = 1;
     return result;
   },
+  'check-run': async (argv) => {
+    const [template] = argv;
+    const result = await checkRun(template, resolvePaths());
+    if (!result.pass) process.exitCode = 1;
+    return result;
+  },
   'check-fidelity': async (argv) => {
     const [template] = argv;
     const result = await checkFidelity(template, resolvePaths());
@@ -609,9 +696,10 @@ const COMMANDS = {
     const pages = positiveIntFlag(rest, '--pages', 5);
     return sampleFidelity(template, resolvePaths(), { pages });
   },
-  async run(argv, { skillRoot }) {
+  async run(argv, { skillRoot: defaultRoot }) {
     const [stageName, ...rest] = argv;
     if (!stageName) throw new Error(USAGE);
+    const skillRoot = flag(rest, '--skill-root', defaultRoot);
     const runId = flag(rest, '--run-id');
     const skipLlm = rest.includes('--skip-llm');
     const kvPairs = rest.filter((a) => !a.startsWith('--') && a.includes('='));

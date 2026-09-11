@@ -34,6 +34,13 @@ test('every agent command carries its own cd into the repo', async () => {
   assert.match(src, /Run exactly: cd \$\{ctx\.repo\} && node/, 'record-run prompt cds too');
 });
 
+test('the interpreter honours a unit\'s resume rule from the plan', async () => {
+  const src = await readFile(`${root}stage.mjs`, 'utf8');
+  assert.match(src, /unit\.resume\.while/);
+  assert.match(src, /unit\.resume\.max_rounds/);
+  assert.match(src, /stdoutJson\?\.stopped/);
+});
+
 test('model-tiers.json maps low/medium/high to pi tiers', async () => {
   const tiers = JSON.parse(await readFile(`${root}model-tiers.json`, 'utf8'));
   assert.deepEqual(tiers.map, { low: 'small', medium: 'medium', high: 'big' });

@@ -10,9 +10,9 @@ units:
   - id: run
     run: node scripts/lib/bulk.mjs --template <template> --run
     depends_on: [dry-run]
-    done_when: >
-      node scripts/lib/state.mjs list urls template=<template> status=previewed --count-min 1
-      && node scripts/lib/state.mjs list urls template=<template> status=long-tail --count-max 0
+    resume: { while: deadline, max_rounds: 8 }
+    outputs: [data/bulk/<template>-run.json]
+    done_when: node scripts/lib/stage.mjs check-run <template>
   - id: sample-fidelity
     run: node scripts/lib/stage.mjs sample-fidelity <template> --pages 5
     depends_on: [run]
