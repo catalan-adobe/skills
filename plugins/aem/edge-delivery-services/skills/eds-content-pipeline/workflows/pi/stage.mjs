@@ -119,7 +119,7 @@ async function settleUnit(unit, ctx, tag = '', isolation) {
  * `author-transformer` then `review` again, up to `author-transformer`'s `rework.max_rounds`.
  */
 async function settleReview(reviewUnit, transformerUnit, ctx) {
-  const maxRounds = transformerUnit?.rework?.max_rounds ?? 0;
+  const maxRounds = transformerUnit?.rework?.max_rounds ?? 2;
   const extra = [];
   let round = 0;
   let outcome = await settleUnit(reviewUnit, ctx);
@@ -128,7 +128,7 @@ async function settleReview(reviewUnit, transformerUnit, ctx) {
     extra.push({ id: reviewUnit.id, verdict: outcome.verdict });
     const authored = await settleUnit(transformerUnit, ctx, `:rework${round}`);
     extra.push({ id: transformerUnit.id, verdict: authored.verdict });
-    if (authored.verdict === 'failed') return { outcome: authored, extra };
+    if (authored.verdict === 'failed') return { outcome: authored, extra: extra.slice(0, -1) };
     outcome = await settleUnit(reviewUnit, ctx, `:rework${round}`);
   }
   return { outcome, extra };
