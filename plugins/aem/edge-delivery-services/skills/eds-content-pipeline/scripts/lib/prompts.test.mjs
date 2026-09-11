@@ -29,7 +29,8 @@ test('every prompt is bounded, safe, structured and ends in its unit\'s done_whe
     const text = await readFile(path.join(skillRoot, 'prompts', file), 'utf8');
     const lines = text.split('\n');
     assert.ok(lines.length <= 150, `${file}: ${lines.length} lines`);
-    assert.ok(text.includes(SAFETY), `${file}: safety clause`);
+    const flat = text.replace(/\s+/g, ' ');
+    assert.ok(flat.includes(SAFETY), `${file}: safety clause verbatim (wrapping allowed)`);
     let last = -1;
     for (const h of HEADINGS) {
       const at = text.indexOf(`\n${h}\n`);
