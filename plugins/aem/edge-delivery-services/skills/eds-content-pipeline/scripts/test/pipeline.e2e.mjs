@@ -90,7 +90,7 @@ test(
         'init should create site.config.json',
       );
 
-      // Hand-authored template artefacts (Plan B substitute)
+      // Hand-authored template artefacts stand in for the analysis stage
       await cp(
         path.join(fixture, 'migration/transformers'),
         path.join(repo, 'migration/transformers'),
@@ -298,7 +298,7 @@ test(
       assert.equal(dryPage.total, 2);
       assert.equal(dryPage.coverage, 1);
 
-      // Ruling 3: check capture and report paths
+      // Captures and reports written by bulk
       const captureFile = path.join(
         repo,
         'migration/data/captures/product/product-a.html',
