@@ -66,7 +66,6 @@ const base = {
   templates: {
     'case-study': {
       sourceRoot: '#content',
-      needsBrowser: false,
       sourceUrlPattern: '^/case-study/[^/]+/$',
     },
   },
@@ -108,52 +107,38 @@ test('rejects config when da.sourceHost is missing', async () => {
 test('templates.case-study validates url pattern correctly', async () => {
   const caseStudy = {
     sourceRoot: '#content',
-    needsBrowser: false,
     sourceUrlPattern: '^/case-study/[^/]+/$',
   };
   assert.equal(caseStudy.sourceRoot, '#content');
-  assert.equal(caseStudy.needsBrowser, false);
   assert.match(
     '/case-study/example-corp/',
     new RegExp(caseStudy.sourceUrlPattern),
   );
 });
 
-test('every template entry has required keys', async () => {
-  const templates = {
-    homepage: {
-      sourceRoot: '#content',
-      needsBrowser: false,
-      sourceUrlPattern: '^/$',
-    },
-    'case-study': {
-      sourceRoot: '#content',
-      needsBrowser: false,
-      sourceUrlPattern: '^/case-study/[^/]+/$',
-    },
-  };
-  for (const [name, entry] of Object.entries(templates)) {
-    assert.equal(
-      typeof entry.sourceRoot,
-      'string',
-      `${name}.sourceRoot`,
-    );
-    assert.equal(
-      typeof entry.needsBrowser,
-      'boolean',
-      `${name}.needsBrowser`,
-    );
-    assert.doesNotThrow(
-      () => new RegExp(entry.sourceUrlPattern),
-      `${name}.sourceUrlPattern`,
-    );
-  }
-});
+test('a template entry needs only sourceRoot and sourceUrlPattern',
+  async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(),
+      'ecp-config-'));
+    const file = path.join(dir, 'site.config.json');
+    await writeFile(file, JSON.stringify({
+      ...base,
+      templates: {
+        'case-study': {
+          sourceRoot: 'main',
+          sourceUrlPattern: '^/case-study/',
+        },
+      },
+    }));
+    const config = await loadConfig(file);
+    assert.deepEqual(Object.keys(config.templates['case-study']).sort(),
+      ['sourceRoot', 'sourceUrlPattern']);
+    assert.equal('needsBrowser' in config.templates['case-study'], false);
+  });
 
 test('templates.integration url pattern validation', async () => {
   const entry = {
     sourceRoot: '#content',
-    needsBrowser: false,
     sourceUrlPattern: '^/integrations/[^/]+/$',
   };
   const pattern = new RegExp(entry.sourceUrlPattern);
@@ -165,7 +150,6 @@ test('templates.integration url pattern validation', async () => {
 test('templates.template-detail url pattern validation', async () => {
   const detail = {
     sourceRoot: '#content',
-    needsBrowser: false,
     sourceUrlPattern: '^/templates/[^/]+/$',
   };
   const pattern = new RegExp(detail.sourceUrlPattern);
@@ -177,7 +161,6 @@ test('templates.template-detail url pattern validation', async () => {
 test('templates.page matches multiple path patterns correctly', async () => {
   const entry = {
     sourceRoot: '#content, .elementor[data-elementor-type="wp-page"]',
-    needsBrowser: false,
     sourceUrlPattern: '(^/health/|^/compare/)',
   };
   const pattern = new RegExp(entry.sourceUrlPattern);
@@ -186,33 +169,19 @@ test('templates.page matches multiple path patterns correctly', async () => {
   assert.doesNotMatch('/pricing/', pattern);
 });
 
-test('rejects config when a template entry is missing required fields', async () => {
-  const file = await tmpConfig({
-    ...base,
-    templates: { 'case-study': { sourceRoot: '#content' } },
+test('rejects config when a template entry is missing required fields',
+  async () => {
+    const file = await tmpConfig({
+      ...base,
+      templates: { 'case-study': { sourceRoot: '#content' } },
+    });
+    await assert.rejects(
+      () => loadConfig(file),
+      /templates\.case-study missing: sourceUrlPattern/,
+    );
   });
-  await assert.rejects(
-    () => loadConfig(file),
-    /templates\.case-study missing: needsBrowser, sourceUrlPattern/,
-  );
-});
 
-test('rejects config when a template entry has a non-boolean needsBrowser', async () => {
-  const file = await tmpConfig({
-    ...base,
-    templates: {
-      'case-study': {
-        sourceRoot: '#content',
-        needsBrowser: 'no',
-        sourceUrlPattern: '^/x/$',
-      },
-    },
-  });
-  await assert.rejects(
-    () => loadConfig(file),
-    /templates\.case-study\.needsBrowser must be boolean/,
-  );
-});
+
 
 test('rejects config when thresholds.scorecard is not an object', async () => {
   const file = await tmpConfig({

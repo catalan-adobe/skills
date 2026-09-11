@@ -112,7 +112,6 @@ test(
       cfg.thresholds.minClusterSize = 2;
       cfg.templates.product = {
         sourceRoot: '#maincontent',
-        needsBrowser: false,
         sourceUrlPattern: '^/product-[a-z]+\\.html$',
       };
       await writeFile(

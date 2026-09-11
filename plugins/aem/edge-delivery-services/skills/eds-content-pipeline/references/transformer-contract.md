@@ -8,6 +8,7 @@ in `migration/transformers/` and are named after their template: `product.mjs`,
 ## Export Contract
 
 Every transformer module must export these named exports:
+(match, transformDOM, generateDocumentPath as functions; version as string).
 
 ### `match(url, document) → boolean`
 
@@ -94,18 +95,6 @@ transformer changes so content can be re-run.
 
 ```javascript
 export const version = '1.0.0';
-```
-
-### `needsBrowser` (boolean, optional, default: false)
-
-Declares that the template's source pages only render their content client-side,
-so a plain HTTP fetch is not enough. The flag is recorded on the loaded
-transformer and in `site.config.json` (`templates.<t>.needsBrowser`) but **no
-runner acts on it yet**: `transform` and `bulk` always work from the fetched
-HTML. Async `transformDOM` is supported regardless (e.g. an oEmbed call).
-
-```javascript
-export const needsBrowser = false;
 ```
 
 ## Harness Behavior
@@ -277,7 +266,6 @@ shows a complete implementation:
 
 ```javascript
 export const version = '1.1.0';
-export const needsBrowser = false;
 
 export function match(url) {
   return /^\/product-[a-z]+\.html$/.test(new URL(url).pathname);

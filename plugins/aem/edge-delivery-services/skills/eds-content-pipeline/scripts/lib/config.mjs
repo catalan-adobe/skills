@@ -8,7 +8,7 @@ const REQUIRED = [
 ];
 
 const DA_REQUIRED = ['org', 'site', 'ref', 'adminHost', 'sourceHost'];
-const TEMPLATE_REQUIRED = ['sourceRoot', 'needsBrowser', 'sourceUrlPattern'];
+const TEMPLATE_REQUIRED = ['sourceRoot', 'sourceUrlPattern'];
 
 /**
  * Validates the `da` object within the site configuration.
@@ -92,19 +92,15 @@ export function originAliasHosts(config) {
  * @param {string} name Template name, e.g. `case-study`.
  * @param {object} entry The template configuration entry.
  * @param {string} configPath Path of the config file, for error messages.
- * @throws {Error} When a required key is missing, `needsBrowser` is not boolean, or
- *   `sourceUrlPattern` does not compile as a regular expression.
+ * @throws {Error} When a required key is missing or `sourceUrlPattern`
+ *   does not compile as a regular expression.
  */
 function assertTemplateEntry(name, entry, configPath) {
   const missing = TEMPLATE_REQUIRED.filter((k) => !(k in entry));
   if (missing.length) {
     throw new Error(
-      `site.config.json templates.${name} missing: ${missing.join(', ')} (${configPath})`,
-    );
-  }
-  if (typeof entry.needsBrowser !== 'boolean') {
-    throw new Error(
-      `site.config.json templates.${name}.needsBrowser must be boolean (${configPath})`,
+      `site.config.json templates.${name} missing: ${missing.join(', ')}
+      (${configPath})`,
     );
   }
   try {
@@ -112,7 +108,8 @@ function assertTemplateEntry(name, entry, configPath) {
     new RegExp(entry.sourceUrlPattern);
   } catch {
     throw new Error(
-      `site.config.json templates.${name}.sourceUrlPattern is not a valid regexp (${configPath})`,
+      `site.config.json templates.${name}.sourceUrlPattern is not a
+      valid regexp (${configPath})`,
     );
   }
 }

@@ -26,22 +26,30 @@ const titleCase = (key) => key.replace(/(^|-)([a-z])/g, (_, sep, ch) => sep + ch
  *
  * @param {string} template Template name, e.g. `case-study`.
  * @param {object} [options]
- * @param {string} [options.dir] Transformer directory; defaults to `<project>/transformers`.
- * @returns {Promise<{template: string, file: string, match: Function, transformDOM: Function,
- *   generateDocumentPath: Function, needsBrowser: boolean, version: string}>} The transformer.
- * @throws {Error} When the module is missing or does not export the contract.
+ * @param {string} [options.dir] Transformer directory; defaults to
+ *   `<project>/transformers`.
+ * @returns {Promise<{template: string, file: string, match: Function,
+ *   transformDOM: Function, generateDocumentPath: Function, version:
+ *   string}>} The transformer.
+ * @throws {Error} When the module is missing or does not export the
+ *   contract.
  */
 export async function loadTransformer(template, { dir } = {}) {
   const base = dir ?? path.join(resolvePaths().siteDir, 'transformers');
   const file = path.join(base, `${template}.mjs`);
   const module = await import(pathToFileURL(file).href).catch((err) => {
-    throw new Error(`No transformer for template "${template}" at ${file} (${err.message}); `
-      + 'author it there (see references/transformer-contract.md)');
+    throw new Error(
+      `No transformer for template "${template}" at ${file}
+      (${err.message}); author it there (see
+      references/transformer-contract.md)`,
+    );
   });
-  const missing = CONTRACT.filter((name) => typeof module[name] !== 'function');
+  const missing = CONTRACT.filter(
+    (name) => typeof module[name] !== 'function',
+  );
   if (missing.length) {
-    throw new Error(`Transformer ${file} breaks the contract: it must export `
-      + `${missing.join(', ')} as function(s)`);
+    throw new Error(`Transformer ${file} breaks the contract: it must
+      export ${missing.join(', ')} as function(s)`);
   }
   return {
     template,
@@ -49,7 +57,6 @@ export async function loadTransformer(template, { dir } = {}) {
     match: module.match,
     transformDOM: module.transformDOM,
     generateDocumentPath: module.generateDocumentPath,
-    needsBrowser: module.needsBrowser === true,
     version: String(module.version ?? '0'),
   };
 }
@@ -61,10 +68,12 @@ function metaContent(document, selector) {
 }
 
 /**
- * Reads the page metadata a DA `Metadata` block needs from the source head.
+ * Reads the page metadata a DA `Metadata` block needs from the
+ * source head.
  *
  * @param {Document} document Source document parsed by jsdom.
- * @returns {object} Non-empty `title`, `description`, `image`, `canonical`, `publication-date`.
+ * @returns {object} Non-empty `title`, `description`, `image`,
+ *   `canonical`, `publication-date`.
  */
 export function extractMetadata(document) {
   const title = (document.querySelector('title')?.textContent ?? '').replace(/\s+/g, ' ').trim();

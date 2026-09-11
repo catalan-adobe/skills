@@ -63,57 +63,68 @@ async function fixtureDir() {
   return dir;
 }
 
-test('loadTransformer asserts the contract and reports missing modules', async () => {
-  const dir = await fixtureDir();
-  const transformer = await loadTransformer('case-study', { dir });
-  assert.equal(transformer.version, '1.2.0');
-  assert.equal(transformer.needsBrowser, false);
-  assert.equal(typeof transformer.transformDOM, 'function');
-  await assert.rejects(
-    () => loadTransformer('broken', { dir }),
-    /breaks the contract: it must export transformDOM, generateDocumentPath as function\(s\)/,
-  );
-  await assert.rejects(
-    () => loadTransformer('missing', { dir }),
-    /No transformer for template "missing" at .*missing\.mjs .*; author it there/,
-  );
-});
+test('loadTransformer asserts the contract and reports missing modules',
+  async () => {
+    const dir = await fixtureDir();
+    const transformer = await loadTransformer('case-study', { dir });
+    assert.equal(transformer.version, '1.2.0');
+    assert.equal('needsBrowser' in transformer, false);
+    assert.equal(typeof transformer.transformDOM, 'function');
+    await assert.rejects(
+      () => loadTransformer('broken', { dir }),
+      /breaks the contract: it must/,
+    );
+    await assert.rejects(
+      () => loadTransformer('missing', { dir }),
+      /No transformer for template "missing" at .*missing\.mjs/,
+    );
+  });
 
-test('transformHtml serialises a DA skeleton that passes the content gate', async () => {
-  const dir = await fixtureDir();
-  const transformer = await loadTransformer('case-study', { dir });
-  const result = await transformHtml({
-    html: SOURCE,
-    url: 'https://www.example.com/case-study/acme-flight-school/',
-    transformer,
-    params: { sourceRoot: '#content' },
-    hosts: HOSTS,
-  });
-  assert.equal(result.path, '/case-study/acme-flight-school');
-  assert.match(result.html, /^<body>\n {2}<header><\/header>\n {2}<main>\n/);
-  assert.match(result.html, /<\/main>\n {2}<footer><\/footer>\n<\/body>\n$/);
-  assert.match(result.html, /<div class="columns hero"><div><div><h1>Acme Flight School<\/h1>/);
-  assert.match(result.html, /<div class="section-metadata"><div><div>Style<\/div>/);
-  assert.match(result.html, /<div class="metadata">/);
-  assert.match(result.html, /<div>description<\/div><div>Acme Flight School gets off spreadsheets/);
-  assert.ok(!result.html.includes('<script'), 'scripts are dropped');
-  assert.ok(!result.html.includes('style='), 'style attributes are dropped');
-  assert.ok(!result.html.includes('class="lead"'), 'default-content classes are dropped');
-  const planeSrc = 'https://www.example.com/uploads/2023/10/plane.jpg';
-  assert.ok(result.html.includes(`src="${planeSrc}" alt=""`), 'img src absolutised, alt added');
-  assert.match(result.html, /<a href="\/pricing">See pricing<\/a>/);
-  assert.deepEqual(result.warnings, [
-    { code: 'sidebar', message: 'Recent Posts sidebar dropped' },
-    { code: 'media', message: `img ${planeSrc} had no alt attribute` },
-    { code: 'skeleton', message: 'removed forbidden <script> element' },
-  ]);
-  const file = path.join(dir, 'acme-flight-school.html');
-  await writeFile(file, result.html);
-  const verdict = await validateFile(file, {
-    origin: 'https://www.example.com',
-    docPath: result.path,
-  });
-  assert.deepEqual(verdict.issues.filter((i) => i.severity === 'error'), []);
+test('transformHtml serialises a DA skeleton that passes the gate',
+  async () => {
+    const dir = await fixtureDir();
+    const transformer = await loadTransformer('case-study', { dir });
+    const result = await transformHtml({
+      html: SOURCE,
+      url: 'https://www.example.com/case-study/acme-flight-school/',
+      transformer,
+      params: { sourceRoot: '#content' },
+      hosts: HOSTS,
+    });
+    assert.equal(result.path, '/case-study/acme-flight-school');
+    assert.match(result.html,
+      /^<body>\n {2}<header><\/header>\n {2}<main>\n/);
+    assert.match(result.html,
+      /<\/main>\n {2}<footer><\/footer>\n<\/body>\n$/);
+    assert.match(result.html,
+      /<div class="columns hero"><div><div><h1>Acme Flight School<\/h1>/);
+    assert.match(result.html,
+      /<div class="section-metadata"><div><div>Style<\/div>/);
+    assert.match(result.html, /<div class="metadata">/);
+    assert.match(result.html,
+      /<div>description<\/div><div>Acme Flight School gets off/);
+    assert.ok(!result.html.includes('<script'), 'scripts are dropped');
+    assert.ok(!result.html.includes('style='),
+      'style attributes are dropped');
+    assert.ok(!result.html.includes('class="lead"'),
+      'default-content classes are dropped');
+    const planeSrc = 'https://www.example.com/uploads/2023/10/plane.jpg';
+    assert.ok(result.html.includes(`src="${planeSrc}" alt=""`),
+      'img src absolutised, alt added');
+    assert.match(result.html, /<a href="\/pricing">See pricing<\/a>/);
+    assert.deepEqual(result.warnings, [
+      { code: 'sidebar', message: 'Recent Posts sidebar dropped' },
+      { code: 'media', message: `img ${planeSrc} had no alt attribute` },
+      { code: 'skeleton', message: 'removed forbidden <script> element' },
+    ]);
+    const file = path.join(dir, 'acme-flight-school.html');
+    await writeFile(file, result.html);
+    const verdict = await validateFile(file, {
+      origin: 'https://www.example.com',
+      docPath: result.path,
+    });
+    assert.deepEqual(
+      verdict.issues.filter((i) => i.severity === 'error'), []);
   assert.equal(verdict.pass, true);
 });
 

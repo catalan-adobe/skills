@@ -130,7 +130,7 @@ function siteConfig() {
     },
     templates: {
       'case-study': {
-        sourceRoot: 'body > main', needsBrowser: false, sourceUrlPattern: '^/case-study/',
+        sourceRoot: 'body > main', sourceUrlPattern: '^/case-study/',
       },
     },
   };

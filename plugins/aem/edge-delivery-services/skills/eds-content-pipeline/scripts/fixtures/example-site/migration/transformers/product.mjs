@@ -1,7 +1,6 @@
 
 
 export const version = '1.1.0'; // updated to use importer param
-export const needsBrowser = false; // uses importer from transform harness
 
 export function match(url) {
   return /^\/product-[a-z]+\.html$/.test(new URL(url).pathname);

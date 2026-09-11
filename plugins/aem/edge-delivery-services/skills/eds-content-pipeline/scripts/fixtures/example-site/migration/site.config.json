@@ -22,7 +22,6 @@
   "templates": {
     "product": {
       "sourceRoot": "#maincontent",
-      "needsBrowser": false,
       "sourceUrlPattern": "^/product-[a-z]+\\.html$"
     }
   }
