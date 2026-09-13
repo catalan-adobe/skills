@@ -1,15 +1,27 @@
 #!/usr/bin/env node
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runAllChecks, runCheck } from './lib/checks.mjs';
 import {
   init, readProject, resolveProject, writeProject,
 } from './lib/project.mjs';
 import { stepById, stepStates } from './lib/steps.mjs';
+import {
+  distribution, proposal, renderUrlsMd, writeSubsets,
+} from './lib/urls.mjs';
+import {
+  commandOnPath, defaultExec, detect, install, missingReasons, writeSetupJson,
+} from './lib/setup.mjs';
 
 const USAGE = `status.mjs [--text]              every step: done|ready|blocked|waiting-operator
 status.mjs check <step>          the step's done-check; exit 1 when it fails
 status.mjs init --origin <url>   create migration/ and project.json
-status.mjs approve <step>        record the operator's yes for a gated step (cache)`;
+status.mjs approve <step> [<subset>...]
+                                  record the operator's yes for a gated step (cache);
+                                  subset names select "urls/subsets/<name>.txt" (default: all)
+status.mjs urls                  distribution + caching proposal from urls/urls.json
+status.mjs setup [--install]     detect preconditions; --install fixes them in project scope`;
 
 const flag = (argv, name) => {
   const i = argv.indexOf(name);
@@ -35,14 +47,70 @@ export async function status(project) {
   return { project: project.dir, origin: data.origin, steps: stepStates(done, approved) };
 }
 
-export async function approve(id, project) {
+export async function approve(id, subsets, project) {
   const step = stepById(id);
   if (!step.operatorGate) throw new Error(`Step "${id}" needs no approval`);
   const data = await readProject(project);
   if (!data) throw new Error(`No project at ${project.projectFile}`);
   data.approved = { ...(data.approved ?? {}), [id]: true };
+  if (id === 'cache') data.cacheSelection = subsets.length ? subsets : 'all';
   await writeProject(project, data);
-  return { step: id, approved: true };
+  return {
+    step: id, approved: true, ...(id === 'cache' ? { cacheSelection: data.cacheSelection } : {}),
+  };
+}
+
+/**
+ * Reads `urls/urls.json`, writes `urls/urls.md` and the subsets under `urls/subsets/`,
+ * and returns the caching proposal.
+ */
+export async function urls(project) {
+  const data = await readProject(project);
+  if (!data) throw new Error(`No project at ${project.projectFile}`);
+  const urlsDir = project.step('urls');
+  const file = path.join(urlsDir, 'urls.json');
+  const text = await readFile(file, 'utf8').catch((err) => {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  });
+  if (text === null) {
+    throw new Error('missing migration/urls/urls.json; run the scan step first');
+  }
+  let entries;
+  try {
+    entries = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`${file} is not valid JSON (${err.message}); rerun the scan step`);
+  }
+  if (!Array.isArray(entries)) {
+    throw new Error('migration/urls/urls.json must be a JSON array of URLExtended entries');
+  }
+  const dist = distribution(entries);
+  const prop = proposal(dist, { cacheAllUpTo: data.cacheAllUpTo });
+  await writeFile(path.join(urlsDir, 'urls.md'), renderUrlsMd(dist, prop));
+  await writeSubsets(entries, prop, urlsDir);
+  return prop;
+}
+
+/**
+ * Detects Node, `playwright-cli`, `franklin-bulk-shared` and the sibling skills; with
+ * `shouldInstall` runs the project-scope installers for what is missing, then re-detects.
+ * Always writes `migration/setup.json`. Never installs Node (the installer reports it and
+ * runs nothing else); never installs globally. `nodeVersion` and `exec` are injectable for
+ * tests; the CLI passes neither.
+ */
+export async function setup({ shouldInstall, nodeVersion, exec = defaultExec }, project) {
+  let detection = await detect({ cwd: project.root, nodeVersion });
+  let installs = [];
+  if (shouldInstall) {
+    const hasUpskill = !!(await commandOnPath('upskill'));
+    installs = await install(detection, { exec, cwd: project.root, hasUpskill });
+    detection = await detect({ cwd: project.root, nodeVersion });
+  }
+  await writeSetupJson(project, detection);
+  const reasons = missingReasons(detection);
+  if (reasons.length) process.exitCode = 1;
+  return { detection, reasons, installs };
 }
 
 const COMMANDS = {
@@ -59,9 +127,12 @@ const COMMANDS = {
   },
   init: (argv, project) => init({ origin: flag(argv, '--origin') }, project),
   approve(argv, project) {
-    if (!argv[0]) throw new Error(USAGE);
-    return approve(argv[0], project);
+    const [id, ...subsets] = argv;
+    if (!id) throw new Error(USAGE);
+    return approve(id, subsets, project);
   },
+  urls: (argv, project) => urls(project),
+  setup: (argv, project) => setup({ shouldInstall: argv.includes('--install') }, project),
 };
 
 async function cli(argv) {

@@ -1,0 +1,248 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  distribution, proposal, relativeSegments, renderUrlsMd, scopeOf, writeSubsets,
+} from './urls.mjs';
+
+const execFileP = promisify(execFile);
+const cliPath = fileURLToPath(new URL('../status.mjs', import.meta.url));
+
+async function cli(cwd, ...args) {
+  const { stdout } = await execFileP('node', [cliPath, ...args], { cwd });
+  try { return JSON.parse(stdout); } catch { return stdout; }
+}
+
+const fresh = () => mkdtemp(path.join(os.tmpdir(), 'cpv2-urls-'));
+
+const mixed = [
+  { url: 'https://x.example/blog/one', level1: 'blog', level2: 'one', lang: 'en-US' },
+  { url: 'https://x.example/blog/two', level1: 'blog', level2: 'two', lang: 'en-US' },
+  { url: 'https://x.example/docs/api', level1: 'docs', level2: 'api', lang: 'en-US' },
+  { url: 'https://x.example/fr/blog', level1: 'fr', level2: 'blog' },
+  { url: 'https://x.example/', level1: '', level2: '' },
+];
+
+test('distribution counts first segment, second segment and language', () => {
+  const dist = distribution(mixed);
+  assert.equal(dist.total, 5);
+  assert.deepEqual(dist.byFirstSegment, {
+    blog: 2, docs: 1, fr: 1, '': 1,
+  });
+  assert.deepEqual(dist.bySecondSegment, {
+    one: 1, two: 1, api: 1, blog: 1, '': 1,
+  });
+  assert.deepEqual(dist.byLanguage, { 'en-US': 3, fr: 1, unknown: 1 });
+});
+
+test('proposal caches all urls at or under the threshold, not over it', () => {
+  const dist = distribution(mixed);
+  assert.deepEqual(proposal(dist, { cacheAllUpTo: 5 }), { all: true, total: 5 });
+  const over = proposal(dist, { cacheAllUpTo: 4 });
+  assert.equal(over.all, false);
+  assert.equal(over.scope, '/');
+  assert.deepEqual(over.groups.map((g) => g.prefix), ['blog', '', 'docs']);
+});
+
+test('proposal picks the largest first-segment groups covering 80% with a long tail', () => {
+  const urls = [
+    ...Array.from({ length: 40 }, (_, i) => ({ url: `https://x/blog/${i}`, level1: 'blog' })),
+    ...Array.from({ length: 30 }, (_, i) => ({ url: `https://x/docs/${i}`, level1: 'docs' })),
+    ...Array.from({ length: 10 }, (_, i) => ({ url: `https://x/news/${i}`, level1: 'news' })),
+    ...Array.from({ length: 20 }, (_, i) => ({ url: `https://x/tail${i}/p`, level1: `tail${i}` })),
+  ];
+  const dist = distribution(urls);
+  assert.equal(dist.total, 100);
+  const prop = proposal(dist, { cacheAllUpTo: 10 });
+  assert.equal(prop.all, false);
+  assert.equal(prop.scope, '/');
+  assert.deepEqual(prop.groups.map((g) => g.prefix), ['blog', 'docs', 'news']);
+  const covered = prop.groups.reduce((sum, g) => sum + g.count, 0);
+  assert.ok(covered / dist.total >= 0.8);
+  assert.equal(prop.groups[0].share, 0.4);
+});
+
+test('renderUrlsMd tables the counts and states the proposal in one sentence', () => {
+  const dist = distribution(mixed);
+  const all = renderUrlsMd(dist, { all: true, total: 5 });
+  assert.match(all, /Total URLs: 5/);
+  assert.match(all, /\| blog \| 2 \|/);
+  assert.match(all, /\| en-US \| 3 \|/);
+  const sentences = all.split('\n').filter((l) => l.includes('cache every URL'));
+  assert.equal(sentences.length, 1);
+  assert.match(sentences[0], /^All 5 URLs are at or under the caching threshold, so cache/);
+
+  const grouped = renderUrlsMd(dist, {
+    all: false, scope: '/', groups: [{ prefix: 'blog', count: 2, share: 0.4 }],
+  });
+  const groupedSentence = grouped.split('\n').find((l) => l.includes('exceed the caching'));
+  assert.equal(groupedSentence.match(/\./g).length, 1);
+  assert.match(groupedSentence, /"blog" \(2\)/);
+});
+
+test('writeSubsets writes one file per group, matched by the proposal segment', async () => {
+  const dir = await fresh();
+  const prop = { all: false, scope: '/', groups: [{ prefix: 'blog', count: 2, share: 0.4 }] };
+  const files = await writeSubsets(mixed, prop, dir);
+  assert.deepEqual(files, [path.join(dir, 'subsets', 'blog.txt')]);
+  const text = await readFile(files[0], 'utf8');
+  assert.equal(text, 'https://x.example/blog/one\nhttps://x.example/blog/two\n');
+});
+
+test('writeSubsets writes nothing when the proposal caches everything', async () => {
+  const dir = await fresh();
+  const files = await writeSubsets(mixed, { all: true, total: 5 }, dir);
+  assert.deepEqual(files, []);
+});
+
+test('writeSubsets names the root group file when the prefix is empty', async () => {
+  const dir = await fresh();
+  const prop = { all: false, scope: '/', groups: [{ prefix: '', count: 1, share: 0.2 }] };
+  const files = await writeSubsets(mixed, prop, dir);
+  assert.deepEqual(files, [path.join(dir, 'subsets', 'root.txt')]);
+});
+
+test('writeSubsets clears subset files left over from a previous proposal', async () => {
+  const dir = await fresh();
+  const first = {
+    all: false,
+    scope: '/',
+    groups: [{ prefix: 'blog', count: 2, share: 0.4 }, { prefix: 'docs', count: 1, share: 0.2 }],
+  };
+  await writeSubsets(mixed, first, dir);
+  const second = { all: false, scope: '/', groups: [{ prefix: 'blog', count: 2, share: 0.4 }] };
+  const files = await writeSubsets(mixed, second, dir);
+  assert.deepEqual(files, [path.join(dir, 'subsets', 'blog.txt')]);
+  await assert.rejects(readFile(path.join(dir, 'subsets', 'docs.txt'), 'utf8'));
+});
+
+test('writeSubsets clears subset files when the new proposal caches everything', async () => {
+  const dir = await fresh();
+  const first = { all: false, scope: '/', groups: [{ prefix: 'blog', count: 2, share: 0.4 }] };
+  await writeSubsets(mixed, first, dir);
+  await writeSubsets(mixed, { all: true, total: 5 }, dir);
+  await assert.rejects(readFile(path.join(dir, 'subsets', 'blog.txt'), 'utf8'));
+});
+
+test('writeSubsets skips entries without a usable url instead of writing "undefined"', async () => {
+  const dir = await fresh();
+  const withGap = [
+    { url: 'https://x.example/blog/one', level1: 'blog' },
+    { level1: 'blog' },
+    { url: '', level1: 'blog' },
+  ];
+  const prop = { all: false, scope: '/', groups: [{ prefix: 'blog', count: 3, share: 1 }] };
+  const files = await writeSubsets(withGap, prop, dir);
+  const text = await readFile(files[0], 'utf8');
+  assert.equal(text, 'https://x.example/blog/one\n');
+});
+
+const summary = 'reads urls.json, writes urls.md and subsets, prints the proposal';
+test(`status.mjs urls ${summary}`, async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://x.example/');
+  const urlsDir = path.join(cwd, 'migration', 'urls');
+  await mkdir(urlsDir, { recursive: true });
+  await writeFile(path.join(urlsDir, 'urls.json'), JSON.stringify(mixed));
+  const result = await cli(cwd, 'urls');
+  assert.equal(result.all, true);
+  assert.equal(result.total, 5);
+  const md = await readFile(path.join(urlsDir, 'urls.md'), 'utf8');
+  assert.match(md, /cache every URL/);
+});
+
+test('status.mjs urls writes real per-prefix subset files when over the threshold', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://x.example/');
+  const projectFile = path.join(cwd, 'migration', 'project.json');
+  const project = JSON.parse(await readFile(projectFile, 'utf8'));
+  project.cacheAllUpTo = 4;
+  await writeFile(projectFile, JSON.stringify(project));
+  const urlsDir = path.join(cwd, 'migration', 'urls');
+  await mkdir(urlsDir, { recursive: true });
+  await writeFile(path.join(urlsDir, 'urls.json'), JSON.stringify(mixed));
+  const result = await cli(cwd, 'urls');
+  assert.equal(result.all, false);
+  assert.deepEqual(result.groups.map((g) => g.prefix), ['blog', '', 'docs']);
+  const blog = await readFile(path.join(urlsDir, 'subsets', 'blog.txt'), 'utf8');
+  assert.equal(blog, 'https://x.example/blog/one\nhttps://x.example/blog/two\n');
+  const root = await readFile(path.join(urlsDir, 'subsets', 'root.txt'), 'utf8');
+  assert.equal(root, 'https://x.example/\n');
+});
+
+test('status.mjs urls names the missing input file', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://x.example/');
+  const err = await cli(cwd, 'urls').catch((e) => e);
+  assert.match(err.stderr, /missing migration\/urls\/urls\.json/);
+});
+
+test('status.mjs urls does not call a directory-in-place-of-file "missing"', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://x.example/');
+  const urlsDir = path.join(cwd, 'migration', 'urls');
+  await mkdir(path.join(urlsDir, 'urls.json'), { recursive: true });
+  const err = await cli(cwd, 'urls').catch((e) => e);
+  assert.doesNotMatch(err.stderr, /run the scan step first/);
+});
+
+test('status.mjs urls rejects urls.json that is not an array', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://x.example/');
+  const urlsDir = path.join(cwd, 'migration', 'urls');
+  await mkdir(urlsDir, { recursive: true });
+  await writeFile(path.join(urlsDir, 'urls.json'), JSON.stringify({ a: 1 }));
+  const err = await cli(cwd, 'urls').catch((e) => e);
+  assert.match(err.stderr, /must be a JSON array of URLExtended entries/);
+});
+
+test('status.mjs urls rejects urls.json that is not valid JSON', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://x.example/');
+  const urlsDir = path.join(cwd, 'migration', 'urls');
+  await mkdir(urlsDir, { recursive: true });
+  await writeFile(path.join(urlsDir, 'urls.json'), '{ not json');
+  const err = await cli(cwd, 'urls').catch((e) => e);
+  assert.match(err.stderr, /is not valid JSON/);
+});
+
+const scoped = [
+  { url: 'https://x.example/en/section.html' },
+  { url: 'https://x.example/en/section/diseases/asthma.html' },
+  { url: 'https://x.example/en/section/diseases/gout.html' },
+  { url: 'https://x.example/en/section/clinics/list.html' },
+  { url: 'https://x.example/en/section/clinics/list/one.html' },
+];
+
+test('a scoped site counts segments below the prefix every URL shares', () => {
+  assert.deepEqual(scopeOf(scoped), ['en', 'section']);
+  assert.deepEqual(relativeSegments('https://x.example/en/section/clinics/list/one.html',
+    ['en', 'section']), ['clinics', 'list', 'one']);
+  assert.deepEqual(relativeSegments('https://x.example/en/section.html', ['en', 'section']), []);
+  const dist = distribution(scoped);
+  assert.equal(dist.scope, '/en/section');
+  assert.deepEqual(dist.byFirstSegment, { diseases: 2, clinics: 2, '': 1 });
+  assert.deepEqual(dist.bySecondSegment, { asthma: 1, gout: 1, list: 2, '': 1 });
+  assert.equal(scopeOf(mixed).length, 0, 'no shared prefix, segments are absolute');
+  assert.deepEqual(distribution(mixed).byFirstSegment, {
+    blog: 2, docs: 1, fr: 1, '': 1,
+  });
+  const md = renderUrlsMd(dist, proposal(dist, { cacheAllUpTo: 500 }));
+  assert.match(md, /share the prefix `\/en\/section`/);
+});
+
+test('subsets over a scoped site are cut by the relative first segment', async () => {
+  const dir = await fresh();
+  const dist = distribution(scoped);
+  const prop = proposal(dist, { cacheAllUpTo: 2 });
+  assert.deepEqual(prop.groups.map((g) => g.prefix), ['clinics', 'diseases']);
+  const files = await writeSubsets(scoped, prop, dir);
+  const clinics = await readFile(path.join(dir, 'subsets', 'clinics.txt'), 'utf8');
+  assert.equal(clinics.trim().split('\n').length, 2);
+  assert.equal(files.length, 2);
+});

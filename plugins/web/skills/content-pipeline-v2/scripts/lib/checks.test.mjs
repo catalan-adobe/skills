@@ -1,0 +1,385 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  checkProbe, checkPrep, checkPrepVerify, checkScan, checkCache, checkReport,
+} from './checks.mjs';
+
+test('checkProbe passes when the recipe parses and probe.md is non-empty', () => {
+  const files = {
+    'probe/browser-recipe.json': '{"engine":"chromium"}',
+    'probe/probe.md': '# probe notes',
+  };
+  assert.deepEqual(checkProbe(files), { pass: true, reasons: [] });
+});
+
+test('checkProbe lists every missing or broken probe artefact', () => {
+  assert.deepEqual(checkProbe({}), {
+    pass: false,
+    reasons: [
+      'missing migration/probe/browser-recipe.json',
+      'missing migration/probe/probe.md',
+    ],
+  });
+  const bad = checkProbe({
+    'probe/browser-recipe.json': 'not json',
+    'probe/probe.md': '   ',
+  });
+  assert.deepEqual(bad, {
+    pass: false,
+    reasons: [
+      'migration/probe/browser-recipe.json is not valid JSON',
+      'migration/probe/probe.md is empty',
+    ],
+  });
+});
+
+const manifest = (checked, overlays = []) => ({
+  'prep/page-prep.json': JSON.stringify({ checked, overlays }),
+});
+
+test('checkPrep passes with >= 1 checked URL and every overlay has a selector', () => {
+  const files = manifest(['https://example.com/'], [{ selector: '.cookies', hide: true }]);
+  assert.deepEqual(checkPrep(files), { pass: true, reasons: [] });
+});
+
+test('checkPrep lists missing/invalid/empty/no-selector reasons', () => {
+  assert.deepEqual(checkPrep({}), {
+    pass: false,
+    reasons: ['missing migration/prep/page-prep.json'],
+  });
+  assert.deepEqual(checkPrep({ 'prep/page-prep.json': 'not json' }), {
+    pass: false,
+    reasons: ['migration/prep/page-prep.json is not valid JSON'],
+  });
+  assert.deepEqual(checkPrep(manifest([])), {
+    pass: false,
+    reasons: [
+      'migration/prep/page-prep.json has 0 checked URL(s), needs >= 1',
+    ],
+  });
+  const noSelector = checkPrep(manifest(['https://example.com/'], [{ hide: true }]));
+  assert.deepEqual(noSelector, {
+    pass: false,
+    reasons: ['migration/prep/page-prep.json overlay 0 has no selector'],
+  });
+});
+
+test('checkPrepVerify passes with >= 3 checked URLs from >= 2 first path segments', () => {
+  const files = manifest([
+    'https://example.com/',
+    'https://example.com/blog/a',
+    'https://example.com/docs/b',
+  ]);
+  assert.deepEqual(checkPrepVerify(files), { pass: true, reasons: [] });
+});
+
+test('checkPrepVerify lists too few checked URLs and too few path prefixes', () => {
+  assert.deepEqual(checkPrepVerify(manifest(['https://example.com/'])), {
+    pass: false,
+    reasons: [
+      'migration/prep/page-prep.json has 1 checked URL(s), needs >= 3',
+      'migration/prep/page-prep.json checked URLs cover 1 path prefix(es), needs >= 2',
+    ],
+  });
+  const sameSegment = checkPrepVerify(manifest([
+    'https://example.com/blog/a',
+    'https://example.com/blog/b',
+    'https://example.com/blog/c',
+  ]));
+  assert.deepEqual(sameSegment, {
+    pass: false,
+    reasons: [
+      'migration/prep/page-prep.json checked URLs cover 1 path prefix(es), needs >= 2',
+    ],
+  });
+});
+
+test('checkScan passes with a non-empty URLExtended array and urls.md present', () => {
+  const files = {
+    'urls/urls.json': JSON.stringify([{ url: 'https://example.com/' }]),
+    'urls/urls.md': '# urls',
+  };
+  assert.deepEqual(checkScan(files), { pass: true, reasons: [] });
+});
+
+test('checkScan lists missing files, invalid JSON, an empty array, an entry without a url', () => {
+  assert.deepEqual(checkScan({}), {
+    pass: false,
+    reasons: ['missing migration/urls/urls.json', 'missing migration/urls/urls.md'],
+  });
+  assert.deepEqual(checkScan({ 'urls/urls.json': 'not json', 'urls/urls.md': 'x' }), {
+    pass: false,
+    reasons: ['migration/urls/urls.json is not valid JSON'],
+  });
+  assert.deepEqual(checkScan({ 'urls/urls.json': '[]', 'urls/urls.md': 'x' }), {
+    pass: false,
+    reasons: ['migration/urls/urls.json has no URLs'],
+  });
+  const noUrlField = checkScan({
+    'urls/urls.json': JSON.stringify([{ lang: 'en' }]),
+    'urls/urls.md': 'x',
+  });
+  assert.deepEqual(noUrlField, {
+    pass: false,
+    reasons: ['migration/urls/urls.json has an entry without a "url"'],
+  });
+});
+
+const withCache = (rows, extra = {}) => ({
+  'project.json': JSON.stringify({ approved: { cache: true } }),
+  'urls/urls.json': JSON.stringify([
+    { url: 'https://example.com/a' },
+    { url: 'https://example.com/b' },
+  ]),
+  'cache/cache.md': rows,
+  ...extra,
+});
+
+test('checkCache passes when every selected URL is cached, failed or skipped', () => {
+  const rows = '| url | status |\n'
+    + '| --- | --- |\n'
+    + '| https://example.com/a | cached |\n'
+    + '| https://example.com/b | skipped |\n';
+  assert.deepEqual(checkCache(withCache(rows)), { pass: true, reasons: [] });
+});
+
+test('checkCache lists a missing cache.md, no selection, a missing row, an unstatused row', () => {
+  assert.deepEqual(checkCache({}), {
+    pass: false,
+    reasons: [
+      'missing migration/cache/cache.md',
+      'cache was not approved; run status.mjs approve cache [<subset>...]',
+      'migration/urls/urls.json has no URLs to select',
+    ],
+  });
+  const noRow = checkCache(withCache('| url | status |\n| --- | --- |\n'));
+  assert.deepEqual(noRow, {
+    pass: false,
+    reasons: [
+      'migration/cache/cache.md has no row for https://example.com/a',
+      'migration/cache/cache.md has no row for https://example.com/b',
+    ],
+  });
+  const noStatus = checkCache(withCache(
+    '| https://example.com/a |\n| https://example.com/b | cached |\n',
+  ));
+  assert.deepEqual(noStatus, {
+    pass: false,
+    reasons: [
+      'migration/cache/cache.md row for https://example.com/a has no cached|failed|skipped status',
+    ],
+  });
+});
+
+test('checkCache reports invalid project.json JSON instead of ignoring it', () => {
+  const files = {
+    'project.json': 'not json',
+    'cache/cache.md': 'x',
+  };
+  assert.deepEqual(checkCache(files), {
+    pass: false,
+    reasons: ['migration/project.json is not valid JSON'],
+  });
+});
+
+test('checkCache rejects a cacheSelection that is neither "all" nor subset names', () => {
+  const files = {
+    'project.json': JSON.stringify({ approved: { cache: true }, cacheSelection: 123 }),
+    'cache/cache.md': 'x',
+  };
+  assert.deepEqual(checkCache(files), {
+    pass: false,
+    reasons: ['project.json.cacheSelection must be "all" or subset names'],
+  });
+});
+
+test('checkCache follows named subsets when project.json.cacheSelection lists them', () => {
+  const files = {
+    'project.json': JSON.stringify({ approved: { cache: true }, cacheSelection: ['blog'] }),
+    'urls/subsets/blog.txt': 'https://example.com/blog/a\nhttps://example.com/blog/b\n',
+    'cache/cache.md': '| https://example.com/blog/a | cached |\n'
+      + '| https://example.com/blog/b | failed |\n',
+  };
+  assert.deepEqual(checkCache(files), { pass: true, reasons: [] });
+});
+
+test('checkCache reports a missing named subset file', () => {
+  const files = {
+    'project.json': JSON.stringify({ approved: { cache: true }, cacheSelection: ['blog'] }),
+    'cache/cache.md': 'x',
+  };
+  assert.deepEqual(checkCache(files), {
+    pass: false,
+    reasons: ['missing migration/urls/subsets/blog.txt'],
+  });
+});
+
+test('checkCache reports an empty named subset instead of passing vacuously', () => {
+  const files = {
+    'project.json': JSON.stringify({ approved: { cache: true }, cacheSelection: ['blog'] }),
+    'urls/subsets/blog.txt': '\n   \n',
+    'cache/cache.md': 'x',
+  };
+  assert.deepEqual(checkCache(files), {
+    pass: false,
+    reasons: ['migration/project.json.cacheSelection resolves to no URLs'],
+  });
+});
+
+test('checkCache matches the URL cell exactly, not as a substring of another row', () => {
+  const files = {
+    'project.json': JSON.stringify({ approved: { cache: true } }),
+    'urls/urls.json': JSON.stringify([
+      { url: 'https://example.com/' },
+      { url: 'https://example.com/a' },
+    ]),
+    'cache/cache.md': '| https://example.com/a | cached |\n',
+  };
+  assert.deepEqual(checkCache(files), {
+    pass: false,
+    reasons: ['migration/cache/cache.md has no row for https://example.com/'],
+  });
+});
+
+test('checkCache requires the status cell, not just the word appearing in the URL', () => {
+  const files = {
+    'project.json': JSON.stringify({ approved: { cache: true } }),
+    'urls/urls.json': JSON.stringify([
+      { url: 'https://example.com/failed-logins' },
+    ]),
+    'cache/cache.md': '| https://example.com/failed-logins | |\n',
+  };
+  assert.deepEqual(checkCache(files), {
+    pass: false,
+    reasons: [
+      'migration/cache/cache.md row for https://example.com/failed-logins '
+      + 'has no cached|failed|skipped status',
+    ],
+  });
+});
+
+test('checkReport passes when REPORT.md has a section for every step whose files exist', () => {
+  const files = {
+    'REPORT.md': '## probe\n\ndone\n\n## scan\n\ndone\n',
+    'probe/browser-recipe.json': '{}',
+    'probe/probe.md': 'x',
+    'urls/urls.json': '[]',
+    'urls/urls.md': 'x',
+  };
+  assert.deepEqual(checkReport(files), { pass: true, reasons: [] });
+});
+
+test('checkReport lists a missing REPORT.md and a missing section for a ran step', () => {
+  assert.deepEqual(checkReport({}), { pass: false, reasons: ['missing migration/REPORT.md'] });
+  const files = {
+    'REPORT.md': '## probe\n\ndone\n',
+    'probe/browser-recipe.json': '{}',
+    'probe/probe.md': 'x',
+    'urls/urls.json': '[]',
+    'urls/urls.md': 'x',
+  };
+  assert.deepEqual(checkReport(files), {
+    pass: false,
+    reasons: ['migration/REPORT.md has no "## scan" section'],
+  });
+});
+
+test('checkReport does not demand a prep-verify section from prep artefacts alone', () => {
+  const files = {
+    'REPORT.md': '## prep\n\ndone\n',
+    'prep/page-prep.json': '{}',
+    'prep/prep.md': 'x',
+  };
+  assert.deepEqual(checkReport(files), { pass: true, reasons: [] });
+});
+
+test('checkReport does not accept a "## prep-verify" header as the "## prep" section', () => {
+  const files = {
+    'REPORT.md': '## prep-verify\n\ndone\n',
+    'prep/page-prep.json': '{}',
+    'prep/prep.md': 'x',
+  };
+  assert.deepEqual(checkReport(files), {
+    pass: false,
+    reasons: ['migration/REPORT.md has no "## prep" section'],
+  });
+});
+
+test('checks never throw on JSON that parses to null or a scalar', () => {
+  const nullRecipe = { 'probe/browser-recipe.json': 'null', 'probe/probe.md': 'ok' };
+  assert.equal(checkProbe(nullRecipe).pass, false);
+  assert.match(checkProbe({ 'probe/browser-recipe.json': '"x"', 'probe/probe.md': 'ok' })
+    .reasons.join(' '), /not a JSON object/);
+  const prep = checkPrep({ 'prep/page-prep.json': 'null' });
+  assert.equal(prep.pass, false);
+  assert.match(prep.reasons.join(' '), /not a JSON object/);
+  const cache = checkCache({
+    'project.json': 'null', 'cache/cache.md': '| u | cached |', 'urls/urls.json': '[]',
+  });
+  assert.equal(cache.pass, false);
+  assert.match(cache.reasons.join(' '), /not a JSON object/);
+});
+
+test('cache is not done without the recorded approval, and the status cell is exact', () => {
+  const urls = JSON.stringify([{ url: 'https://example.com/a' }]);
+  const base = {
+    'urls/urls.json': urls,
+    'cache/cache.md': '| URL | status |\n| https://example.com/a | cached |',
+  };
+  const unapproved = checkCache({ ...base, 'project.json': '{}' });
+  assert.equal(unapproved.pass, false);
+  assert.match(unapproved.reasons.join(' '), /not approved; run status\.mjs approve cache/);
+  const approved = { 'project.json': JSON.stringify({ approved: { cache: true } }) };
+  assert.equal(checkCache({ ...base, ...approved }).pass, true);
+  const loose = checkCache({
+    ...base, ...approved, 'cache/cache.md': '| https://example.com/a | not cached |',
+  });
+  assert.equal(loose.pass, false);
+  assert.match(loose.reasons.join(' '), /no cached\|failed\|skipped status/);
+});
+
+test('report requires a prep-verify section only once prep-verify itself passed', () => {
+  const onePage = JSON.stringify({ checked: ['https://example.com/'], overlays: [] });
+  const files = {
+    'probe/browser-recipe.json': '{}', 'probe/probe.md': 'ok',
+    'prep/page-prep.json': onePage, 'prep/prep.md': 'ok',
+    'urls/urls.json': '[{"url":"https://example.com/"}]', 'urls/urls.md': 'ok',
+    'REPORT.md': '## probe\n## prep\n## scan\n',
+  };
+  assert.equal(checkReport(files).pass, true, JSON.stringify(checkReport(files)));
+  const three = JSON.stringify({
+    checked: ['https://example.com/', 'https://example.com/a/1', 'https://example.com/b/2'],
+    overlays: [],
+  });
+  const verified = checkReport({ ...files, 'prep/page-prep.json': three });
+  assert.equal(verified.pass, false);
+  assert.match(verified.reasons.join(' '), /"## prep-verify"/);
+});
+
+test('prep-verify counts path prefixes below the scope every URL in urls.json shares', () => {
+  const urls = JSON.stringify([
+    { url: 'https://x.example/en/section.html' },
+    { url: 'https://x.example/en/section/diseases/asthma.html' },
+    { url: 'https://x.example/en/section/clinics/one.html' },
+  ]);
+  const manifest = (checked) => JSON.stringify({ checked, overlays: [] });
+  const scopedPass = checkPrepVerify({
+    'urls/urls.json': urls,
+    'prep/page-prep.json': manifest([
+      'https://x.example/en/section.html',
+      'https://x.example/en/section/diseases/asthma.html',
+      'https://x.example/en/section/clinics/one.html',
+    ]),
+  });
+  assert.equal(scopedPass.pass, true, JSON.stringify(scopedPass));
+  const samePrefix = checkPrepVerify({
+    'urls/urls.json': urls,
+    'prep/page-prep.json': manifest([
+      'https://x.example/en/section/diseases/a.html',
+      'https://x.example/en/section/diseases/b.html',
+      'https://x.example/en/section/diseases/c.html',
+    ]),
+  });
+  assert.equal(samePrefix.pass, false);
+  assert.match(samePrefix.reasons.join(' '), /cover 1 path prefix/);
+});
