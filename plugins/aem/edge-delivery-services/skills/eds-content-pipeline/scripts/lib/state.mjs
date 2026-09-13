@@ -217,13 +217,31 @@ export async function loadPrepRecipe(paths = resolvePaths()) {
  * resolving on a captured representative. Captures are
  * `data/captures/<template>/<slug>.html`.
  */
+const PROSE_ONLY = /^None\s+[—–-]\s+default content only\.?$/im;
+
+/** True when the template's analysis.md opens its `## Blocks` section with the prose-only line. */
+async function declaresProseOnly(template, paths) {
+  const file = path.join(paths.siteDir, 'templates', template, 'analysis.md');
+  const text = await readFile(file, 'utf8').catch(() => '');
+  const section = text.split(/^##\s+/m).find((s) => /^Blocks\b/i.test(s)) ?? '';
+  const firstLine = section.split('\n').slice(1).map((l) => l.trim()).find(Boolean) ?? '';
+  return PROSE_ONLY.test(firstLine);
+}
+
 export async function checkEvidence(
   template,
   paths = resolvePaths()
 ) {
   const blocks = (await listRecords('blocks', { paths }))
     .filter((b) => b.templates && template in b.templates);
+  const proseOnly = await declaresProseOnly(template, paths);
   const missing = [];
+  if (proseOnly && blocks.length) {
+    missing.push({
+      name: blocks.map((b) => b.name).join(', '),
+      reason: 'analysis.md says "None — default content only" but blocks.json lists these',
+    });
+  }
   for (const block of blocks) {
     let ok = false;
     for (const ev of block.evidence ?? []) {
@@ -257,8 +275,9 @@ export async function checkEvidence(
   return {
     template,
     blocks: blocks.length,
+    proseOnly,
     missing,
-    pass: blocks.length > 0 && !missing.length,
+    pass: (blocks.length > 0 || proseOnly) && !missing.length,
   };
 }
 

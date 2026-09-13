@@ -63,11 +63,13 @@ export function classifyFailure(stage, message) {
  * Selects the URL records one bulk pass may touch.
  *
  * @param {object[]} records Records of one template, as stored in `urls.json`.
- * @param {{limit?: number}} [options] `limit` caps the batch size.
- * @returns {object[]} Records in file order, `excluded` and `published` ones removed.
+ * @param {{limit?: number, force?: boolean}} [options] `limit` caps the batch size; `force`
+ *   re-selects `gone` URLs (source 404/410) that are otherwise left alone.
+ * @returns {object[]} Records in file order, `excluded`, `published` and `gone` ones removed.
  */
-export function selectRecords(records, { limit } = {}) {
-  const eligible = records.filter((r) => r.status !== 'excluded' && r.status !== 'published');
+export function selectRecords(records, { limit, force = false } = {}) {
+  const eligible = records.filter((r) => r.status !== 'excluded' && r.status !== 'published'
+    && (force || r.status !== 'gone'));
   return typeof limit === 'number' ? eligible.slice(0, limit) : eligible;
 }
 
@@ -101,8 +103,17 @@ function isUpToDate(ctx, record, hash) {
   return DONE_STATUSES.has(record.status);
 }
 
+/** The source page no longer exists; the URL is terminal and left out of later runs. */
+class GoneError extends Error {
+  constructor(url, status) {
+    super(`GET ${url} -> ${status}`);
+    this.name = 'GoneError';
+  }
+}
+
 async function fetchSource(ctx, url) {
   const res = await ctx.http.get(url);
+  if (res.status === 404 || res.status === 410) throw new GoneError(url, res.status);
   if (res.status !== 200) throw new BulkStepError('fetch', `GET ${url} -> ${res.status}`);
   return res.body;
 }
@@ -277,6 +288,11 @@ async function recordOutcome(ctx, record, outcome) {
 }
 
 function failureOutcome(record, err) {
+  if (err.name === 'GoneError') {
+    return {
+      url: record.url, status: 'gone', error: err.message, skipped: false,
+    };
+  }
   const failure = classifyFailure(err.stage ?? 'transform', err.message);
   return {
     url: record.url, status: failure.status, failure, error: failure.message, skipped: false,
@@ -360,7 +376,8 @@ function sumMedia(results) {
  * @returns {object} Report with counts, coverage, failure classes, media, long tail, samples.
  */
 export function buildReport(ctx, results) {
-  const attempted = results.filter((r) => !r.skipped);
+  // Gone pages (source 404/410) are nobody's transform failure; they sit outside coverage.
+  const attempted = results.filter((r) => !r.skipped && r.status !== 'gone');
   const done = attempted.filter((r) => !r.failure);
   return {
     template: ctx.template,
@@ -374,6 +391,7 @@ export function buildReport(ctx, results) {
     failures: groupFailures(results),
     media: sumMedia(results),
     longTail: results.filter((r) => r.status === 'long-tail').map((r) => r.url),
+    gone: results.filter((r) => r.status === 'gone').map((r) => r.url),
     samplePaths: done.map((r) => r.docPath).filter(Boolean).slice(0, 3),
     stopped: results.some((r) => r.reason === 'deadline') ? 'deadline' : null,
   };
@@ -415,6 +433,10 @@ export function renderDryRunReport(report) {
     '## Long tail',
     '',
     ...listLines(report.longTail, (url) => `- ${url}`),
+    '',
+    '## Gone (source 404/410, left out of later runs)',
+    '',
+    ...listLines(report.gone ?? [], (url) => `- ${url}`),
     '',
     '## Sample documents',
     '',
@@ -458,12 +480,12 @@ export function longTailReport(results, urls, { newTemplateMin }) {
   return { groups: list, markdown: `${md.join('\n')}\n` };
 }
 
-const TERMINAL_STATUSES = new Set([...DONE_STATUSES, 'long-tail', 'failed']);
+const TERMINAL_STATUSES = new Set([...DONE_STATUSES, 'long-tail', 'failed', 'gone']);
 
 /**
  * What a `--run` pass leaves behind, for the stage gate: every selected URL must be terminal
- * (done, long-tail or failed) before the `run` unit counts as finished. `remaining` covers URLs
- * the deadline skipped and URLs still in a pre-run status.
+ * (done, long-tail, failed or gone) before the `run` unit counts as finished. `remaining` covers
+ * URLs the deadline skipped and URLs still in a pre-run status.
  *
  * @param {object} ctx Run context.
  * @param {object} report Report from {@link buildReport}.
@@ -481,6 +503,7 @@ export function runReport(ctx, report, results) {
     remaining: results.length - terminal,
     longTail: report.longTail.length,
     failed: results.filter((r) => r.status === 'failed').length,
+    gone: results.filter((r) => r.status === 'gone').length,
     stopped: report.stopped,
   };
 }

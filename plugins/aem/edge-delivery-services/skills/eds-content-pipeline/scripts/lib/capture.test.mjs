@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { upsertRecords } from './state.mjs';
+import { listRecords, upsertRecords } from './state.mjs';
 import { fixtureRepo } from './testing/fixture-repo.mjs';
 
 const execFileP = promisify(execFile);
@@ -49,22 +49,44 @@ test('flagged representatives win over the first-N fallback and --limit bounds i
   } finally { await server.close(); }
 });
 
-test('a representative that fails to fetch is reported and the others are captured', async () => {
+test('a representative that fails to fetch is dropped as representative, the unit goes on',
+  async () => {
+    const { repo, server, paths } = await fixtureRepo();
+    try {
+      const missing = `${server.origin}/missing.html`;
+      await upsertRecords('urls', [{
+        url: missing,
+        path: '/missing.html',
+        sitemapType: 'page',
+        template: 'product',
+        status: 'todo',
+        representative: true,
+      }], paths);
+      const report = await cli(repo, 'product');
+      assert.equal(report.captured.length, 2, 'the others are captured');
+      assert.deepEqual(report.failed.map((f) => f.url), [missing]);
+      assert.match(report.failed[0].error, /404/);
+      const [record] = await listRecords('urls', { where: { url: missing }, paths });
+      assert.equal(record.representative, false);
+      assert.match(record.note, /capture failed: .*404/);
+      const check = await cli(repo, 'product', '--check');
+      assert.deepEqual(check.missing, [], 'the remaining representatives are all captured');
+      const none = await cli(repo, 'nothing-here').catch((e) => e);
+      assert.equal(none.code, 1, 'a template without URLs still fails');
+    } finally { await server.close(); }
+  });
+
+test('the unit fails when every representative failed to capture', async () => {
   const { repo, server, paths } = await fixtureRepo();
   try {
-    await upsertRecords('urls', [{
-      url: `${server.origin}/missing.html`,
-      path: '/missing.html',
-      sitemapType: 'page',
-      template: 'product',
-      status: 'todo',
-    }], paths);
+    const records = await listRecords('urls', { where: { template: 'product' }, paths });
+    await upsertRecords('urls', records.map((r) => ({
+      ...r, url: r.url.replace('.html', '-gone.html'), representative: true,
+    })), paths);
+    await upsertRecords('urls', records.map((r) => ({ ...r, template: 'other' })), paths);
     const out = await cli(repo, 'product').catch((e) => e);
-    assert.equal(out.code, 1, 'a failed fetch fails the command');
-    const report = JSON.parse(out.stdout);
-    assert.equal(report.captured.length, 2);
-    assert.deepEqual(report.failed.map((f) => f.url), [`${server.origin}/missing.html`]);
-    assert.match(report.failed[0].error, /404/);
+    assert.equal(out.code, 1);
+    assert.equal(JSON.parse(out.stdout).captured.length, 0);
   } finally { await server.close(); }
 });
 

@@ -3,7 +3,7 @@ const SHAPES = {
     required: ['url', 'path', 'sitemapType', 'template', 'status'],
     enums: {
       status: ['excluded', 'todo', 'analyzed', 'imported', 'transformed', 'uploaded',
-        'previewed', 'verified', 'long-tail', 'failed', 'published'],
+        'previewed', 'verified', 'long-tail', 'failed', 'gone', 'published'],
     },
   },
   templates: {

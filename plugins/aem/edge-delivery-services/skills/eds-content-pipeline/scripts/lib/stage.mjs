@@ -436,13 +436,16 @@ export async function checkRun(template, paths = resolvePaths()) {
   const report = JSON.parse(await readFile(file, 'utf8').catch(() => {
     throw new Error(`No run report at ${file}; run bulk.mjs --template ${template} --run`);
   }));
-  const { selected, remaining, longTail, failed, stopped } = report;
+  const {
+    selected, remaining, longTail, failed, gone = 0, stopped,
+  } = report;
   return {
     template,
     selected,
     remaining,
     longTail,
     failed,
+    gone,
     stopped: stopped ?? null,
     pass: remaining === 0 && longTail === 0 && failed === 0 && !stopped,
   };

@@ -8,7 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolvePaths } from './paths.mjs';
 import {
-  captureSlug, keyFieldFor, listRecords, loadPrepRecipe, updateJson, upsertRecords, withLock,
+  captureSlug, checkEvidence, keyFieldFor, listRecords, loadPrepRecipe, updateJson, upsertRecords,
+  withLock,
 } from './state.mjs';
 import { assertRecord } from './shapes.mjs';
 
@@ -292,4 +293,22 @@ test('loadPrepRecipe reads the overlay recipe or returns an empty one', async ()
     css: ['#cmp { display: none !important; }'],
     scrollFix: 'html, body { overflow: auto !important; }',
   });
+});
+
+test('check-evidence passes a prose-only template that says so in its analysis', async () => {
+  const paths = await tmpPaths();
+  const dir = path.join(paths.siteDir, 'templates', 'plain');
+  await mkdir(dir, { recursive: true });
+  const analysis = (blocks) => `# plain\n\n## Blocks\n\n${blocks}\n\n## Not Migrated\n`;
+  await writeFile(path.join(dir, 'analysis.md'), analysis('None — default content only.'));
+  assert.equal((await checkEvidence('plain', paths)).pass, true);
+  await writeFile(path.join(dir, 'analysis.md'), analysis('- `cards` — see evidence'));
+  assert.equal((await checkEvidence('plain', paths)).pass, false, 'claims a block, none listed');
+  await upsertRecords('blocks', [{
+    name: 'cards', status: 'todo', templates: { plain: 1 }, evidence: [],
+  }], paths);
+  await writeFile(path.join(dir, 'analysis.md'), analysis('None — default content only.'));
+  const claim = await checkEvidence('plain', paths);
+  assert.equal(claim.pass, false, 'prose-only claim while blocks.json lists a block');
+  assert.match(claim.missing[0].name, /cards/);
 });

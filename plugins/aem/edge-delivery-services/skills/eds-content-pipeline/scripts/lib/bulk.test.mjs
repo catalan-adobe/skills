@@ -78,7 +78,7 @@ const transformer = {
   },
 };
 
-function httpStub({ failing = new Set() } = {}) {
+function httpStub({ failing = new Set(), gone = new Set() } = {}) {
   const calls = [];
   return {
     calls,
@@ -86,6 +86,7 @@ function httpStub({ failing = new Set() } = {}) {
       get: async (url) => {
         calls.push(url);
         if (failing.has(url)) return { url, status: 503, body: '' };
+        if (gone.has(url)) return { url, status: 404, body: 'not found' };
         return { url, status: 200, body: sourcePage(new URL(url).pathname.split('/')[2]) };
       },
     },
@@ -846,4 +847,38 @@ test('an aborted signal skips the remaining URLs and returns a consistent report
   assert.equal(report.counts.skipped, 2);
   assert.deepEqual(da.calls, []);
   assert.equal(await stat(path.join(paths.dataDir, 'urls.json.lock')).catch(() => null), null);
+});
+
+test('a source 404 is gone: terminal, listed, and not retried on the next run', async () => {
+  const { io, paths } = await setup(['acme-flight-school', 'vanished']);
+  const gone = new Set([urlFor('vanished')]);
+  const first = daStub();
+  const report = await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'g1', concurrency: 1 },
+    io: { ...io, http: httpStub({ gone }).client, da: first.client },
+  });
+  assert.equal(report.counts.gone, 1);
+  assert.deepEqual(report.gone, [urlFor('vanished')]);
+  assert.equal(report.failures.length, 0, 'gone is not a failure class');
+  const run = JSON.parse(await readFile(path.join(paths.dataDir, 'bulk/case-study-run.json')));
+  assert.equal(run.gone, 1);
+  assert.equal(run.remaining, 0);
+  const http = httpStub({ gone });
+  await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'g2', concurrency: 1 },
+    io: { ...io, http: http.client, da: daStub().client },
+  });
+  assert.deepEqual(http.calls, [urlFor('acme-flight-school')], 'the gone URL is not fetched');
+  const forced = httpStub({ gone });
+  await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'g3', concurrency: 1, force: true },
+    io: { ...io, http: forced.client, da: daStub().client },
+  });
+  assert.equal(forced.calls.length, 2, '--force retries it');
 });

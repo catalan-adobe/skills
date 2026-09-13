@@ -47,7 +47,9 @@ evidence resolves on one of them.
    - `## Decomposition` — the tree (section → layout → slot → content) per representative,
      as an indented list. Name each section from its content, not its position.
    - `## Blocks` — one line per block record you wrote or reused: `name`, `canonical`, why
-     it is a block and not prose, which representatives carry it.
+     it is a block and not prose, which representatives carry it. A template that is prose
+     from top to bottom opens this section with exactly `None — default content only.` and
+     writes no block record; `check-evidence` accepts that sentence and nothing looser.
    - `## Default content decisions` — what stayed prose and why, including the doubts.
    - `## Not migrated` — one line per dropped element, each starting with `- selector: <css>
      — <why>`. Header, footer and overlays belong here.
