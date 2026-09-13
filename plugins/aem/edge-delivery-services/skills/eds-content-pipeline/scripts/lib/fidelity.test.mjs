@@ -70,3 +70,37 @@ test('CLI with no arguments exits 1 and shows usage', async () => {
     /Usage: fidelity\.mjs <source\.html> <out\.html>/,
   );
 });
+
+test('contentSet reads lazy images by data-src and compares links by path', () => {
+  const lazy = '<main><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" '
+    + 'data-src="/media/spec-sheet.png?v=3" alt=""></main>';
+  assert.deepEqual([...contentSet(lazy)], ['img:spec-sheet.png']);
+  const eager = '<main><img src="/img/alpha.jpg"></main>';
+  assert.deepEqual([...contentSet(eager)], ['img:alpha.jpg']);
+  const absolute = contentSet('<main><a href="https://www.example.com/en/x.html?q=1">Read more</a>'
+    + '<a href="//cdn.other.net/file.pdf">Download</a><a href="#top">Top</a>'
+    + '<a href="mailto:a@b.c">Mail</a><a href="tel:+41">Call</a></main>');
+  const relative = contentSet('<main><a href="/en/x.html?q=1">Read more</a>'
+    + '<a href="//cdn.other.net/file.pdf">Download</a><a href="#top">Top</a>'
+    + '<a href="mailto:a@b.c">Mail</a><a href="tel:+41">Call</a></main>');
+  assert.deepEqual(compare(absolute, relative), {
+    recall: 1, precision: 1, missing: [], invented: [],
+  });
+  assert.ok(absolute.has('link:/en/x.html?q=1'));
+  assert.ok(absolute.has('link:/file.pdf'), 'protocol-relative links compare by path too');
+  assert.ok(!absolute.has('link:#top') && !absolute.has('link:mailto:a@b.c'));
+});
+
+test('contentSet counts title-attribute text as content an output may carry as prose', () => {
+  const source = contentSet('<main><p>See the <span class="tip" title="A long definition">'
+    + 'term</span> here.</p></main>');
+  const asGlossary = contentSet('<main><p>See the <span>term</span> here.</p>'
+    + '<div class="glossary"><div><div>term</div><div>A long definition</div></div></div></main>');
+  const dropped = contentSet('<main><p>See the <span>term</span> here.</p></main>');
+  assert.ok(source.has('a long definition'));
+  assert.equal(compare(source, asGlossary).precision, 1, 'preserving the tooltip is not invented');
+  assert.ok(compare(source, dropped).recall < 1, 'dropping the tooltip is lost content');
+  const linkTitle = contentSet('<main><a href="/x" title="Opens x">go</a>'
+    + '<img src="/i.png" title="decorative"></main>');
+  assert.ok(!linkTitle.has('opens x') && !linkTitle.has('decorative'), 'a/img titles are chrome');
+});

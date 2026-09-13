@@ -12,8 +12,36 @@ const HARNESS_BLOCKS = new Set(['metadata', 'section-metadata']);
 const normalise = (t) => t.replace(/\s+/g, ' ').trim().toLowerCase();
 const isHarnessBlock = (el) => [...el.classList].some((c) => HARNESS_BLOCKS.has(c));
 
+const SKIP_HREF = /^(#|mailto:|tel:|javascript:)/i;
+
+/** Image basename from the first real URL: lazy loaders park a `data:` placeholder in src. */
+function imageToken(el) {
+  const src = [el.getAttribute('data-src'), el.getAttribute('src')]
+    .find((v) => v && !v.startsWith('data:'));
+  return src ? `img:${src.split('/').pop().split('?')[0]}` : null;
+}
+
+/** Link token by path: sources write links absolute or protocol-relative, outputs root-relative. */
+function linkToken(el) {
+  const href = el.getAttribute('href') ?? '';
+  if (!href || SKIP_HREF.test(href)) return null;
+  try {
+    const u = new URL(href, 'https://source.invalid/');
+    return `link:${u.pathname}${u.search}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Tooltip text (`title`) is content an output may carry as prose; a/img titles are chrome. */
+function titleToken(el) {
+  if (el.tagName === 'A' || el.tagName === 'IMG') return null;
+  const title = normalise(el.getAttribute('title') ?? '');
+  return title.length >= 3 && /[\p{L}\p{N}]/u.test(title) ? title : null;
+}
+
 /**
- * Content tokens of a document: each element's own text (not descendants),
+ * Content tokens of a document: each element's own text (not descendants), tooltip titles,
  * image basenames and link paths. Space-joining at element boundaries avoids
  * tokenisation artefacts.
  * @param {string} html - HTML document to tokenise
@@ -35,12 +63,8 @@ export function contentSet(html, rootSelector = 'main', ignore = []) {
       .join(' ');
     const text = normalise(own);
     if (text.length >= 3 && /[\p{L}\p{N}]/u.test(text)) set.add(text);
-    if (el.tagName === 'IMG' && el.getAttribute('src')) {
-      set.add(`img:${el.getAttribute('src').split('/').pop().split('?')[0]}`);
-    }
-    if (el.tagName === 'A' && el.getAttribute('href')?.startsWith('/')) {
-      set.add(`link:${el.getAttribute('href')}`);
-    }
+    const extra = el.tagName === 'IMG' ? imageToken(el) : el.tagName === 'A' ? linkToken(el) : null;
+    for (const token of [extra, titleToken(el)]) if (token) set.add(token);
     [...el.children].forEach(walk);
   };
   walk(root);

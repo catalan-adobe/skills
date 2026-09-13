@@ -32,7 +32,7 @@ export async function startFixtureServer() {
     }
     try {
       let body = await readFile(resolved);
-      if (file.endsWith('.xml')) {
+      if (file.endsWith('.xml') || file.endsWith('.html')) {
         body = body
           .toString()
           .replaceAll('https://fixture.example', origin);

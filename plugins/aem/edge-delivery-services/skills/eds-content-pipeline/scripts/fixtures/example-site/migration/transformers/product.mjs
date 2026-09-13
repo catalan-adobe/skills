@@ -12,6 +12,10 @@ export function generateDocumentPath({ url }) {
 
 export function transformDOM({ document, importer }) {
   const warnings = [];
+  document.querySelectorAll('img[data-src]').forEach((img) => {
+    img.setAttribute('src', img.getAttribute('data-src'));
+    img.removeAttribute('data-src');
+  });
   const main = document.createElement('main');
   const hero = document.createElement('div');
   const src = document.querySelector('.product-hero');
