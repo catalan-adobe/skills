@@ -64,9 +64,15 @@ transformer API and [references/content-model.md](references/content-model.md) f
 | `index.mjs push --confirm \| check <path>` | operator-gated query-index config push |
 | `workflows/pi/tools/retro.mjs`, `watch-run.mjs` | pi executor tooling over pi run journals only |
 
-`--run` refuses below the last `--dry-run`'s `thresholds.coverage`; `--accept-coverage`
-bypasses the gate and is recorded in `units`. Global feedback (`scope: global`) is never
-auto-settled; an operator settles it with `state.mjs feedback set <id> appliedRun=<run>`.
+`--run` refuses below the last `--dry-run`'s `thresholds.coverage`, when that dry-run was
+made with another transformer version (re-run it), or when the DA token expires before the
+batch can finish; `--accept-coverage` bypasses the coverage gate and is recorded in
+`units`.
+A page whose produced document is byte-identical to the previewed one is not re-uploaded
+(`unchanged`), so a transformer version bump alone pushes nothing. Ctrl-C finishes the
+in-flight URLs, skips the rest and exits 130 with state consistent. Global feedback
+(`scope: global`) is never auto-settled; an operator settles it with
+`state.mjs feedback set <id> appliedRun=<run>`.
 
 ## Stages
 

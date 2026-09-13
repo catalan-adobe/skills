@@ -325,6 +325,7 @@ export function createDaClient({
   const previewAll = (docs) => mapPool(docs, concurrency, (doc) => preview({ path: doc }));
 
   return {
+    expiresAt,
     preflight,
     putSource,
     putBinary,

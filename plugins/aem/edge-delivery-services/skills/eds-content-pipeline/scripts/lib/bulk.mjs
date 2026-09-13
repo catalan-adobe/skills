@@ -1,9 +1,10 @@
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { flag, positiveIntFlag } from './args.mjs';
 import { loadConfig, originAliasHosts } from './config.mjs';
-import { createDaClient, loadToken } from './da.mjs';
+import { DaTokenError, createDaClient, loadToken } from './da.mjs';
 import { createClient } from './http.mjs';
 import { appendRow } from './ledger.mjs';
 import { fixDocument } from './media.mjs';
@@ -190,6 +191,14 @@ async function publishDocument(ctx, doc) {
   await ctx.da.preview({ path: doc.path }).catch(rethrow('preview'));
 }
 
+const outputHash = (html) => createHash('sha256').update(html).digest('hex');
+
+/** A previewed record whose fresh output is byte-identical needs no new upload. */
+function isUnchanged(ctx, record, doc) {
+  if (ctx.force || ctx.forcedUrls.has(record.url)) return false;
+  return DONE_STATUSES.has(record.status) && record.outputHash === outputHash(doc.html);
+}
+
 async function processUrl(ctx, record) {
   const html = await fetchSource(ctx, record.url);
   await writeCapture(ctx.paths, ctx.template, record.url, html).catch(rethrow('capture'));
@@ -200,11 +209,23 @@ async function processUrl(ctx, record) {
     };
   }
   const doc = await transformOne(ctx, record, html);
+  if (isUnchanged(ctx, record, doc)) {
+    return {
+      url: record.url,
+      status: record.status,
+      hash,
+      outputHash: record.outputHash,
+      docPath: record.docPath,
+      skipped: true,
+      reason: 'unchanged',
+    };
+  }
   const file = await writeDocument(ctx, doc);
   const { mediaFixed, mediaPending } = await validateDocument(ctx, file, doc, html);
   const base = {
     url: record.url,
     hash,
+    outputHash: outputHash(doc.html),
     docPath: doc.path,
     mediaFixed,
     mediaPending,
@@ -213,6 +234,15 @@ async function processUrl(ctx, record) {
     skipped: false,
   };
   if (ctx.mode === 'dry-run') return { ...base, status: 'transformed' };
+  if (ctx.aborted) {
+    return {
+      url: record.url,
+      status: record.status,
+      docPath: record.docPath,
+      skipped: true,
+      reason: 'aborted',
+    };
+  }
   await publishDocument(ctx, doc);
   return { ...base, status: 'previewed' };
 }
@@ -226,6 +256,7 @@ async function recordOutcome(ctx, record, outcome) {
     template: record.template,
     status: outcome.status,
     contentHash: outcome.hash ?? record.contentHash ?? null,
+    outputHash: outcome.outputHash ?? record.outputHash ?? null,
     transformerVersion: ctx.transformer.version,
     docPath: outcome.docPath ?? null,
     mediaFixed: outcome.mediaFixed ?? 0,
@@ -237,7 +268,10 @@ async function recordOutcome(ctx, record, outcome) {
     kind: 'page',
     ref: record.url,
     verdict: outcome.status,
-    detail: ctx.acceptCoverage ? 'bulk run (coverage accepted)' : `bulk ${ctx.mode}`,
+    detail: [
+      ctx.acceptCoverage ? 'bulk run (coverage accepted)' : `bulk ${ctx.mode}`,
+      outcome.error,
+    ].filter(Boolean).join(': '),
     at: ctx.generatedAt,
   }, ctx.paths);
 }
@@ -250,6 +284,11 @@ function failureOutcome(record, err) {
 }
 
 async function runOne(ctx, record) {
+  if (ctx.aborted) {
+    return {
+      url: record.url, status: record.status, skipped: true, reason: 'aborted',
+    };
+  }
   if (Date.now() > ctx.deadline) {
     return {
       url: record.url, status: record.status, skipped: true, reason: 'deadline',
@@ -261,6 +300,7 @@ async function runOne(ctx, record) {
     return outcome;
   } catch (err) {
     if (err.name === 'DaTokenError') {
+      ctx.aborted = true;
       await recordOutcome(ctx, record, {
         url: record.url,
         status: err.checkpoint ?? 'transformed',
@@ -280,6 +320,7 @@ function countStatuses(results) {
   for (const result of results) {
     const key = result.skipped ? 'skipped' : result.status;
     counts[key] = (counts[key] ?? 0) + 1;
+    if (result.reason === 'unchanged') counts.unchanged = (counts.unchanged ?? 0) + 1;
   }
   return counts;
 }
@@ -326,6 +367,7 @@ export function buildReport(ctx, results) {
     mode: ctx.mode,
     runId: ctx.runId,
     generatedAt: ctx.generatedAt,
+    transformerVersion: ctx.transformer?.version ?? null,
     total: results.length,
     counts: countStatuses(results),
     coverage: attempted.length ? Number((done.length / attempted.length).toFixed(3)) : 1,
@@ -578,10 +620,31 @@ async function ensureCoverage(ctx) {
     throw new Error(`Run bulk.mjs --template ${ctx.template} --dry-run first: `
       + `no dry-run report at ${file}`);
   }
+  const rerun = `re-run: bulk.mjs --template ${ctx.template} --dry-run`;
+  if (report.transformerVersion && report.transformerVersion !== ctx.transformer.version) {
+    throw new Error(`The dry-run report is for transformer ${report.transformerVersion}, `
+      + `current ${ctx.transformer.version}; ${rerun}`);
+  }
   if (report.coverage < ctx.thresholds.coverage) {
     throw new Error(`Dry-run coverage ${report.coverage} is below thresholds.coverage `
-      + `${ctx.thresholds.coverage}; fix the long tail or pass --accept-coverage`);
+      + `${ctx.thresholds.coverage}; fix the long tail and ${rerun}, or pass --accept-coverage`);
   }
+}
+
+/**
+ * Refuses `--run` when the DA token would expire before the batch can finish: at least ten
+ * minutes, or two seconds per URL at the run's concurrency, whichever is longer.
+ */
+function ensureTokenWindow(ctx, selected) {
+  if (ctx.mode !== 'run' || typeof ctx.da?.expiresAt !== 'number') return;
+  const needMs = Math.max(10 * 60 * 1000, (selected.length / ctx.concurrency) * 2000);
+  const leftMs = ctx.da.expiresAt - Date.now();
+  if (leftMs >= needMs) return;
+  const minutes = (ms) => Math.max(0, Math.round(ms / 60000));
+  throw new DaTokenError(`The DA token expires in ${minutes(leftMs)} min; a run over `
+    + `${selected.length} URLs needs at least ${minutes(needMs)} min. Refresh it: `
+    + 'npx github:adobe-rnd/da-auth-helper token > /dev/null && '
+    + 'cp ~/.aem/da-token.json .hlx/.da-token.json');
 }
 
 async function createContext({
@@ -624,16 +687,23 @@ async function createContext({
   };
 }
 
+/**
+ * Runs the pool to the end even when a worker aborts the run (401): the other workers finish
+ * their current URL and skip the rest, so every state write completes and no lock is left.
+ */
 async function runAll(ctx, records, urls) {
   const results = [];
-  try {
-    await mapPool(records, ctx.concurrency, async (record, index) => {
-      results[index] = await runOne(ctx, record);
+  let aborted = null;
+  await mapPool(records, ctx.concurrency, async (record, index) => {
+    results[index] = await runOne(ctx, record).catch((err) => {
+      aborted ??= err;
+      return { url: record.url, status: record.status, skipped: true, reason: 'aborted' };
     });
-  } catch (err) {
-    const partial = results.filter(Boolean);
+  });
+  if (aborted) {
+    const partial = results.filter((r) => r && r.reason !== 'aborted');
     await writeArtifacts(ctx, buildReport(ctx, partial), urls, partial);
-    throw err;
+    throw aborted;
   }
   return results;
 }
@@ -651,7 +721,8 @@ async function runAll(ctx, records, urls) {
  * @param {string} [options.mode] `dry-run` (default) or `run`.
  * @param {object} [options.options] `{limit, force, concurrency, maxMinutes, runId, params}`.
  * @param {object} [options.io] Injection: `{paths, http, da, transformer, contentDir, rulesDir,
- *   reportsDir, fetchImpl, fixMedia}`.
+ *   reportsDir, fetchImpl, fixMedia, signal}`; an aborted `signal` makes the pool finish its
+ *   in-flight URLs, skip the rest (`reason: 'aborted'`) and return normally.
  * @returns {Promise<object>} The report from {@link buildReport}.
  * @throws {import('./da.mjs').DaTokenError} On a 401, after checkpointing the current URL.
  */
@@ -661,9 +732,12 @@ export async function runBulk({
   const ctx = await createContext({
     template, mode, options, io,
   });
+  if (io.signal?.aborted) ctx.aborted = true;
+  io.signal?.addEventListener('abort', () => { ctx.aborted = true; }, { once: true });
   await ensureCoverage(ctx);
   const stored = await listRecords('urls', { where: { template }, paths: ctx.paths });
   const selected = selectRecords(stored, options);
+  ensureTokenWindow(ctx, selected);
   const truncated = selected.length < selectRecords(stored).length;
   const forced = await forceByFeedback(ctx, selected, stored);
   const results = await runAll(ctx, selected, stored);
@@ -692,8 +766,16 @@ function parseCli(argv) {
 }
 
 async function cli(argv) {
-  const report = await runBulk(parseCli(argv));
+  const controller = new AbortController();
+  const stop = () => {
+    console.error('[bulk] stopping after the in-flight URLs; state stays consistent');
+    controller.abort();
+  };
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+  const report = await runBulk({ ...parseCli(argv), io: { signal: controller.signal } });
   console.log(JSON.stringify(report, null, 2));
+  if (controller.signal.aborted) process.exitCode = 130;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

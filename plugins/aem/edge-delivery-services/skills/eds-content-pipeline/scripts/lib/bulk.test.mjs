@@ -137,10 +137,10 @@ function siteConfig() {
 }
 
 /** A passing (or not) dry-run report, so `--run`'s coverage gate lets the test through. */
-async function writeDryRunReport(paths, template, coverage) {
+async function writeDryRunReport(paths, template, coverage, transformerVersion = '1.0.0') {
   const file = path.join(paths.dataDir, 'bulk', `${template}-dryrun.json`);
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify({ coverage }, null, 2));
+  await writeFile(file, JSON.stringify({ coverage, transformerVersion }, null, 2));
 }
 
 async function setup(slugs, { dryRunCoverage = 1 } = {}) {
@@ -739,3 +739,111 @@ test('--run writes a run report saying what was selected, what is terminal and w
     assert.equal(second.longTail, 0);
     assert.equal(second.failed, 0);
   });
+
+test('a version bump alone does not re-push: unchanged output is skipped by its hash', async () => {
+  const { io } = await setup(['acme-flight-school']);
+  const base = { template: 'case-study', mode: 'run' };
+  const first = daStub();
+  await runBulk({
+    ...base,
+    options: { runId: 'h1', concurrency: 1 },
+    io: { ...io, http: httpStub().client, da: first.client },
+  });
+  const bumped = { ...transformer, version: '1.0.1' };
+  await writeDryRunReport(io.paths, 'case-study', 1, '1.0.1');
+  const second = daStub();
+  const report = await runBulk({
+    ...base,
+    options: { runId: 'h2', concurrency: 1 },
+    io: {
+      ...io, transformer: bumped, http: httpStub().client, da: second.client,
+    },
+  });
+  assert.deepEqual(second.calls, [], 'same output, no PUT');
+  assert.equal(report.counts.skipped, 1);
+  assert.equal(report.counts.unchanged, 1);
+  const stored = await listRecords('urls', { where: { template: 'case-study' }, paths: io.paths });
+  assert.equal(stored[0].transformerVersion, '1.0.1', 'the record follows the version');
+  assert.equal(stored[0].status, 'previewed');
+});
+
+test('--run refuses a dry-run report written for another transformer version', async () => {
+  const { io } = await setup(['acme-flight-school']);
+  await writeDryRunReport(io.paths, 'case-study', 1, '0.9.0');
+  const da = daStub();
+  const err = await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'stale', concurrency: 1 },
+    io: { ...io, http: httpStub().client, da: da.client },
+  }).catch((e) => e);
+  assert.match(err.message, /transformer 0\.9\.0.*current 1\.0\.0/s);
+  assert.match(err.message, /bulk\.mjs --template case-study --dry-run/);
+  assert.deepEqual(da.calls, []);
+});
+
+test('--run refuses before the first PUT when the token expires inside the window', async () => {
+  const { io } = await setup(['acme-flight-school', 'harbour-clinic']);
+  const da = daStub();
+  da.client.expiresAt = Date.now() + 2 * 60 * 1000;
+  const err = await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'expiring', concurrency: 1 },
+    io: { ...io, http: httpStub().client, da: da.client },
+  }).catch((e) => e);
+  assert.ok(err instanceof DaTokenError, String(err));
+  assert.match(err.message, /expires in 2 min/);
+  assert.match(err.message, /needs at least 10 min/);
+  assert.deepEqual(da.calls, []);
+});
+
+test('a 401 drains the pool: workers stop taking URLs and no lock is left behind', async () => {
+  const slugs = ['a', 'b', 'c', 'd', 'e', 'f'].map((s) => `clinic-${s}`);
+  const { io, paths } = await setup(slugs);
+  const da = daStub({ unauthorizedAt: 1 });
+  const err = await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'drain', concurrency: 3 },
+    io: { ...io, http: httpStub().client, da: da.client },
+  }).catch((e) => e);
+  assert.ok(err instanceof DaTokenError);
+  assert.equal(da.calls.length, 1, 'in-flight workers do not upload after the abort');
+  const lock = await stat(path.join(paths.dataDir, 'urls.json.lock')).catch(() => null);
+  assert.equal(lock, null, 'lock released');
+  const stored = await listRecords('urls', { where: { template: 'case-study' }, paths });
+  assert.ok(stored.filter((r) => r.status === 'analyzed').length >= 3, 'untouched URLs stay');
+});
+
+test('long-tail ledger rows carry the validator message', async () => {
+  const { io, paths } = await setup(['bad-block']);
+  const da = daStub();
+  await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'lt', concurrency: 1 },
+    io: { ...io, http: httpStub().client, da: da.client },
+  });
+  const row = (await readRows('units', paths)).find((r) => r.runId === 'lt');
+  assert.equal(row.verdict, 'long-tail');
+  assert.match(row.detail, /bulk run: .*cells/);
+});
+
+test('an aborted signal skips the remaining URLs and returns a consistent report', async () => {
+  const { io, paths } = await setup(['acme-flight-school', 'harbour-clinic']);
+  const da = daStub();
+  const controller = new AbortController();
+  controller.abort();
+  const report = await runBulk({
+    template: 'case-study',
+    mode: 'run',
+    options: { runId: 'sig', concurrency: 2 },
+    io: {
+      ...io, http: httpStub().client, da: da.client, signal: controller.signal,
+    },
+  });
+  assert.equal(report.counts.skipped, 2);
+  assert.deepEqual(da.calls, []);
+  assert.equal(await stat(path.join(paths.dataDir, 'urls.json.lock')).catch(() => null), null);
+});
