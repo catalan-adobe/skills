@@ -82,12 +82,52 @@ export function compare(sourceSet, outSet) {
   const missing = [...sourceSet].filter((t) => !outSet.has(t));
   const invented = [...outSet].filter((t) => !sourceSet.has(t));
   const r = (n, d) => (d ? Number((n / d).toFixed(3)) : 1);
+  const sourceWords = wordBag(sourceSet);
+  const outWords = wordBag(outSet);
+  const shared = bagIntersection(sourceWords, outWords);
   return {
     recall: r(sourceSet.size - missing.length, sourceSet.size),
     precision: r(outSet.size - invented.length, outSet.size),
+    wordRecall: r(shared, bagSize(sourceWords)),
+    wordPrecision: r(shared, bagSize(outWords)),
     missing,
     invented,
   };
+}
+
+/**
+ * Words of the text tokens plus one entry per image, as a bag (word → count). Links are left
+ * to the element diff: their paths are rewritten on purpose.
+ */
+function wordBag(set) {
+  const bag = new Map();
+  for (const token of set) {
+    if (token.startsWith('link:')) continue;
+    const words = token.startsWith('img:') ? [token] : token.match(/[\p{L}\p{N}]+/gu) ?? [];
+    for (const w of words) bag.set(w, (bag.get(w) ?? 0) + 1);
+  }
+  return bag;
+}
+
+const bagSize = (bag) => [...bag.values()].reduce((a, b) => a + b, 0);
+
+function bagIntersection(a, b) {
+  let n = 0;
+  for (const [w, count] of a) n += Math.min(count, b.get(w) ?? 0);
+  return n;
+}
+
+/**
+ * The fidelity gate: word recall and precision against `thresholds`. Element tokens are
+ * boundary-sensitive (an unwrapped `<span>` merges two tokens into a third) and stay in the
+ * result as the diff aid; words say whether content was lost or invented.
+ *
+ * @param {{wordRecall: number, wordPrecision: number}} scored From {@link compare}.
+ * @param {{recall: number, precision: number}} thresholds `thresholds.fidelity` of the config.
+ * @returns {boolean}
+ */
+export function passes(scored, thresholds) {
+  return scored.wordRecall >= thresholds.recall && scored.wordPrecision >= thresholds.precision;
 }
 
 /**
@@ -149,7 +189,7 @@ async function main(argv) {
     throw new Error(
       'Usage: fidelity.mjs <source.html> <out.html> ' +
         '[--source-root sel] [--ignore sel]... [--checklist f] [--blocks f] ' +
-        '[--template t] [--min-recall 0.9] [--min-precision 0.95]'
+        '[--template t] [--min-recall 0.98] [--min-precision 0.95]'
     );
   }
   // Site overlays (page-prep.json) are never content; they join the template's own ignores.
@@ -180,13 +220,13 @@ async function main(argv) {
     })
     : [];
   const list = checklist(items, outSet);
-  const minRecall = Number(flag(argv, '--min-recall', 0.9));
-  const minPrecision = Number(flag(argv, '--min-precision', 0.95));
-  const pass =
-    result.recall >= minRecall &&
-    result.precision >= minPrecision &&
-    list.every((c) => c.present) &&
-    blocks.every((b) => b.ok);
+  const thresholds = {
+    recall: Number(flag(argv, '--min-recall', 0.98)),
+    precision: Number(flag(argv, '--min-precision', 0.95)),
+  };
+  const pass = passes(result, thresholds)
+    && list.every((c) => c.present)
+    && blocks.every((b) => b.ok);
   return { ...result, checklist: list, blocks, pass };
 }
 

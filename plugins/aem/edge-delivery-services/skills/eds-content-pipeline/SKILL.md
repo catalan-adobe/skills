@@ -57,7 +57,7 @@ transformer API and [references/content-model.md](references/content-model.md) f
 | `scaffold-block.mjs --template <t> \| --name <n> [--force]` | block stubs from `blocks.json` |
 | `transform.mjs <url\|file> --template <t> [--out f]` | one page → DA document |
 | `validate.mjs <file.html> [--origin u]` | content gate for one DA document |
-| `fidelity.mjs <src.html> <out.html> [--ignore sel]… [--blocks f]` | recall, precision, shape |
+| `fidelity.mjs <src.html> <out.html> [--ignore sel]… [--blocks f]` | word fidelity, shape |
 | `bulk.mjs --template <t> --dry-run\|--run [--accept-coverage]` | every URL → DA preview |
 | `media.mjs fix <document.html> --scope <name>` | repair over-cap images and SVGs via DA |
 | `da.mjs preflight\|get\|put\|preview <path>` | DA source and preview calls (never publish) |

@@ -331,7 +331,7 @@ test('brand is no longer required and thresholds get defaults', async () => {
   assert.equal(config.thresholds.coverage, 0.95);
   assert.deepEqual(
     config.thresholds.fidelity,
-    { recall: 0.9, precision: 0.95 },
+    { recall: 0.98, precision: 0.95 },
   );
   assert.equal(config.thresholds.newTemplateMin, 5);
   assert.deepEqual(config.include, []);

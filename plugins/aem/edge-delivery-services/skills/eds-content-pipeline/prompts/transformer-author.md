@@ -38,10 +38,13 @@ Do not read other templates' transformers; each transformer stands on its own an
 3. Guard every selector: a missing element pushes a warning string and continues. A page
    that lacks a whole section still produces a document.
 4. Run the check below. It transforms every representative and reports, per page, the
-   warnings, `recall` (source content kept), `precision` (nothing invented) and the block
-   shapes. Fix the **concrete miss it names** — a missing token is a selector you did not
-   reach; an invented token is content you fabricated or chrome you kept; a shape failure
-   is a row with the wrong number of cells. Repeat at most 3 times.
+   warnings, `wordRecall` (source words kept) and `wordPrecision` (no words invented) — the
+   pair that decides — plus `recall`/`precision` on element tokens and the first `missing`
+   and `invented` tokens as the diagnostic. Fix the **concrete miss it names** — a missing
+   token is a selector you did not reach; an invented token is content you fabricated or
+   chrome you kept; a shape failure is a row with the wrong number of cells. An element
+   token that differs only because an inline tag was unwrapped costs no words and is not a
+   miss. Repeat at most 3 times.
 
 ## Output
 
@@ -58,9 +61,9 @@ the check:
 node scripts/lib/stage.mjs check-transformer <template>
 ```
 
-It passes only when every representative transforms with zero warnings, recall and precision
-meet `thresholds.fidelity` in `site.config.json`, and every block of the template has the
-shape its model declares.
+It passes only when every representative transforms with zero warnings, word recall and word
+precision meet `thresholds.fidelity` in `site.config.json` (0.98 / 0.95 by default), and every
+block of the template has the shape its model declares.
 
 ## Do not
 

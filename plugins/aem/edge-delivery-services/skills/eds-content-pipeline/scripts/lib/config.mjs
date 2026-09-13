@@ -47,7 +47,7 @@ const THRESHOLD_DEFAULTS = {
   minClusterSize: 5,
   representativesPerTemplate: 3,
   coverage: 0.95,
-  fidelity: { recall: 0.9, precision: 0.95 },
+  fidelity: { recall: 0.98, precision: 0.95 },
   newTemplateMin: 5,
 };
 

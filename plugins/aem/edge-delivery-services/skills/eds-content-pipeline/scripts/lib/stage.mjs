@@ -24,7 +24,7 @@ import YAML from 'yaml';
 import { flag, positiveIntFlag } from './args.mjs';
 import { loadConfig, originAliasHosts } from './config.mjs';
 import { createDaClient, docPath, loadToken } from './da.mjs';
-import { compare, contentSet } from './fidelity.mjs';
+import { compare, contentSet, passes } from './fidelity.mjs';
 import { appendRow, readRows } from './ledger.mjs';
 import { resolvePaths } from './paths.mjs';
 import { writeProgress } from './progress.mjs';
@@ -215,6 +215,18 @@ export async function validateStages({ skillRoot }) {
   return { ok: errors.length === 0, stages, errors };
 }
 
+/** The scores a gate reports: word pairs decide, element pairs and the first diffs explain. */
+function scores(scored) {
+  return {
+    recall: scored.recall,
+    precision: scored.precision,
+    wordRecall: scored.wordRecall,
+    wordPrecision: scored.wordPrecision,
+    missing: scored.missing.slice(0, 5),
+    invented: scored.invented.slice(0, 5),
+  };
+}
+
 /**
  * Reads the selectors an analysis.md names under `## Not Migrated`, in the documented form
  * `- selector: <css> — <why>` (list marker and reason optional). Everything else under the
@@ -272,13 +284,12 @@ export async function checkTransformer(template, paths = resolvePaths()) {
       html, url: record.url, transformer, params: { sourceRoot: templateConfig.sourceRoot },
       hosts: originAliasHosts(config), strip: recipe.selectors,
     });
-    const { recall, precision } = compare(
+    const scored = compare(
       contentSet(html, templateConfig.sourceRoot, ignore), contentSet(doc.html, 'main'),
     );
-    const pass = recall >= config.thresholds.fidelity.recall
-      && precision >= config.thresholds.fidelity.precision && doc.warnings.length === 0;
+    const pass = passes(scored, config.thresholds.fidelity) && doc.warnings.length === 0;
     pages.push({
-      url: record.url, warnings: doc.warnings, recall, precision, pass,
+      url: record.url, warnings: doc.warnings, ...scores(scored), pass,
     });
   }
   return { template, pages, pass: pages.length > 0 && pages.every((p) => p.pass) };
@@ -382,13 +393,14 @@ export async function sampleFidelity(template, paths = resolvePaths(), { pages =
     const capture = await readFile(
       path.join(paths.dataDir, 'captures', template, `${captureSlug(record.url)}.html`), 'utf8',
     );
-    const { recall, precision } = compare(
+    const scored = compare(
       contentSet(capture, templateConfig.sourceRoot, ignore), contentSet(html, 'main'),
     );
-    const pass = recall >= config.thresholds.fidelity.recall
-      && precision >= config.thresholds.fidelity.precision;
     results.push({
-      url: record.url, source: useContent ? 'content' : 'preview', recall, precision, pass,
+      url: record.url,
+      source: useContent ? 'content' : 'preview',
+      ...scores(scored),
+      pass: passes(scored, config.thresholds.fidelity),
     });
   }
   const report = { template, generatedAt: new Date().toISOString(), pages: results };

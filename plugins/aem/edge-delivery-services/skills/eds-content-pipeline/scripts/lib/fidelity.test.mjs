@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { contentSet, compare, checkBlockShape } from './fidelity.mjs';
+import {
+  checkBlockShape, compare, contentSet, passes,
+} from './fidelity.mjs';
 
 const execFileP = promisify(execFile);
 const fidelityCli = fileURLToPath(new URL('./fidelity.mjs', import.meta.url));
@@ -84,7 +86,7 @@ test('contentSet reads lazy images by data-src and compares links by path', () =
     + '<a href="//cdn.other.net/file.pdf">Download</a><a href="#top">Top</a>'
     + '<a href="mailto:a@b.c">Mail</a><a href="tel:+41">Call</a></main>');
   assert.deepEqual(compare(absolute, relative), {
-    recall: 1, precision: 1, missing: [], invented: [],
+    recall: 1, precision: 1, wordRecall: 1, wordPrecision: 1, missing: [], invented: [],
   });
   assert.ok(absolute.has('link:/en/x.html?q=1'));
   assert.ok(absolute.has('link:/file.pdf'), 'protocol-relative links compare by path too');
@@ -103,4 +105,31 @@ test('contentSet counts title-attribute text as content an output may carry as p
   const linkTitle = contentSet('<main><a href="/x" title="Opens x">go</a>'
     + '<img src="/i.png" title="decorative"></main>');
   assert.ok(!linkTitle.has('opens x') && !linkTitle.has('decorative'), 'a/img titles are chrome');
+});
+
+test('compare scores words as well as element tokens; an unwrapped span costs no words', () => {
+  const source = contentSet('<main><p>See the <span>heart</span> beat.</p>'
+    + '<p>Second sentence here.</p><img src="/a.png"></main>');
+  const merged = contentSet('<main><p>See the heart beat.</p><p>Second sentence here.</p>'
+    + '<img src="/a.png"></main>');
+  const scored = compare(source, merged);
+  assert.ok(scored.recall < 1, 'element tokens see the boundary change');
+  assert.equal(scored.wordRecall, 1);
+  assert.equal(scored.wordPrecision, 1);
+  const lost = compare(source, contentSet('<main><p>See the <span>heart</span> beat.</p></main>'));
+  assert.ok(lost.wordRecall < 0.7, `a lost sentence and image show: ${lost.wordRecall}`);
+  const invented = compare(source, contentSet('<main><p>See the <span>heart</span> beat.</p>'
+    + '<p>Second sentence here.</p><img src="/a.png"><p>Made up words appear</p></main>'));
+  assert.ok(invented.wordPrecision < 0.8, `invented words show: ${invented.wordPrecision}`);
+  assert.ok(invented.wordRecall === 1);
+});
+
+test('passes gates on words: element diffs stay in the result as the diagnostic', () => {
+  const source = contentSet('<main><p>Alpha <b>beta</b> gamma.</p></main>');
+  const out = contentSet('<main><p>Alpha beta gamma.</p></main>');
+  const scored = compare(source, out);
+  assert.equal(passes(scored, { recall: 0.98, precision: 0.95 }), true);
+  assert.deepEqual(scored.missing, ['alpha gamma.', 'beta']);
+  assert.equal(passes(compare(source, contentSet('<main><p>Alpha.</p></main>')),
+    { recall: 0.98, precision: 0.95 }), false);
 });
