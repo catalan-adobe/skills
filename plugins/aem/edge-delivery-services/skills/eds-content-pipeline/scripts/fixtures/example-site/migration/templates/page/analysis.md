@@ -18,7 +18,8 @@ H1, image, paragraphs kept as prose.
 
 ## Not Migrated
 
-Header nav, footer.
+- selector: header — site chrome, EDS renders its own
+- selector: footer — site chrome, EDS renders its own
 
 ## Open Operator Decisions
 

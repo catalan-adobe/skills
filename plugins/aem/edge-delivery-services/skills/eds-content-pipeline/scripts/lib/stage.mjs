@@ -216,25 +216,29 @@ export async function validateStages({ skillRoot }) {
 }
 
 /**
- * Reads the `## Not Migrated` selectors an analysis.md names, e.g. `selector: nav.breadcrumbs`.
- * Everything else under the heading is prose for the operator, not a fidelity exclusion.
+ * Reads the selectors an analysis.md names under `## Not Migrated`, in the documented form
+ * `- selector: <css> — <why>` (list marker and reason optional). Everything else under the
+ * heading is prose for the operator, not a fidelity exclusion.
  *
- * @param {string} template Template name.
- * @param {ReturnType<typeof resolvePaths>} paths
- * @returns {Promise<string[]>} CSS selectors to drop before comparing content.
+ * @param {string} text The analysis.md contents.
+ * @returns {string[]} CSS selectors to drop before comparing content.
  */
-async function ignoreSelectors(template, paths) {
-  const file = path.join(paths.siteDir, 'templates', template, 'analysis.md');
-  const text = await readFile(file, 'utf8').catch(() => '');
+export function parseIgnoreSelectors(text) {
   const lines = text.split('\n');
   const start = lines.findIndex((l) => /^##\s+Not Migrated/i.test(l.trim()));
   if (start < 0) return [];
   const rest = lines.slice(start + 1);
   const end = rest.findIndex((l) => /^##\s+/.test(l.trim()));
   const section = end < 0 ? rest : rest.slice(0, end);
-  return section.map((l) => l.trim())
+  return section.map((l) => l.trim().replace(/^[-*]\s+/, ''))
     .filter((l) => /^selector:/i.test(l))
-    .map((l) => l.replace(/^selector:/i, '').trim());
+    .map((l) => l.replace(/^selector:/i, '').split(/\s+[—–]\s+/)[0].trim())
+    .filter(Boolean);
+}
+
+async function ignoreSelectors(template, paths) {
+  const file = path.join(paths.siteDir, 'templates', template, 'analysis.md');
+  return parseIgnoreSelectors(await readFile(file, 'utf8').catch(() => ''));
 }
 
 /**

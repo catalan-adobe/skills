@@ -22,9 +22,9 @@ content area.
 
 ## Not Migrated
 
-Breadcrumb navigation not migrated; header/footer markup not migrated.
-
-selector: nav.breadcrumbs
+- selector: nav.breadcrumbs — navigation, rebuilt from the page path
+- selector: header — site chrome, EDS renders its own
+- selector: footer — site chrome, EDS renders its own
 
 ## Open Operator Decisions
 

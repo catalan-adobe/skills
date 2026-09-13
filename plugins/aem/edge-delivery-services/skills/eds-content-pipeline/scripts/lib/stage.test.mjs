@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  loadStage, planStage, validateStages,
+  loadStage, parseIgnoreSelectors, planStage, validateStages,
 } from './stage.mjs';
 import { resolvePaths } from './paths.mjs';
 import { upsertRecords } from './state.mjs';
@@ -364,4 +364,23 @@ test('check-prep gates on the overlay recipe: missing, unchecked, no selector, o
     await writeFile(file, JSON.stringify({ checked: ['u'], overlays: [] }));
     assert.equal((await cli(repo, 'check-prep')).pass, true, 'a site without overlays is fine');
   } finally { await server.close(); }
+});
+
+test('parseIgnoreSelectors reads the documented `- selector: <css> — <why>` lines', () => {
+  const text = [
+    '## Not Migrated', '',
+    'Header and footer are site chrome.', '',
+    '- selector: nav.breadcrumbs — navigation, rebuilt from the path',
+    '- selector: .share-buttons – social chrome (en dash)',
+    '* selector: form.add-to-cart — commerce; operator decision — pending',
+    'selector: footer',
+    '- .not-a-selector-line — no selector: keyword at the start',
+    '- selector:', '',
+    '## Open Operator Decisions', '',
+    '- selector: .this-one-is-out-of-section',
+  ].join('\n');
+  assert.deepEqual(parseIgnoreSelectors(text), [
+    'nav.breadcrumbs', '.share-buttons', 'form.add-to-cart', 'footer',
+  ]);
+  assert.deepEqual(parseIgnoreSelectors('no section at all'), []);
 });
