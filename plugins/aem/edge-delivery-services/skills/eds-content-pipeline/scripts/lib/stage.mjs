@@ -265,10 +265,10 @@ async function ignoreSelectors(template, paths) {
  */
 export async function checkTransformer(template, paths = resolvePaths()) {
   const config = await loadConfig(paths.configPath);
-  const templateConfig = config.templates[template];
-  if (!templateConfig) throw new Error(`No templates.${template} in site.config.json`);
+  // The same default bulk uses: a template needs no config entry to be gated.
+  const templateConfig = config.templates?.[template] ?? { sourceRoot: 'main' };
   const transformer = await loadTransformer(template, {
-    dir: path.join(paths.siteDir, 'transformers'),
+    dir: path.join(paths.siteDir, 'transformers'), config,
   });
   const recipe = await loadPrepRecipe(paths);
   const structural = structuralColumns(await listRecords('blocks', { paths }));
@@ -361,6 +361,56 @@ export async function checkCoverage(template, paths = resolvePaths()) {
   };
 }
 
+/**
+ * The per-page fidelity table for `reports/bulk-<template>-transformer.md`.
+ *
+ * @param {{template: string, pages: object[], pass: boolean}} result From checkTransformer.
+ * @returns {string} Markdown.
+ */
+export function renderTransformerReport(result) {
+  const failing = result.pages.filter((p) => !p.pass).length;
+  const rows = result.pages.map((p) => `| ${p.url} | ${p.wordRecall} | ${p.wordPrecision} | `
+    + `${p.pass ? 'yes' : 'no'} | ${p.warnings.length} | `
+    + `${p.missing.slice(0, 3).join(', ')} | ${p.invented.slice(0, 3).join(', ')} |`);
+  return [
+    `# Transformer fidelity — ${result.template}`,
+    '',
+    `${result.pages.length} captured pages, ${failing} below the gate `
+      + `(word recall / word precision against \`thresholds.fidelity\`).`,
+    '',
+    '| URL | words kept | words invented | pass | warnings | first missing | first invented |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    ...rows,
+    '',
+  ].join('\n');
+}
+
+/**
+ * The gate before a push: the dry-run covered the template **and** the transformer keeps
+ * every captured page's content. The dry-run stores every page's capture, so this runs the
+ * fidelity check over the whole template, not the representatives.
+ *
+ * @param {string} template Template name.
+ * @param {ReturnType<typeof resolvePaths>} [paths]
+ * @returns {Promise<{template: string, coverage: object, fidelity: object, pass: boolean}>}
+ */
+export async function checkDryRun(template, paths = resolvePaths()) {
+  const coverage = await checkCoverage(template, paths);
+  const result = await checkTransformer(template, paths);
+  const file = path.join(paths.siteDir, 'reports', `bulk-${template}-transformer.md`);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, renderTransformerReport(result));
+  const fidelity = {
+    pages: result.pages.length,
+    failing: result.pages.filter((p) => !p.pass).map((p) => p.url),
+    report: file,
+    pass: result.pass,
+  };
+  return {
+    template, coverage, fidelity, pass: coverage.pass && fidelity.pass,
+  };
+}
+
 const DONE_URL_STATUSES = ['previewed', 'uploaded', 'verified'];
 
 /**
@@ -377,7 +427,7 @@ const DONE_URL_STATUSES = ['previewed', 'uploaded', 'verified'];
  */
 export async function sampleFidelity(template, paths = resolvePaths(), { pages = 5 } = {}) {
   const config = await loadConfig(paths.configPath);
-  const templateConfig = config.templates[template];
+  const templateConfig = config.templates?.[template] ?? { sourceRoot: 'main' };
   const { token, expiresAt, source } = await loadToken();
   const da = createDaClient({
     da: config.da, token, expiresAt, tokenSource: source,
@@ -697,6 +747,7 @@ export async function runStage(stageName, params, options = {}) {
 const USAGE = 'Usage: stage.mjs plan <stage> [key=value ...] | stage.mjs validate | '
   + 'stage.mjs check-transformer <template> | stage.mjs check-review <template> | '
   + 'stage.mjs check-prep | stage.mjs check-coverage <template> | '
+  + 'stage.mjs check-dry-run <template> | '
   + 'stage.mjs check-run <template> | '
   + 'stage.mjs check-fidelity <template> | '
   + 'stage.mjs sample-fidelity <template> [--pages N] | stage.mjs run <stage> [key=value ...] | '
@@ -735,6 +786,12 @@ const COMMANDS = {
   },
   'check-prep': async () => {
     const result = await checkPrep(resolvePaths());
+    if (!result.pass) process.exitCode = 1;
+    return result;
+  },
+  'check-dry-run': async (argv) => {
+    const [template] = argv;
+    const result = await checkDryRun(template, resolvePaths());
     if (!result.pass) process.exitCode = 1;
     return result;
   },

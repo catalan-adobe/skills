@@ -201,6 +201,23 @@ Anything the fidelity check reports as missing that is **not** on this list is a
 Header and footer are always not migrated by a template: they are the site's, not the
 template's, and are handled once.
 
+## Analyse per template, author per site
+
+The template is the unit of analysis and of the bulk batch, not of the transformer. A site's
+pages are built from one set of components; templates differ in which of them a page carries
+and in what order. On the first real site fourteen templates and twenty-seven outliers went
+through one transformer: a map from source component class to prose, block or skip, walked in
+document order inside each layout wrapper. So: the first template's author writes the map for
+the components its analysis names; every later author extends the same file and points the
+template at it (`templates.<t>.transformer`). A copied transformer is a defect waiting to
+drift.
+
+The bulk dry-run stores every page's capture, and its gate (`check-dry-run`) runs the
+fidelity check over all of them. Three representatives prove the map is right; the whole
+template proves it is complete — on that site 105 of 409 pages failed the first whole-template
+check that all four representatives had passed. Iterate offline against the captures; push
+once.
+
 ## Anti-patterns
 
 - **Descendant matching.** Matching a block by something inside it (`.card img`) instead of
@@ -217,6 +234,8 @@ template's, and are handled once.
   or DOM order instead of what an author types.
 - **Silent drops.** Leaving content out without a `selector:` line under "Not migrated". The
   fidelity check will report it; the reviewer will send it back.
+- **One transformer per template.** Copying a working transformer into `<other>.mjs` to
+  satisfy the file name. Point the template at the shared module instead; extend one map.
 - **Deciding for the operator.** Merging a template, dropping a feature, or choosing between
   two valid block models without listing it under "Open operator decisions". Decide the
   convention; surface the judgement call.

@@ -289,3 +289,19 @@ test('strip removes overlay markup before the transformer sees the page', async 
   assert.ok(!stripped.html.includes('We use cookies'), 'strip removes it before transformDOM');
   assert.equal(stripped.hash, kept.hash, 'the content hash is computed on the fetched page');
 });
+
+test('templates.<t>.transformer points several templates at one shared transformer', async () => {
+  const dir = await fixtureDir();
+  const config = { templates: { landing: { transformer: 'case-study' }, other: {} } };
+  const shared = await loadTransformer('landing', { dir, config });
+  assert.equal(typeof shared.transformDOM, 'function');
+  await assert.rejects(
+    () => loadTransformer('other', { dir, config }),
+    /No transformer for template "other" at .*other\.mjs/,
+  );
+  const broken = { templates: { landing: { transformer: 'nope' } } };
+  await assert.rejects(
+    () => loadTransformer('landing', { dir, config: broken }),
+    /No transformer for template "landing" at .*nope\.mjs/,
+  );
+});

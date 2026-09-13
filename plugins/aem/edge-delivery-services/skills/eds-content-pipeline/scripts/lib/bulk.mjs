@@ -676,7 +676,7 @@ async function createContext({
   const paths = io.paths ?? resolvePaths();
   const config = await loadConfig(paths.configPath);
   const transformer = io.transformer
-    ?? await loadTransformer(template, { dir: path.join(paths.siteDir, 'transformers') });
+    ?? await loadTransformer(template, { dir: path.join(paths.siteDir, 'transformers'), config });
   const clients = await resolveClients({
     config, mode, io, paths,
   });

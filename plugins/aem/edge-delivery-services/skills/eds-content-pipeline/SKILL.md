@@ -119,10 +119,13 @@ From the EDS repository root, with `S=.agents/skills/eds-content-pipeline`:
    once the analysis, transformer and review have been authored by hand or elsewhere. Without
    a DA token the bulk `run` and `sample-fidelity` units report `skipped-no-da`.
 
-Gates the runners enforce: `stage.mjs check-transformer <t>` (every representative transforms
-with zero warnings and passes `thresholds.fidelity`), `check-review <t>` (`review.md` starts
-with `verdict: ready`; `needs-work` records a rework request), `check-coverage <t>`,
-`check-fidelity <t>`, and `state.mjs check-evidence <t>` (every block's evidence resolves).
+Gates the runners enforce: `stage.mjs check-transformer <t>` (every captured page transforms
+with zero warnings and passes `thresholds.fidelity` on words), `check-review <t>` (`review.md`
+starts with `verdict: ready`; `needs-work` records a rework request), `check-dry-run <t>`
+(coverage **and** whole-template fidelity over the captures the dry-run stored, report in
+`reports/bulk-<t>-transformer.md`), `check-run <t>`, `check-fidelity <t>`, and
+`state.mjs check-evidence <t>` (every block's evidence resolves). One transformer may serve
+several templates: `templates.<t>.transformer` in `site.config.json` names the shared module.
 
 ## pi executor
 

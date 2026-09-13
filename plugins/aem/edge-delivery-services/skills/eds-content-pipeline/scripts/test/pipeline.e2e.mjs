@@ -266,6 +266,11 @@ test(
         ['dry-run', 'done'], ['run', 'skipped-no-da'], ['sample-fidelity', 'skipped-no-da'],
         ['retro', 'skipped'],
       ]);
+      const transformerReport = await readFile(
+        path.join(repo, 'migration/reports/bulk-product-transformer.md'), 'utf8',
+      );
+      assert.equal((transformerReport.match(/\| yes \|/g) ?? []).length, 2,
+        'the dry-run gate scored both captured product pages');
       const dry = JSON.parse(await readFile(
         path.join(repo, 'migration/data/bulk/product-dryrun.json'), 'utf8',
       ));

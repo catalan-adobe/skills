@@ -5,8 +5,11 @@ units:
   - id: dry-run
     run: node scripts/lib/bulk.mjs --template <template> --dry-run
     depends_on: []
-    outputs: [data/bulk/<template>-dryrun.json, reports/bulk-<template>-dryrun.md]
-    done_when: node scripts/lib/stage.mjs check-coverage <template>
+    outputs:
+      - data/bulk/<template>-dryrun.json
+      - reports/bulk-<template>-dryrun.md
+      - reports/bulk-<template>-transformer.md
+    done_when: node scripts/lib/stage.mjs check-dry-run <template>
   - id: run
     run: node scripts/lib/bulk.mjs --template <template> --run
     depends_on: [dry-run]

@@ -29,15 +29,18 @@ const titleCase = (key) => key.replace(/(^|-)([a-z])/g, (_, sep, ch) => sep + ch
  * @param {object} [options]
  * @param {string} [options.dir] Transformer directory; defaults to
  *   `<project>/transformers`.
+ * @param {object} [options.config] Site config; `templates.<t>.transformer` names the
+ *   module to load instead of `<t>.mjs`, so several templates share one transformer.
  * @returns {Promise<{template: string, file: string, match: Function,
  *   transformDOM: Function, generateDocumentPath: Function, version:
  *   string}>} The transformer.
  * @throws {Error} When the module is missing or does not export the
  *   contract.
  */
-export async function loadTransformer(template, { dir } = {}) {
+export async function loadTransformer(template, { dir, config } = {}) {
   const base = dir ?? path.join(resolvePaths().siteDir, 'transformers');
-  const file = path.join(base, `${template}.mjs`);
+  const name = config?.templates?.[template]?.transformer ?? template;
+  const file = path.join(base, `${name}.mjs`);
   const module = await import(pathToFileURL(file).href).catch((err) => {
     throw new Error(
       `No transformer for template "${template}" at ${file}
@@ -319,7 +322,7 @@ async function cli(argv) {
   if (!input || !template) throw new Error(USAGE);
   const paths = resolvePaths();
   const config = await loadConfig(paths.configPath);
-  const transformer = await loadTransformer(template);
+  const transformer = await loadTransformer(template, { config });
   const { html, url } = await loadSource(input, argv, config, paths);
   const params = {
     sourceRoot: config.templates?.[template]?.sourceRoot ?? 'main',

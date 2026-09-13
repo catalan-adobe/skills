@@ -384,3 +384,34 @@ test('parseIgnoreSelectors reads the documented `- selector: <css> — <why>` li
   ]);
   assert.deepEqual(parseIgnoreSelectors('no section at all'), []);
 });
+
+test('check-dry-run gates the push on coverage and whole-template fidelity, with a report',
+  async () => {
+    const { repo, server, paths } = await fixtureRepo();
+    try {
+      const before = await cli(repo, 'check-dry-run', 'product').catch((e) => e);
+      assert.equal(before.code, 1);
+      assert.match(before.stderr, /No dry-run report/);
+      await cli(repo, 'run', 'bulk', 'template=product', '--skip-llm');
+      const ok = await cli(repo, 'check-dry-run', 'product');
+      assert.equal(ok.pass, true, JSON.stringify(ok));
+      assert.equal(ok.coverage.pass, true);
+      assert.equal(ok.fidelity.pages, 2);
+      const report = await readFile(
+        path.join(paths.siteDir, 'reports', 'bulk-product-transformer.md'), 'utf8',
+      );
+      assert.match(report, /\| URL \| words kept \| words invented \| pass \|/);
+      assert.match(report, /product-a\.html.*\| 1 \| 1 \| yes \|/);
+      const transformerFile = path.join(repo, 'migration/transformers/product.mjs');
+      await writeFile(transformerFile, (await readFile(transformerFile, 'utf8'))
+        .replace("src.querySelector('.lead'),", ''));
+      const bad = await cli(repo, 'check-dry-run', 'product').catch((e) => e);
+      assert.equal(bad.code, 1);
+      const out = JSON.parse(bad.stdout);
+      assert.equal(out.coverage.pass, true, 'coverage alone would have let it through');
+      assert.equal(out.fidelity.pass, false);
+      assert.match(await readFile(
+        path.join(paths.siteDir, 'reports', 'bulk-product-transformer.md'), 'utf8',
+      ), /\| no \|/);
+    } finally { await server.close(); }
+  });
