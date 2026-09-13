@@ -1,0 +1,9 @@
+{
+  "name": "content-pipeline-v2-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"lib/**/*.test.mjs\"",
+    "check": "node check-lines.mjs && node check-residue.mjs"
+  }
+}
