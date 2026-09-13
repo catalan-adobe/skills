@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import {
-  checkBlockShape, compare, contentSet, passes,
+  checkBlockShape, compare, contentSet, passes, structuralColumns, structuralTokens,
 } from './fidelity.mjs';
 
 const execFileP = promisify(execFile);
@@ -132,4 +132,31 @@ test('passes gates on words: element diffs stay in the result as the diagnostic'
   assert.deepEqual(scored.missing, ['alpha gamma.', 'beta']);
   assert.equal(passes(compare(source, contentSet('<main><p>Alpha.</p></main>')),
     { recall: 0.98, precision: 0.95 }), false);
+});
+
+test('structural block columns leave the output set: a form model is not invented text', () => {
+  const source = contentSet('<main><form><label>First name</label><input name="firstname">'
+    + '<label>Topic</label><select name="topic"><option>Billing</option></select></form></main>');
+  const out = '<main><div class="form contact"><div><div>First name</div><div>firstname</div>'
+    + '<div>text</div><div>yes</div></div><div><div>Topic</div><div>topic</div>'
+    + '<div>select: Billing</div><div>no</div></div></div></main>';
+  const plain = compare(source, contentSet(out));
+  assert.ok(plain.wordPrecision < 0.95, `model tokens count as invented: ${plain.wordPrecision}`);
+  const blocks = [{
+    name: 'form',
+    model: {
+      columns: [
+        { name: 'label' }, { name: 'name', structural: true },
+        { name: 'type', structural: true }, { name: 'required', structural: true },
+      ],
+    },
+  }];
+  const structural = structuralColumns(blocks);
+  assert.deepEqual(structural, { form: [1, 2, 3] });
+  const model = structuralTokens(out, 'main', structural);
+  assert.deepEqual([...model].sort(), ['firstname', 'select: billing', 'text', 'topic', 'yes']);
+  const scored = compare(source, contentSet(out), { model });
+  assert.equal(scored.wordPrecision, 1);
+  assert.equal(scored.wordRecall, 1, 'option text lived in a structural cell and still counts');
+  assert.deepEqual(scored.invented, [], 'model tokens are not reported as invented either');
 });

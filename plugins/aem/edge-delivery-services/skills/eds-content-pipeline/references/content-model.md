@@ -38,6 +38,12 @@ Array of column definitions. Each column object must have:
 - `type` (string): semantic type for content writers. Common types:
   `text`, `image`, `link`, `date`, `enum`, `html-fragment`.
 
+And may have:
+- `structural` (boolean): the cell carries the block's model rather than words from the
+  source page — a form field's `name`, `type` or `required` flag, a hotspot's position. The
+  fidelity gates do not count those cells as invented content (`fidelity.mjs
+  structuralColumns`). Source text that happens to sit in such a cell still counts as kept.
+
 Example:
 ```json
 [

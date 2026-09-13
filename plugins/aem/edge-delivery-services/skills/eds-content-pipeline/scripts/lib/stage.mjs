@@ -24,7 +24,9 @@ import YAML from 'yaml';
 import { flag, positiveIntFlag } from './args.mjs';
 import { loadConfig, originAliasHosts } from './config.mjs';
 import { createDaClient, docPath, loadToken } from './da.mjs';
-import { compare, contentSet, passes } from './fidelity.mjs';
+import {
+  compare, contentSet, passes, structuralColumns, structuralTokens,
+} from './fidelity.mjs';
 import { appendRow, readRows } from './ledger.mjs';
 import { resolvePaths } from './paths.mjs';
 import { writeProgress } from './progress.mjs';
@@ -269,6 +271,7 @@ export async function checkTransformer(template, paths = resolvePaths()) {
     dir: path.join(paths.siteDir, 'transformers'),
   });
   const recipe = await loadPrepRecipe(paths);
+  const structural = structuralColumns(await listRecords('blocks', { paths }));
   const ignore = [...(await ignoreSelectors(template, paths)), ...recipe.selectors];
   const dir = path.join(paths.dataDir, 'captures', template);
   const files = (await readdir(dir).catch(() => [])).filter((f) => f.endsWith('.html')).sort();
@@ -285,7 +288,9 @@ export async function checkTransformer(template, paths = resolvePaths()) {
       hosts: originAliasHosts(config), strip: recipe.selectors,
     });
     const scored = compare(
-      contentSet(html, templateConfig.sourceRoot, ignore), contentSet(doc.html, 'main'),
+      contentSet(html, templateConfig.sourceRoot, ignore),
+      contentSet(doc.html, 'main'),
+      { model: structuralTokens(doc.html, 'main', structural) },
     );
     const pass = passes(scored, config.thresholds.fidelity) && doc.warnings.length === 0;
     pages.push({
@@ -378,6 +383,7 @@ export async function sampleFidelity(template, paths = resolvePaths(), { pages =
     da: config.da, token, expiresAt, tokenSource: source,
   });
   const recipe = await loadPrepRecipe(paths);
+  const structural = structuralColumns(await listRecords('blocks', { paths }));
   const ignore = [...(await ignoreSelectors(template, paths)), ...recipe.selectors];
   const eligible = (await listRecords('urls', { where: { template }, paths }))
     .filter((u) => DONE_URL_STATUSES.includes(u.status))
@@ -394,7 +400,9 @@ export async function sampleFidelity(template, paths = resolvePaths(), { pages =
       path.join(paths.dataDir, 'captures', template, `${captureSlug(record.url)}.html`), 'utf8',
     );
     const scored = compare(
-      contentSet(capture, templateConfig.sourceRoot, ignore), contentSet(html, 'main'),
+      contentSet(capture, templateConfig.sourceRoot, ignore),
+      contentSet(html, 'main'),
+      { model: structuralTokens(html, 'main', structural) },
     );
     results.push({
       url: record.url,

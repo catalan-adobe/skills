@@ -72,24 +72,70 @@ export function contentSet(html, rootSelector = 'main', ignore = []) {
 }
 
 /**
+ * Which columns of which blocks are model, not source content: `{ form: [1, 2] }` from
+ * `model.columns[i].structural: true` in `blocks.json` records.
+ *
+ * @param {object[]} blocks Block records.
+ * @returns {Record<string, number[]>} Block name → zero-based structural column indexes.
+ */
+export function structuralColumns(blocks) {
+  const map = {};
+  for (const block of blocks) {
+    const indexes = (block.model?.columns ?? [])
+      .flatMap((c, i) => (c.structural ? [i] : []));
+    if (indexes.length) map[block.name] = indexes;
+  }
+  return map;
+}
+
+/**
+ * Tokens that sit in structural block cells of an output document (`<div class="form">` →
+ * rows → the flagged cells). They are what a block model adds on purpose — field names,
+ * types, required flags — and leave the precision set in {@link compare}.
+ *
+ * @param {string} html Output document.
+ * @param {string} rootSelector Root element (default 'main').
+ * @param {Record<string, number[]>} structural From {@link structuralColumns}.
+ * @returns {Set<string>}
+ */
+export function structuralTokens(html, rootSelector = 'main', structural = {}) {
+  const { document } = new JSDOM(html).window;
+  const root = document.querySelector(rootSelector) ?? document.body;
+  const wrapper = document.createElement('div');
+  for (const [name, indexes] of Object.entries(structural)) {
+    for (const block of root.querySelectorAll(`.${name}`)) {
+      for (const row of block.children) {
+        for (const i of indexes) {
+          if (row.children[i]) wrapper.append(row.children[i].cloneNode(true));
+        }
+      }
+    }
+  }
+  return contentSet(wrapper.outerHTML, 'div');
+}
+
+/**
  * Compare source and output content sets. Recall = source tokens preserved;
- * precision = output tokens traceable to the source.
+ * precision = output tokens traceable to the source, where tokens a block model adds on
+ * purpose (`model`, from {@link structuralTokens}) are neither invented nor counted.
  * @param {Set<string>} sourceSet - Content tokens from source
  * @param {Set<string>} outSet - Content tokens from output
- * @returns {Object} Recall, precision, missing tokens, invented tokens
+ * @param {{model?: Set<string>}} [options]
+ * @returns {Object} Recall, precision, word recall, word precision, missing, invented
  */
-export function compare(sourceSet, outSet) {
+export function compare(sourceSet, outSet, { model = new Set() } = {}) {
   const missing = [...sourceSet].filter((t) => !outSet.has(t));
-  const invented = [...outSet].filter((t) => !sourceSet.has(t));
+  const claimed = new Set([...outSet].filter((t) => sourceSet.has(t) || !model.has(t)));
+  const invented = [...claimed].filter((t) => !sourceSet.has(t));
   const r = (n, d) => (d ? Number((n / d).toFixed(3)) : 1);
   const sourceWords = wordBag(sourceSet);
   const outWords = wordBag(outSet);
-  const shared = bagIntersection(sourceWords, outWords);
+  const claimedWords = wordBag(claimed);
   return {
     recall: r(sourceSet.size - missing.length, sourceSet.size),
-    precision: r(outSet.size - invented.length, outSet.size),
-    wordRecall: r(shared, bagSize(sourceWords)),
-    wordPrecision: r(shared, bagSize(outWords)),
+    precision: r(claimed.size - invented.length, claimed.size),
+    wordRecall: r(bagIntersection(sourceWords, outWords), bagSize(sourceWords)),
+    wordPrecision: r(bagIntersection(sourceWords, claimedWords), bagSize(claimedWords)),
     missing,
     invented,
   };
@@ -205,7 +251,10 @@ async function main(argv) {
   );
   const outHtml = await readFile(out, 'utf8');
   const outSet = contentSet(outHtml, 'main');
-  const result = compare(srcSet, outSet);
+  const blocksFile = flag(argv, '--blocks');
+  const blockRecords = blocksFile ? JSON.parse(await readFile(blocksFile, 'utf8')) : [];
+  const model = structuralTokens(outHtml, 'main', structuralColumns(blockRecords));
+  const result = compare(srcSet, outSet, { model });
   const listFile = flag(argv, '--checklist');
   const items = listFile
     ? (await readFile(listFile, 'utf8'))
@@ -213,11 +262,8 @@ async function main(argv) {
         .map((l) => l.trim())
         .filter(Boolean)
     : [];
-  const blocksFile = flag(argv, '--blocks');
   const blocks = blocksFile
-    ? checkBlockShape(outHtml, JSON.parse(await readFile(blocksFile, 'utf8')), {
-      template: flag(argv, '--template'),
-    })
+    ? checkBlockShape(outHtml, blockRecords, { template: flag(argv, '--template') })
     : [];
   const list = checklist(items, outSet);
   const thresholds = {
