@@ -376,3 +376,30 @@ test('pick answers from urls.json through the CLI with the reachability check in
     assert.equal(noList.code, 1);
     assert.match(noList.stderr, /missing migration\/urls\/urls\.json; run the scan step first/);
   });
+
+test('init records --skills-repo and --skills-ref; every command rejects unknown flags',
+  async () => {
+    const cwd = await fresh();
+    const out = await cli(cwd, 'init', '--origin', 'https://example.com/',
+      '--skills-repo', 'someone/skills', '--skills-ref', 'wip');
+    assert.deepEqual(out.data.skills, { repo: 'someone/skills', ref: 'wip' });
+    const project = resolveProject(cwd);
+    const calls = [];
+    await setup({
+      shouldInstall: true, nodeVersion: '24.0.0',
+      exec: async (f, a) => { calls.push([f, ...a]); return { ok: false }; },
+    }, project);
+    process.exitCode = 0;
+    assert.ok(calls.some((c) => c.includes('someone/skills') && c.includes('wip')),
+      'setup reuses what init recorded');
+    for (const args of [
+      ['init', '--origin', 'https://example.com/', '--skill-repo', 'x'],
+      ['setup', '--instal'],
+      ['--txt'],
+      ['pick', '--count', '2', '--excluded', 'u'],
+    ]) {
+      const err = await cli(cwd, ...args).catch((e) => e);
+      assert.equal(err.code, 1, args.join(' '));
+      assert.match(err.stderr, /Unknown flag/, args.join(' '));
+    }
+  });

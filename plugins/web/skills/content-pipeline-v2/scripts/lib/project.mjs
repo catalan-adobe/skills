@@ -44,14 +44,21 @@ export async function writeProject(project, data) {
  * Creates `migration/` with `project.json` and a `.gitignore` for scratch and cache data.
  * Re-running keeps an existing project.json untouched.
  *
- * @param {{origin: string, now?: () => string}} options `origin` is the site's root URL.
+ * @param {{origin: string, skillsRepo?: string, skillsRef?: string, now?: () => string}} options
+ *   `origin` is the site's root URL (or the section page that bounds the migration);
+ *   `skillsRepo`/`skillsRef` say where `setup` installs the sibling skills from.
  * @param {ReturnType<typeof resolveProject>} project
  */
-export async function init({ origin, now = () => new Date().toISOString() }, project) {
+export async function init({
+  origin, skillsRepo, skillsRef, now = () => new Date().toISOString(),
+}, project) {
   if (!origin) throw new Error('init needs --origin <url>');
   new URL(origin);
   const existing = await readProject(project);
   const data = existing ?? { ...DEFAULTS, origin, created: now() };
+  if (skillsRepo || skillsRef) {
+    data.skills = { repo: skillsRepo ?? data.skills?.repo, ref: skillsRef ?? data.skills?.ref };
+  }
   await writeProject(project, data);
   await writeFile(path.join(project.dir, '.gitignore'), '.work/\ncache/.page-cache/\n');
   return { project: project.dir, created: !existing, data };

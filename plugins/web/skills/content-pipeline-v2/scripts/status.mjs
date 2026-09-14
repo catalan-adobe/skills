@@ -16,7 +16,8 @@ import {
 
 const USAGE = `status.mjs [--text]              every step: done|ready|blocked|waiting-operator
 status.mjs check <step>          the step's done-check; exit 1 when it fails
-status.mjs init --origin <url>   create migration/ and project.json
+status.mjs init --origin <url> [--skills-repo <owner/repo>] [--skills-ref <branch>]
+                                 create migration/ and project.json
 status.mjs approve <step> [<subset>...]
                                   record the operator's yes for a gated step (cache);
                                   subset names select "urls/subsets/<name>.txt" (default: all)
@@ -149,6 +150,24 @@ export async function pickUrls(project, { count, exclude, reachable }) {
   return pick(entries, { count, exclude, ...(reachable ? { reachable } : {}) });
 }
 
+/** The flags each command accepts (value-taking flags listed once; booleans too). */
+const FLAGS = {
+  status: ['--text'],
+  check: [],
+  init: ['--origin', '--skills-repo', '--skills-ref'],
+  pick: ['--count', '--exclude'],
+  approve: [],
+  urls: [],
+  setup: ['--install', '--skills-repo', '--skills-ref'],
+};
+
+function rejectUnknownFlags(name, argv) {
+  const unknown = argv.filter((a) => a.startsWith('--') && !FLAGS[name].includes(a));
+  if (unknown.length) {
+    throw new Error(`Unknown flag ${unknown.join(', ')} for "${name}"\n${USAGE}`);
+  }
+}
+
 const COMMANDS = {
   async status(argv, project) {
     const result = await status(project);
@@ -161,7 +180,11 @@ const COMMANDS = {
     if (!result.pass) process.exitCode = 1;
     return result;
   },
-  init: (argv, project) => init({ origin: flag(argv, '--origin') }, project),
+  init: (argv, project) => init({
+    origin: flag(argv, '--origin'),
+    skillsRepo: flag(argv, '--skills-repo'),
+    skillsRef: flag(argv, '--skills-ref'),
+  }, project),
   pick: (argv, project) => pickUrls(project, {
     count: Number(flag(argv, '--count') ?? 2),
     exclude: argv.flatMap((a, i) => (a === '--exclude' ? [argv[i + 1]] : [])),
@@ -185,6 +208,7 @@ async function cli(argv) {
   const args = name === 'status' ? argv : rest;
   const command = COMMANDS[name];
   if (!command) throw new Error(`Unknown command "${name}"\n${USAGE}`);
+  rejectUnknownFlags(name, args);
   return command(args, resolveProject());
 }
 
