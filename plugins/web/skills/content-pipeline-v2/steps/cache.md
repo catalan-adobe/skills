@@ -10,7 +10,6 @@ assets on disk so later analysis works offline. Tier: low.
   `setup.json` — all read by the driver, none by you.
 - Sibling skill `.agents/skills/page-cache/SKILL.md`: the proxy the driver starts; read it
   only when the driver fails and its message points there.
-
 ## Method
 
 1. If the operator asked for a number of pages rather than a subset, build the subset first:
@@ -27,21 +26,27 @@ assets on disk so later analysis works offline. Tier: low.
    injecting the overlay hide rules and scrolling for lazy content; then it restarts the
    proxy offline, requests every URL from the cache, writes `cache/cache.md` and the
    `## cache` report section, and exits 1 when a URL failed or no asset was stored.
-3. Read its JSON: `cached`, `failed`, `assets`. A failed URL is a source problem (404,
-   blocked) — say so; do not retry by other means. Never fetch pages with `curl` or any HTTP
+3. Read its JSON: `cached`, `failed`, `assets`, `kinds`. Each visited URL's record in
+   `urls/urls.json` now carries `http` (status, type, size), `redirect` (status, target,
+   chain, target in list), `finalUrl` (where the browser landed), `kind` (page, binary,
+   redirect, error, unreachable) and `migrate` (yes, asset, target, no). A source 404 is a
+   stored response of kind `error`, not a cache failure; `failed` means no response — say
+   so; do not retry by other means. Never fetch pages with `curl` or any HTTP
    client to "warm" the cache: only a browser requests the CSS, scripts and images, and the
    check rejects a cache without them.
 4. Never delete anything under `migration/cache/`; a second run of the driver is idempotent
    (the proxy serves stored files and fetches only what is missing).
 
-The cached HTML is the raw response: overlay markup is still in it. The hide rules only make
-the browser load what a reader sees; consumers apply the recipe at render time.
+The cached HTML is the raw response: overlay markup is still in it; consumers apply the
+recipe at render time.
 
 ## Outputs
 
 - `migration/cache/.page-cache/`: the proxy's cache directory (gitignored).
 - `migration/cache/cache.md`: written by the driver — one row per selected URL with
-  `cached`, `failed` or `skipped`, the proxy status and the settings that held.
+  `cached`, `failed` or `skipped`, its `kind`, the proxy status and the settings that held.
+- `migration/urls/urls.json`: the visited records augmented (see above); `urls/urls.md`
+  (rerun `status.mjs urls`) then lists kinds, redirects and what is not to be migrated.
 - `REPORT.md` `## cache`: written by the driver; add a sentence with
   `status.mjs section cache` only if the operator needs more (e.g. a failed URL's cause).
 

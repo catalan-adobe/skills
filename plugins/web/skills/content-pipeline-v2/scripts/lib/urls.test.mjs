@@ -312,3 +312,39 @@ test('pick with fill rounds over the groups until count, HTML pages only, no dup
     assert.equal(text.trim().split('\n').length, 5);
     assert.match(written, /subsets\/sample\.txt$/);
   });
+
+const classified = [
+  { url: 'https://x.example/a/1.html', kind: 'page', cache: { at: 't' } },
+  { url: 'https://x.example/a/2.html' },
+  { url: 'https://x.example/a/old.html', kind: 'redirect', migrate: 'target',
+    redirect: { status: 301, target: 'https://x.example/a/1.html', targetInList: true } },
+  { url: 'https://x.example/b/gone.html', kind: 'error', migrate: 'no', http: { status: 404 } },
+  { url: 'https://x.example/b/doc.pdf', kind: 'binary', migrate: 'asset' },
+  { url: 'https://x.example/b/3.html', kind: 'page', cache: { at: 't' } },
+];
+
+test('urls.md reports kinds, the redirect table and what is not to be migrated', () => {
+  const dist = distribution(classified);
+  assert.deepEqual(dist.byKind, {
+    page: 2, unclassified: 1, redirect: 1, error: 1, binary: 1,
+  });
+  assert.equal(dist.cached, 2);
+  const md = renderUrlsMd(dist, proposal(dist, { cacheAllUpTo: 500 }));
+  assert.match(md, /## By kind/);
+  assert.match(md, /\| page \| 2 \|/);
+  assert.match(md, /## Redirects\n\n\| from \| status \| to \| target in list \|/);
+  assert.match(md, /\| https:\/\/x\.example\/a\/old\.html \| 301 \| https:\/\/x\.example\/a\/1/);
+  assert.match(md, /a\/1\.html \| yes \|/);
+  assert.match(md, /## Not to migrate\n\n.*old\.html.*redirect.*\n.*gone\.html.*error 404/s);
+  assert.match(md, /2 of 6 URLs cached/);
+});
+
+test('proposal and pick leave known non-pages out', async () => {
+  const dist = distribution(classified);
+  const prop = proposal(dist, { cacheAllUpTo: 2 });
+  assert.equal(prop.total, 3, 'pages and unclassified URLs are candidates, the rest are not');
+  const picks = await pick(classified, { count: 5, fill: true, reachable: async () => true });
+  assert.deepEqual(picks.map((p) => p.url).sort(), [
+    'https://x.example/a/1.html', 'https://x.example/a/2.html', 'https://x.example/b/3.html',
+  ]);
+});

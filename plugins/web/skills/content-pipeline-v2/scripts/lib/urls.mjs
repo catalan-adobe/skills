@@ -60,19 +60,40 @@ function languageOf(url, segments) {
  * @returns {{total: number, scope: string, byFirstSegment: Record<string, number>,
  *   bySecondSegment: Record<string, number>, byLanguage: Record<string, number>}}
  */
+/** A URL still worth a browser visit: a page, or one nothing is known about yet. */
+export const isCandidate = (record) => !record.kind || record.kind === 'page';
+
 export function distribution(urls) {
   const scope = scopeOf(urls);
   const byFirstSegment = {};
   const bySecondSegment = {};
   const byLanguage = {};
+  const byKind = {};
+  const redirects = [];
+  const notToMigrate = [];
+  let cached = 0;
   for (const url of urls) {
     const segments = relativeSegments(url.url, scope);
+    bump(byKind, url.kind ?? 'unclassified');
+    if (url.cache) cached += 1;
+    if (url.kind === 'redirect') redirects.push(url);
+    if (url.kind && url.kind !== 'page') notToMigrate.push(url);
+    if (!isCandidate(url)) continue;
     bump(byFirstSegment, segments[0] ?? '');
     bump(bySecondSegment, segments[1] ?? '');
     bump(byLanguage, languageOf(url, segments));
   }
   return {
-    total: urls.length, scope: `/${scope.join('/')}`, byFirstSegment, bySecondSegment, byLanguage,
+    total: urls.length,
+    candidates: urls.filter(isCandidate).length,
+    cached,
+    scope: `/${scope.join('/')}`,
+    byFirstSegment,
+    bySecondSegment,
+    byLanguage,
+    byKind,
+    redirects,
+    notToMigrate,
   };
 }
 
@@ -106,10 +127,12 @@ function coverGroups(map, total) {
  *   segment below `scope`.
  */
 export function proposal(dist, { cacheAllUpTo = 500 } = {}) {
-  const { total } = dist;
+  const total = dist.candidates ?? dist.total;
   if (total <= cacheAllUpTo) return { all: true, total };
   const groups = coverGroups(dist.byFirstSegment, total);
-  return { all: false, scope: dist.scope, groups };
+  return {
+    all: false, total, scope: dist.scope, groups,
+  };
 }
 
 function label(key) {
@@ -132,7 +155,7 @@ function tableOf(title, map) {
 }
 
 function sentenceOf(dist, prop) {
-  const { total } = dist;
+  const total = dist.candidates ?? dist.total;
   if (prop.all) {
     return `All ${total} URLs are at or under the caching threshold, so cache every URL.`;
   }
@@ -151,13 +174,16 @@ function sentenceOf(dist, prop) {
  * @param {ReturnType<typeof proposal>} prop
  */
 export function renderUrlsMd(dist, prop) {
+  const known = dist.total - (dist.candidates ?? dist.total);
   return [
     '# URL distribution',
     '',
     sentenceOf(dist, prop),
     '',
-    `Total URLs: ${dist.total}`,
+    `Total URLs: ${dist.total}${known ? ` (${known} known as redirect, error or binary)` : ''}; `
+      + `${dist.cached ?? 0} of ${dist.total} URLs cached.`,
     '',
+    ...(dist.byKind ? [tableOf('By kind', dist.byKind), ''] : []),
     ...(dist.scope !== '/'
       ? [`All URLs share the prefix \`${dist.scope}\`; the segments below are relative to it.`, '']
       : []),
@@ -167,7 +193,32 @@ export function renderUrlsMd(dist, prop) {
     '',
     tableOf('By language', dist.byLanguage),
     '',
+    ...redirectSection(dist.redirects ?? []),
+    ...notToMigrateSection(dist.notToMigrate ?? []),
   ].join('\n');
+}
+
+function redirectSection(redirects) {
+  if (!redirects.length) return [];
+  const rows = redirects.slice(0, TABLE_ROWS).map((r) => `| ${r.url} | `
+    + `${r.redirect?.status ?? ''} | ${r.redirect?.target ?? r.finalUrl ?? ''} | `
+    + `${r.redirect?.targetInList ? 'yes' : 'no'} |`);
+  const rest = redirects.length - TABLE_ROWS;
+  if (rest > 0) rows.push(`| … and ${rest} more | | | |`);
+  return [
+    '## Redirects', '', '| from | status | to | target in list |', '| --- | --- | --- | --- |',
+    ...rows, '',
+  ];
+}
+
+function notToMigrateSection(records) {
+  if (!records.length) return [];
+  const why = (r) => (r.kind === 'redirect' ? `redirect → migrate the target instead`
+    : r.kind === 'error' ? `error ${r.http?.status ?? ''}`.trim()
+      : r.kind === 'binary' ? `binary ${r.http?.contentType ?? ''}`.trim() : r.kind);
+  const lines = records.slice(0, TABLE_ROWS).map((r) => `- ${r.url} — ${why(r)}`);
+  if (records.length > TABLE_ROWS) lines.push(`- … and ${records.length - TABLE_ROWS} more`);
+  return ['## Not to migrate', '', ...lines, ''];
 }
 
 function fileName(prefix) {
@@ -201,7 +252,8 @@ export async function writeSubsets(urls, prop, dir) {
   const files = [];
   const scope = prop.scope === '/' ? [] : prop.scope.split('/').filter(Boolean);
   for (const group of prop.groups) {
-    const matching = urls.filter((u) => (relativeSegments(u.url, scope)[0] ?? '') === group.prefix);
+    const matching = urls.filter(isCandidate)
+      .filter((u) => (relativeSegments(u.url, scope)[0] ?? '') === group.prefix);
     const file = path.join(subsetsDir, `${fileName(group.prefix)}.txt`);
     await writeFile(file, linesOf(matching));
     files.push(file);
@@ -239,7 +291,8 @@ export async function pick(urls, {
   const groupOf = (url) => relativeSegments(url, scope)[0] ?? '';
   const skip = new Set(exclude.map(groupOf));
   const byGroup = new Map();
-  for (const { url } of urls) {
+  for (const record of urls.filter(isCandidate)) {
+    const { url } = record;
     const group = groupOf(url);
     if (skip.has(group) || (fill && !isPage(url))) continue;
     byGroup.set(group, [...(byGroup.get(group) ?? []), url]);
