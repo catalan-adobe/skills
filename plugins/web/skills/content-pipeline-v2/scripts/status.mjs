@@ -3,8 +3,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runAllChecks, runCheck } from './lib/checks.mjs';
+import { createServer } from 'node:net';
 import {
-  init, readProject, resolveProject, writeProject,
+  init, readProject, resolveProject, upsertSection, writeProject,
 } from './lib/project.mjs';
 import { stepById, stepStates } from './lib/steps.mjs';
 import {
@@ -22,6 +23,8 @@ status.mjs approve <step> [<subset>...]
                                   record the operator's yes for a gated step (cache);
                                   subset names select "urls/subsets/<name>.txt" (default: all)
 status.mjs urls                  distribution + caching proposal from urls/urls.json
+status.mjs free-port [--from 3001]
+                                 a loopback port nothing listens on (for the cache proxy)
 status.mjs pick [--count 2] [--exclude <url>]...
                                  one reachable URL per largest group, for checks
 status.mjs setup [--install] [--skills-repo <owner/repo>] [--skills-ref <branch>]
@@ -123,8 +126,39 @@ export async function setup({
   }
   await writeSetupJson(project, detection);
   const reasons = missingReasons(detection);
+  await upsertSection(project, 'setup', setupSection(detection, installs, reasons));
   if (reasons.length) process.exitCode = 1;
   return { detection, reasons, installs };
+}
+
+/** The `## setup` body: what was found, what was installed, what is still missing. */
+function setupSection(detection, installs, reasons) {
+  const skills = Object.entries(detection.skills)
+    .map(([name, s]) => `${name} (${s.ok ? s.path : 'missing'})`).join(', ');
+  const pkg = detection.packages['franklin-bulk-shared'].ok ? 'present' : 'missing';
+  const lines = [
+    `Node ${detection.node.version}; playwright-cli `
+      + `${detection.playwrightCli.ok ? detection.playwrightCli.path : 'missing'}; `
+      + `franklin-bulk-shared ${pkg}.`,
+    `Skills: ${skills}.`,
+  ];
+  if (installs.length) {
+    const outcomes = installs
+      .map((i) => `${i.target} ${i.ok ? 'ok' : `failed (${i.error ?? 'see command'})`}`);
+    lines.push(`Installed in project scope: ${outcomes.join('; ')}.`);
+  }
+  lines.push(reasons.length ? `Still missing: ${reasons.join('; ')}.` : 'Every precondition met.');
+  return lines.join('\n');
+}
+
+/** The first TCP port at or above `from` on which nothing listens (loopback). */
+export function freePort(from = 3001) {
+  const tryPort = (port) => new Promise((resolve) => {
+    const srv = createServer();
+    srv.once('error', () => resolve(tryPort(port + 1)));
+    srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(port)));
+  });
+  return tryPort(from);
 }
 
 /**
@@ -159,6 +193,7 @@ const FLAGS = {
   approve: [],
   urls: [],
   setup: ['--install', '--skills-repo', '--skills-ref'],
+  'free-port': ['--from'],
 };
 
 function rejectUnknownFlags(name, argv) {
@@ -195,6 +230,7 @@ const COMMANDS = {
     return approve(id, subsets, project);
   },
   urls: (argv, project) => urls(project),
+  'free-port': async (argv) => ({ port: await freePort(Number(flag(argv, '--from') ?? 3001)) }),
   setup: (argv, project) => setup({
     shouldInstall: argv.includes('--install'),
     skillsRepo: flag(argv, '--skills-repo'),

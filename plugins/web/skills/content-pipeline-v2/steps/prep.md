@@ -45,8 +45,8 @@ so the probe's configuration is in effect.
 
 ## REPORT.md
 
-Append a `## prep` section: overlays found, which strategy cleaned each, anything left on
-screen, and the hide rules `prep-verify` and `cache` should apply.
+Write the `## prep` section (replace a previous one): overlays found, which strategy cleaned
+each, anything left on screen, and the hide rules `prep-verify` and `cache` should apply.
 
 ## Done
 

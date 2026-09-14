@@ -36,8 +36,9 @@ quick mode is enough unless a new overlay appears.
 
 ## REPORT.md
 
-Append a `## prep-verify` section: the URLs checked, whether the recipe held, what was
-added, and whether `cache` can rely on hide rules alone or needs dismiss clicks.
+Write the `## prep-verify` section (replace a previous one): the URLs checked, whether the
+recipe held, what was added, and whether `cache` can rely on hide rules alone or needs dismiss
+clicks.
 
 ## Done
 

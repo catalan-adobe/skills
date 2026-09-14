@@ -383,3 +383,19 @@ test('prep-verify counts path prefixes below the scope every URL in urls.json sh
   assert.equal(samePrefix.pass, false);
   assert.match(samePrefix.reasons.join(' '), /cover 1 path prefix/);
 });
+
+test('checkCache accepts URL cells wrapped as <url> by a markdown autofix', () => {
+  const files = withCache('| url | status |\n| --- | --- |\n'
+    + '| <https://example.com/a> | cached |\n| https://example.com/b | failed |\n');
+  assert.deepEqual(checkCache(files), { pass: true, reasons: [] });
+});
+
+test('checkReport rejects a step section that appears twice', () => {
+  const files = {
+    'probe/browser-recipe.json': '{}', 'probe/probe.md': 'ok',
+    'REPORT.md': '## probe\n\nfirst\n\n## probe\n\nsecond\n',
+  };
+  const result = checkReport(files);
+  assert.equal(result.pass, false);
+  assert.deepEqual(result.reasons, ['migration/REPORT.md has 2 "## probe" sections; keep one']);
+});

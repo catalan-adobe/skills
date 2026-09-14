@@ -39,8 +39,8 @@ skill's script expects the command by name.
 
 ## REPORT.md
 
-Append a `## probe` section: the configuration that worked (or that none did), the
-protection detected, and the flags `prep`, `prep-verify` and `cache` must use.
+Write the `## probe` section (replace a previous one): the configuration that worked (or that
+none did), the protection detected, and the flags `prep`, `prep-verify` and `cache` must use.
 
 ## Done
 

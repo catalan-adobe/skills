@@ -63,3 +63,34 @@ export async function init({
   await writeFile(path.join(project.dir, '.gitignore'), '.work/\ncache/.page-cache/\n');
   return { project: project.dir, created: !existing, data };
 }
+
+const REPORT_TITLE = '# Migration report';
+
+/**
+ * Writes the `## <id>` section of `migration/REPORT.md`: replaces the existing one in place
+ * or appends it, so a step re-run never leaves two sections behind. Creates the file with its
+ * title when absent.
+ *
+ * @param {ReturnType<typeof resolveProject>} project
+ * @param {string} id Step id.
+ * @param {string} body Section body, without the heading.
+ */
+export async function upsertSection(project, id, body) {
+  const current = await readFile(project.report, 'utf8').catch(() => `${REPORT_TITLE}\n`);
+  const section = `## ${id}\n\n${body.trim()}\n`;
+  const heading = new RegExp(`^## ${id.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[ \\t]*$`, 'm');
+  const lines = current.split('\n');
+  const start = lines.findIndex((l) => heading.test(l));
+  let next;
+  if (start < 0) {
+    next = `${current.replace(/\n*$/, '')}\n\n${section}`;
+  } else {
+    let end = start + 1;
+    while (end < lines.length && !/^## /.test(lines[end])) end += 1;
+    const before = lines.slice(0, start).join('\n').replace(/\n*$/, '');
+    const after = lines.slice(end).join('\n').replace(/^\n*/, '');
+    next = `${before}\n\n${section}${after ? `\n${after}` : ''}`;
+  }
+  await mkdir(project.dir, { recursive: true });
+  await writeFile(project.report, next);
+}

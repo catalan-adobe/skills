@@ -30,8 +30,9 @@ None. The runner does the detection and the installs.
 
 ## REPORT.md
 
-Append a `## setup` section: which preconditions were already present, which were
-installed and where, and the exact `playwright-cli` path the next steps will call.
+`status.mjs setup` writes the `## setup` section itself (what was present, what was
+installed, what is missing). Add to it only what the runner cannot know: the harness mode
+you chose and the model each tier will run on — or that the harness cannot switch models.
 
 ## Done
 

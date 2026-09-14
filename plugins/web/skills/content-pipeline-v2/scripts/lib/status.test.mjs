@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:net';
 import { resolveProject } from './project.mjs';
 import { pickUrls, setup } from '../status.mjs';
 
@@ -403,3 +404,28 @@ test('init records --skills-repo and --skills-ref; every command rejects unknown
       assert.match(err.stderr, /Unknown flag/, args.join(' '));
     }
   });
+
+test('setup writes its own "## setup" section into REPORT.md, once', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/');
+  const project = resolveProject(cwd);
+  await setup({ shouldInstall: false, nodeVersion: '24.0.0' }, project);
+  await setup({ shouldInstall: false, nodeVersion: '24.0.0' }, project);
+  process.exitCode = 0;
+  const report = await readFile(path.join(cwd, 'migration/REPORT.md'), 'utf8');
+  assert.equal((report.match(/^## setup$/gm) ?? []).length, 1);
+  assert.match(report, /Node 24\.0\.0/);
+  assert.match(report, /skill browser-probe not found/);
+});
+
+test('free-port answers a port nothing listens on, from the requested start', async () => {
+  const cwd = await fresh();
+  const out = await cli(cwd, 'free-port', '--from', '3001');
+  assert.ok(Number.isInteger(out.port) && out.port >= 3001, JSON.stringify(out));
+  const srv = createServer();
+  await new Promise((r) => srv.listen(out.port, '127.0.0.1', r));
+  try {
+    const next = await cli(cwd, 'free-port', '--from', String(out.port));
+    assert.ok(next.port > out.port, 'the busy port is skipped');
+  } finally { await new Promise((r) => srv.close(r)); }
+});

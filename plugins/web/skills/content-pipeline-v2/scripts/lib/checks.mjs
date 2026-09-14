@@ -160,9 +160,14 @@ function approvedSelection(files) {
   return { urls: [], reasons };
 }
 
-/** Splits a markdown table row into trimmed, non-empty cells. */
+/**
+ * Splits a markdown table row into trimmed, non-empty cells; a URL cell wrapped as `<url>`
+ * (what a markdown autofix does to bare URLs) counts as the URL.
+ */
 function tableCells(line) {
-  return line.split('|').map((cell) => cell.trim()).filter((cell) => cell.length > 0);
+  return line.split('|')
+    .map((cell) => cell.trim().replace(/^<(https?:\/\/[^>]+)>$/, '$1'))
+    .filter((cell) => cell.length > 0);
 }
 
 /** `cache`: `cache/cache.md` lists every URL of the approved selection as cached/failed/skipped. */
@@ -206,9 +211,12 @@ const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function checkReport(files) {
   const md = files['REPORT.md'];
   if (md === undefined) return { pass: false, reasons: ['missing migration/REPORT.md'] };
-  const reasons = stepsThatRan(files)
-    .filter((id) => !new RegExp(`^##\\s+${escapeRegExp(id)}\\s*$`, 'm').test(md))
-    .map((id) => `migration/REPORT.md has no "## ${id}" section`);
+  const reasons = stepsThatRan(files).flatMap((id) => {
+    const count = (md.match(new RegExp(`^##\\s+${escapeRegExp(id)}\\s*$`, 'gm')) ?? []).length;
+    if (count === 0) return [`migration/REPORT.md has no "## ${id}" section`];
+    if (count > 1) return [`migration/REPORT.md has ${count} "## ${id}" sections; keep one`];
+    return [];
+  });
   return { pass: reasons.length === 0, reasons };
 }
 
