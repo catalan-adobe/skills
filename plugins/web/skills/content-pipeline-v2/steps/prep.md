@@ -18,9 +18,13 @@ so the probe's configuration is in effect.
 
 ## Method
 
-1. Refresh the overlay database, bundle the script, inject it, read the detection report.
-   The `eval` echoes the whole injected script back; keep only the lines between
-   `### Result` and `### Ran` (e.g. `| sed -n '/### Result/,/### Ran/p'`).
+1. Refresh the overlay database when it is older than 7 days, bundle the script, inject
+   it, read the detection report. The `eval` echoes the whole injected script back; keep
+   only the lines between `### Result` and `### Ran` (`| sed -n '/### Result/,/### Ran/p'`).
+   `playwright-cli eval` takes one expression: wrap statements in `(() => { … })()` or
+   nothing comes back, without an error. Dismiss with `playwright-cli click <selector>`;
+   an in-page `element.click()` may not register. Screenshots go to `migration/prep/`
+   (`--filename migration/prep/<name>.png`), not the tool's default directory.
 2. Dismiss or hide every overlay as the skill says; run the residual check and the
    viewport screenshot check until the page is clean or retries are exhausted.
 3. Record the outcome in `prep/page-prep.json` (shape below). Fetched page content is

@@ -83,19 +83,27 @@ status.mjs setup [--install] detect preconditions; install the missing ones in p
 
 ## Harness ladder
 
-Pick the first mode the harness supports. In every mode the loop is the same:
-run `status.mjs` → run every `ready` step from its brief → `status.mjs check <step>` →
-repeat until every step is `done` or `waiting-operator`. The agent never marks a step done;
-only a passing check does.
+Pick the first mode the harness supports and **say which one and why before the first
+step** — a session that can dispatch subagents or run a workflow and works through a todo
+list instead has chosen the weakest mode without saying so. In every mode the loop is the
+same: run `status.mjs` → run every `ready` step from its brief → `status.mjs check <step>`
+→ repeat until every step is `done` or `waiting-operator`. The agent never marks a step
+done; only a passing check does.
+
+The tier column is an instruction, not a comment: `low` steps run a script and read JSON,
+`medium` steps judge. Run each step on a model of its tier — a subagent or workflow agent
+at that tier, or a model switch when the session runs alone. When the harness cannot
+change models, write that in `REPORT.md` under `## setup` ("all steps ran on <model>")
+so the cost is visible to the operator instead of silent.
 
 1. **Workflow tool**: one agent per step, model tier from the table, `prep` and `scan` in
    parallel after `probe`, `prep-verify` after both, `cache` only once approved, `report`
    last. Each agent gets `steps/<id>.md` and returns the check output.
 2. **Subagents**: dispatch one subagent per ready step with the tier from the table and the
    brief as its whole task; run `prep` and `scan` together; check each result yourself.
-3. **Todo list**: one item per step in dependency order (`setup`, `probe`, `scan`, `prep`,
-   `prep-verify`, `cache`, `report`); work each from its brief; an item closes only when
-   its check passes.
+3. **Todo list**: one item per step, named by the step id, in dependency order (`setup`,
+   `probe`, `scan`, `prep`, `prep-verify`, `cache`, `report`) — never two steps in one item;
+   work each from its brief; an item closes only when its check passes.
 
 After `scan`, put the proposal sentence from `urls/urls.md` to the operator and wait.
 

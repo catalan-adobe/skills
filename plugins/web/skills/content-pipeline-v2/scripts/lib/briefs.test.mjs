@@ -90,3 +90,20 @@ test('the project-structure reference lists every declared artefact', async () =
     assert.ok(line.length <= MAX_LINE_LENGTH, `project-structure.md:${i + 1} too long`);
   });
 });
+
+test('browser briefs keep screenshots under migration/ and warn about eval expressions',
+  async () => {
+    for (const id of ['prep', 'prep-verify']) {
+      const text = await readBrief(id);
+      assert.ok(text.includes('migration/prep/'), `${id}: screenshots under migration/prep/`);
+      assert.match(text, /\(\(\) => \{ … \}\)\(\)/, `${id}: eval takes an expression`);
+    }
+  });
+
+test('SKILL.md makes the harness rung and the tier column actionable', async () => {
+  const text = await readFile(path.join(skillRoot, 'SKILL.md'), 'utf8');
+  assert.match(text, /say which one and why before the first\s+step/);
+  assert.match(text, /The tier column is an instruction/);
+  assert.match(text, /REPORT\.md.*## setup/s);
+  assert.match(text, /never two steps in one item/);
+});
