@@ -272,3 +272,19 @@ test('pick returns one reachable URL per largest group, skipping excluded groups
   assert.deepEqual(few.map((p) => p.group), ['diseases', 'clinics', 'about', '']);
   assert.equal(few.length, 4, 'no more picks than groups');
 });
+
+test('urls.md opens with the proposal and caps every table at 25 rows', () => {
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    url: `https://x.example/g${String(i).padStart(2, '0')}/page`,
+  }));
+  const dist = distribution(many);
+  const md = renderUrlsMd(dist, proposal(dist, { cacheAllUpTo: 10 }));
+  const lines = md.split('\n');
+  assert.equal(lines[0], '# URL distribution');
+  assert.match(lines[2], /^40 URLs exceed the caching threshold/, 'proposal is the first line');
+  const firstTable = md.slice(md.indexOf('## By first path segment'), md.indexOf('## By second'));
+  assert.equal((firstTable.match(/^\| g\d\d \|/gm) ?? []).length, 25);
+  assert.match(firstTable, /\| … and 15 more \| 15 \|/);
+  const small = renderUrlsMd(distribution(mixed), { all: true, total: 5 });
+  assert.ok(!small.includes('more |'), 'no truncation row under the cap');
+});

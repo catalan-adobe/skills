@@ -116,8 +116,18 @@ function label(key) {
   return key === '' ? '(root)' : key;
 }
 
+const TABLE_ROWS = 25;
+
+/** A count table, the long tail folded into one row so the file stays readable in full. */
 function tableOf(title, map) {
-  const rows = sortedEntries(map).map(([key, count]) => `| ${label(key)} | ${count} |`);
+  const entries = sortedEntries(map);
+  const shown = entries.slice(0, TABLE_ROWS);
+  const rest = entries.slice(TABLE_ROWS);
+  const rows = shown.map(([key, count]) => `| ${label(key)} | ${count} |`);
+  if (rest.length) {
+    const total = rest.reduce((sum, [, count]) => sum + count, 0);
+    rows.push(`| … and ${rest.length} more | ${total} |`);
+  }
   return [`## ${title}`, '', '| value | count |', '| --- | --- |', ...rows].join('\n');
 }
 
@@ -134,8 +144,8 @@ function sentenceOf(dist, prop) {
 }
 
 /**
- * Markdown for `urls/urls.md`: count tables for each breakdown and one sentence stating the
- * caching proposal for the agent to put to the operator.
+ * Markdown for `urls/urls.md`: the caching proposal in one sentence first (for the agent to
+ * put to the operator), then a count table per breakdown, each capped at 25 rows.
  *
  * @param {ReturnType<typeof distribution>} dist
  * @param {ReturnType<typeof proposal>} prop
@@ -143,6 +153,8 @@ function sentenceOf(dist, prop) {
 export function renderUrlsMd(dist, prop) {
   return [
     '# URL distribution',
+    '',
+    sentenceOf(dist, prop),
     '',
     `Total URLs: ${dist.total}`,
     '',
@@ -154,8 +166,6 @@ export function renderUrlsMd(dist, prop) {
     tableOf('By second path segment', dist.bySecondSegment),
     '',
     tableOf('By language', dist.byLanguage),
-    '',
-    sentenceOf(dist, prop),
     '',
   ].join('\n');
 }
