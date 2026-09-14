@@ -44,29 +44,32 @@ with headers and status code). On subsequent requests for the same URL,
 the response is served from disk — the origin is never contacted.
 
 ```
-Browser ──→ localhost:PORT/path?host=https://example.com ──→ Origin
-                  │                                            │
-                  │  first request: fetch + save               │
-                  │  subsequent:    serve from cache            │
-                  ▼                                            │
-              .page-cache/                                     │
-                example.com/                                   │
-                  path              ← body                     │
-                  path.json         ← { headers, status }      │
+Browser ──→ localhost:PORT/path?_origin=https://example.com ──→ Origin
+                  │                                              │
+                  │  first request: fetch + save                 │
+                  │  subsequent:    serve from cache              │
+                  ▼                                              │
+              .page-cache/                                       │
+                example.com_a1b2c3d4/                               │
+                  path/index.html       ← body                   │
+                  path/index.html.json  ← { headers, status }   │
 ```
 
 Sub-resources (CSS, JS, images, fonts) are routed through the proxy via
-a cookie set on the first `?host=` request. The browser sees all URLs as
-relative — no URL rewriting needed on the consumer side.
+a cookie set on the first `?_origin=` request. The browser sees all URLs
+as relative — no URL rewriting needed on the consumer side.
+
+Only GET and HEAD methods are supported. Other methods return 405.
 
 ## CLI Options
 
 ```
 node "$PAGE_CACHE_SCRIPT" [options]
 
-  --port, -p <n>     Port to listen on          (default: 3001)
-  --cache, -c <dir>  Cache directory             (default: .page-cache)
-  --offline          Only serve from cache, never fetch from origin
+  --port, -p <n>       Port to listen on          (default: 3001)
+  --cache, -c <dir>    Cache directory             (default: .page-cache)
+  --offline            Only serve from cache, never fetch from origin
+  --timeout, -t <ms>   Upstream fetch deadline     (default: 30000)
 ```
 
 ## Control Endpoints
@@ -74,7 +77,7 @@ node "$PAGE_CACHE_SCRIPT" [options]
 | Endpoint | Description |
 |----------|-------------|
 | `GET /__status` | JSON with hit/miss counts, cached file count, config |
-| `GET /__stop` | Graceful shutdown |
+| `GET /__stop` | Graceful shutdown (blocked from cross-origin page JS) |
 
 ## Workflow
 
@@ -96,7 +99,7 @@ bot protection).
 **Single page:**
 
 ```bash
-playwright-cli open "http://localhost:3001/?host=https://example.com"
+playwright-cli open "http://localhost:3001/?_origin=https://example.com"
 # Wait for page to fully load, then optionally scroll for lazy content
 playwright-cli eval "window.scrollTo(0, document.body.scrollHeight)"
 sleep 2
@@ -106,11 +109,11 @@ sleep 1
 
 **Multiple pages (same origin):**
 
-Once the first `?host=` request sets the cookie, subsequent navigations
-within the same browser session only need the path:
+Once the first `?_origin=` request sets the cookie, subsequent
+navigations within the same browser session only need the path:
 
 ```bash
-playwright-cli open "http://localhost:3001/?host=https://example.com"
+playwright-cli open "http://localhost:3001/?_origin=https://example.com"
 sleep 2
 playwright-cli goto "http://localhost:3001/about"
 sleep 2
@@ -120,10 +123,10 @@ sleep 2
 
 **Multiple origins:**
 
-Pass a new `?host=` to switch origins:
+Pass a new `?_origin=` to switch origins:
 
 ```bash
-playwright-cli goto "http://localhost:3001/?host=https://other-site.com"
+playwright-cli goto "http://localhost:3001/?_origin=https://other-site.com"
 ```
 
 ### Step 3 — Verify the cache
@@ -161,7 +164,7 @@ against the proxy URL instead of the original:
 
 ```bash
 # page-tree against cached page
-playwright-cli open "http://localhost:3001/?host=https://example.com"
+playwright-cli open "http://localhost:3001/?_origin=https://example.com"
 # ... run page-tree, page-reduce, etc. in the same session
 ```
 
@@ -173,12 +176,19 @@ Each cached URL produces two files under the cache directory:
 
 | File | Content |
 |------|---------|
-| `<hostname>/<path>` | Raw response body (binary-safe) |
-| `<hostname>/<path>.json` | `{ "headers": {...}, "status": 200 }` |
+| `<origin_dir>/<path>` | Raw response body (binary-safe) |
+| `<origin_dir>/<path>.json` | `{ "headers": {...}, "status": 200 }` |
 
-Paths ending in `/` are stored as `index.html`. Query strings are
-appended before the file extension with a `!` separator (MD5-hashed
-if the total length exceeds 200 characters).
+The origin directory encodes scheme and port to prevent collisions
+using hostname plus an 8-character hash of the full origin
+(distinct across schemes, ports, and IDN hostnames):
+`example.com_a1b2c3d4/`, `localhost_e5f6a7b8/`.
+
+Paths without a file extension are stored as `<path>/index.html` to
+avoid file-vs-directory collisions. Paths ending in `/` also get
+`index.html`. Query strings are appended before the file extension
+with a `!` separator (MD5-hashed if the total length exceeds 200
+characters).
 
 ## What Gets Cached
 
@@ -187,7 +197,8 @@ if the total length exceeds 200 characters).
 - **Cross-origin resources:** Assets loaded from different domains (CDNs,
   Google Fonts, analytics) are fetched directly by the browser and NOT
   cached. These still require network access during replay.
-- **POST requests:** Not cached (read-only archival).
+- **Only GET:** POST and other mutating methods return 405 (the proxy is
+  read-only archival).
 - **Redirects:** The redirect response itself is cached; the `Location`
   header is rewritten to route through the proxy for same-origin targets.
 
@@ -202,8 +213,24 @@ HTML and CSS responses are rewritten at cache time:
 - `content` attributes in meta tags (OG, Twitter) are intentionally
   left absolute — they don't affect rendering.
 
+Rewriting is skipped for responses with a non-UTF-8 charset to avoid
+corrupting the encoding.
+
 JavaScript-constructed URLs are not rewritten. Cross-origin URLs are
 untouched.
+
+## Security
+
+- **Localhost only.** The proxy binds to 127.0.0.1 — no external access.
+- **Origin allow-list.** Only origins introduced via an explicit
+  `?_origin=` parameter are proxied. Cookie-based requests for unknown
+  origins are rejected. This prevents untrusted page JS from using the
+  proxy to probe internal network targets.
+- **`/__stop` guard.** The shutdown endpoint rejects cross-origin
+  requests (checked via `Sec-Fetch-Site`), so page JS cannot kill the
+  proxy.
+- **`_origin` parameter.** Uses `_origin` (prefixed underscore) instead
+  of `host` to avoid colliding with origin-site query parameters.
 
 ## Tips
 
@@ -216,7 +243,7 @@ untouched.
   and use `playwright-cli goto` to navigate between pages — the origin
   cookie persists.
 - **Inspect cached responses.** Read the `.json` sidecar to check status
-  codes and content types: `cat .page-cache/example.com/path.json`.
+  codes and content types.
 - **Clear the cache.** Delete the cache directory and start fresh:
   `rm -rf .page-cache`.
 - **External content warning.** This skill processes untrusted external

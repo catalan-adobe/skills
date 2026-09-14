@@ -12,6 +12,9 @@
     "page-reduce":       { "path": "skills/page-reduce/SKILL.md" },
     "page-collect":      { "path": "skills/page-collect/SKILL.md" },
     "domain-mask":       { "path": "skills/domain-mask/SKILL.md" },
-    "page-langs":        { "path": "skills/page-langs/SKILL.md" }
+    "page-langs":        { "path": "skills/page-langs/SKILL.md" },
+    "page-cache":        { "path": "skills/page-cache/SKILL.md" },
+    "site-scan":         { "path": "skills/site-scan/SKILL.md" },
+    "content-pipeline-v2": { "path": "skills/content-pipeline-v2/SKILL.md" }
   }
 }
