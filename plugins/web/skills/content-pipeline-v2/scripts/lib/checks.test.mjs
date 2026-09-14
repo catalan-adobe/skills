@@ -139,8 +139,8 @@ const AB = stored('https://example.com/a', 'https://example.com/b');
 const withCache = (rows, extra = {}) => ({
   'project.json': JSON.stringify({ approved: { cache: true } }),
   'urls/urls.json': JSON.stringify([
-    { url: 'https://example.com/a' },
-    { url: 'https://example.com/b' },
+    { url: 'https://example.com/a', kind: 'page' },
+    { url: 'https://example.com/b', kind: 'page' },
   ]),
   'cache/cache.md': rows,
   ...extra,
@@ -208,6 +208,7 @@ test('checkCache follows named subsets when project.json.cacheSelection lists th
   const files = {
     'project.json': JSON.stringify({ approved: { cache: true }, cacheSelection: ['blog'] }),
     'urls/subsets/blog.txt': 'https://example.com/blog/a\nhttps://example.com/blog/b\n',
+    'urls/urls.json': JSON.stringify([{ url: 'https://example.com/blog/a', kind: 'page' }]),
     'cache/cache.md': '| https://example.com/blog/a | cached |\n'
       + '| https://example.com/blog/b | failed |\n',
   };
@@ -242,8 +243,8 @@ test('checkCache matches the URL cell exactly, not as a substring of another row
   const files = {
     'project.json': JSON.stringify({ approved: { cache: true } }),
     'urls/urls.json': JSON.stringify([
-      { url: 'https://example.com/' },
-      { url: 'https://example.com/a' },
+      { url: 'https://example.com/', kind: 'page' },
+      { url: 'https://example.com/a', kind: 'page' },
     ]),
     'cache/cache.md': '| https://example.com/a | cached |\n',
   };
@@ -257,7 +258,7 @@ test('checkCache requires the status cell, not just the word appearing in the UR
   const files = {
     'project.json': JSON.stringify({ approved: { cache: true } }),
     'urls/urls.json': JSON.stringify([
-      { url: 'https://example.com/failed-logins' },
+      { url: 'https://example.com/failed-logins', kind: 'page' },
     ]),
     'cache/cache.md': '| https://example.com/failed-logins | |\n',
   };
@@ -333,7 +334,7 @@ test('checks never throw on JSON that parses to null or a scalar', () => {
 });
 
 test('cache is not done without the recorded approval, and the status cell is exact', () => {
-  const urls = JSON.stringify([{ url: 'https://example.com/a' }]);
+  const urls = JSON.stringify([{ url: 'https://example.com/a', kind: 'page' }]);
   const base = {
     'urls/urls.json': urls,
     'cache/cache.md': '| URL | status |\n| https://example.com/a | cached |',

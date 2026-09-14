@@ -134,10 +134,11 @@ export function checkScan(files) {
   return { pass: reasons.length === 0, reasons };
 }
 
-function urlsFromUrlsJson(text) {
-  if (text === undefined) return [];
-  const { data } = safeJson(text);
-  return Array.isArray(data) ? data.map((u) => u?.url).filter(Boolean) : [];
+function urlsFromUrlsJson(text, asMap = false) {
+  const { data } = text === undefined ? { data: [] } : safeJson(text);
+  const records = Array.isArray(data) ? data.filter((u) => u?.url) : [];
+  if (asMap) return new Map(records.map((u) => [u.url, u]));
+  return records.map((u) => u.url);
 }
 
 /** The approved caching selection from `project.json.cacheSelection` ("all" or subset names). */
@@ -214,9 +215,9 @@ const ASSET = /\.(css|js|mjs|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|mp4|
 
 /**
  * `cache`: `cache/cache.md` lists every URL of the approved selection as cached, failed or
- * skipped; every `cached` row has its body in the proxy's cache directory; and the cache
- * holds at least one asset — a browser requests CSS, scripts and images through the proxy,
- * a plain HTTP fetch does not.
+ * skipped; every `cached` row has its body in the proxy's cache directory and a `kind` in
+ * the inventory (the driver records it); and the cache holds at least one asset — a browser
+ * requests CSS, scripts and images through the proxy, a plain HTTP fetch does not.
  *
  * @param {Record<string, string>} files Text files under `migration/`.
  * @param {string[]} [cacheFiles] Paths under `cache/.page-cache/`, relative to it.
@@ -230,6 +231,8 @@ export function checkCache(files, cacheFiles = []) {
   const statusPattern = /^(cached|failed|skipped)$/i;
   const rows = md.split('\n').map(tableCells);
   const stored = new Set(cacheFiles);
+  const inventory = urlsFromUrlsJson(files['urls/urls.json'], true);
+  const kinds = new Set(['page', 'binary', 'redirect', 'error', 'unreachable']);
   let cachedRows = 0;
   const rowReasons = urls.flatMap((url) => {
     const cells = rows.find((row) => row[0] === url);
@@ -239,7 +242,12 @@ export function checkCache(files, cacheFiles = []) {
     }
     if (cells[1].toLowerCase() !== 'cached') return [];
     cachedRows += 1;
-    return stored.has(cacheRelativePath(url)) ? [] : [`no stored body for ${url} in the cache`];
+    const reasons = [];
+    if (!stored.has(cacheRelativePath(url))) reasons.push(`no stored body for ${url} in the cache`);
+    if (!kinds.has(inventory.get(url)?.kind)) {
+      reasons.push(`urls/urls.json has no kind for ${url}; the cache driver records it`);
+    }
+    return reasons;
   });
   const assetReasons = cachedRows && !cacheFiles.some((f) => ASSET.test(f))
     ? ['the cache holds pages but no CSS, JS, image or font: warmed without a browser']

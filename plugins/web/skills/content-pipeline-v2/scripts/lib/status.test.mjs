@@ -133,8 +133,8 @@ test('approve cache <subset> persists the selection so check cache scopes to it'
   await writeFile(path.join(m, 'project.json'), JSON.stringify(project, null, 2));
   await mkdir(path.join(m, 'urls'), { recursive: true });
   const entries = [
-    { url: 'https://example.com/blog/a', level1: 'blog' },
-    { url: 'https://example.com/blog/b', level1: 'blog' },
+    { url: 'https://example.com/blog/a', level1: 'blog', kind: 'page' },
+    { url: 'https://example.com/blog/b', level1: 'blog', kind: 'page' },
     { url: 'https://example.com/blog/c', level1: 'blog' },
     { url: 'https://example.com/docs/a', level1: 'docs' },
   ];

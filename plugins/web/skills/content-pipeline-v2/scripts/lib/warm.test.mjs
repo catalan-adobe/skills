@@ -7,7 +7,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { cacheRelativePath } from './checks.mjs';
 import { resolveProject, writeProject } from './project.mjs';
-import { warm } from './warm.mjs';
+import { mergeScan, readInventory, writeInventory } from './inventory.mjs';
+import {
+  classify, parseEval, siteUrl, warm,
+} from './warm.mjs';
 
 const ORIGIN = 'https://site.example';
 
@@ -16,7 +19,7 @@ const ORIGIN = 'https://site.example';
  * requested with `?_origin=` in the proxy's file layout, and in offline mode answers only
  * from what it stored. `gone` URLs answer 404 online.
  */
-function fakeProxy(cacheDir, { gone = new Set() } = {}) {
+function fakeProxy(cacheDir, { gone = new Set(), moved = new Map() } = {}) {
   const stored = new Map();
   let offline = false;
   const server = createServer(async (req, res) => {
@@ -34,13 +37,29 @@ function fakeProxy(cacheDir, { gone = new Set() } = {}) {
       res.end(stored.get(target));
       return;
     }
-    if (gone.has(target)) { res.statusCode = 404; res.end('gone'); return; }
+    const store = async (t, status, headers, body) => {
+      const file = path.join(cacheDir, cacheRelativePath(t));
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, body);
+      await writeFile(`${file}.json`, JSON.stringify({ status, headers }));
+      stored.set(t, body);
+    };
+    if (gone.has(target)) {
+      await store(target, 404, { 'content-type': 'text/html' }, 'not found');
+      res.statusCode = 404; res.end('gone'); return;
+    }
+    if (moved.has(target)) {
+      // Like the real proxy: a same-origin Location is rewritten to route through the proxy.
+      const to = new URL(moved.get(target));
+      const viaProxy = `http://${req.headers.host}${to.pathname}${to.search}`;
+      await store(target, 301, { 'content-type': 'text/html', location: viaProxy }, '');
+      res.statusCode = 301; res.setHeader('location', viaProxy); res.end(); return;
+    }
+    const type = target.endsWith('.css') ? 'text/css'
+      : target.endsWith('.pdf') ? 'application/pdf' : 'text/html; charset=utf-8';
     const body = target.endsWith('.css') ? 'body{}' : `<html>${target}</html>`;
-    const file = path.join(cacheDir, cacheRelativePath(target));
-    await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, body);
-    await writeFile(`${file}.json`, '{"status":200,"headers":{}}');
-    stored.set(target, body);
+    await store(target, 200, { 'content-type': type }, body);
+    res.setHeader('content-type', type);
     res.end(body);
   });
   return {
@@ -73,17 +92,32 @@ async function project() {
 }
 
 /** A browser that, like a real one, fetches the page and one stylesheet through the proxy. */
-function fakeBrowser(log) {
+function fakeBrowser(log, { landsOn = new Map() } = {}) {
+  let current = null;
   const visit = async (url) => {
     log.push(['goto', url]);
-    const res = await fetch(url);
+    const res = await fetch(url, { redirect: 'follow' });
     if (res.ok) await fetch(new URL('/theme.css', url).href);
+    const requested = new URL(url);
+    const site = `${ORIGIN}${requested.pathname}${requested.search}`
+      .replace(/[?&]_origin=[^&]*/, '');
+    current = landsOn.get(site) ?? res.url ?? url;
     return res.ok;
   };
   return {
     open: async (url, opts) => { log.push(['open', opts]); return visit(url); },
     goto: visit,
-    eval: async (expr) => { log.push(['eval', expr]); return 'ok'; },
+    eval: async (expr) => {
+      log.push(['eval', expr]);
+      if (expr.includes('location.href')) return JSON.stringify(current);
+      if (/fetch\(/.test(expr)) {
+        const m = expr.match(/fetch\("([^"]+)"/);
+        const res = await fetch(m[1]);
+        await res.arrayBuffer();
+        return JSON.stringify({ status: res.status, contentType: res.headers.get('content-type') });
+      }
+      return 'ok';
+    },
     close: async () => { log.push(['close']); },
   };
 }
@@ -102,18 +136,19 @@ test('warm drives the browser through the proxy, verifies offline, writes cache.
     browser: fakeBrowser(log),
     pace: 0,
   });
-  assert.equal(result.cached, 2);
-  assert.equal(result.failed, 1);
+  assert.equal(result.cached, 3, 'a source 404 is a stored response, not a cache failure');
+  assert.equal(result.failed, 0);
+  assert.deepEqual(result.kinds, { page: 2, error: 1 });
   assert.ok(result.assets >= 1, 'a stylesheet came through the proxy');
-  assert.equal(result.pass, false, 'one URL failed');
+  assert.equal(result.pass, true);
   const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
-  assert.match(md, new RegExp(`\\| ${ORIGIN}/a.html \\| cached \\|`));
-  assert.match(md, new RegExp(`\\| ${ORIGIN}/missing.html \\| failed \\| \\d+ \\| 404`));
+  assert.match(md, new RegExp(`\\| ${ORIGIN}/a.html \\| cached \\| page \\|`));
+  assert.match(md, new RegExp(`\\| ${ORIGIN}/missing.html \\| cached \\| error \\| \\d+ \\| 404`));
   assert.ok(log.some(([k, v]) => k === 'eval' && v.includes('#cmp')), 'hide rules injected');
   assert.ok(log[0][0] === 'open' && log[0][1].config.endsWith('playwright-config.json'));
   assert.ok(log.at(-1)[0] === 'close');
   const report = await readFile(p.report, 'utf8');
-  assert.match(report, /## cache\n\n.*2 cached, 1 failed/s);
+  assert.match(report, /## cache\n\n.*3 cached, 0 failed.*By kind: 2 page, 1 error/s);
 });
 
 test('warm refuses without the recorded approval and when the selection is empty', async () => {
@@ -146,6 +181,96 @@ test('cache.md carries the time each page took in the browser', async () => {
     pace: 0,
   });
   const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
-  assert.match(md, /\| url \| status \| ms \| note \|/);
-  assert.match(md, new RegExp(`\\| ${ORIGIN}/a.html \\| cached \\| \\d+ \\|`));
+  assert.match(md, /\| url \| status \| kind \| ms \| note \|/);
+  assert.match(md, new RegExp(`\\| ${ORIGIN}/a.html \\| cached \\| page \\| \\d+ \\|`));
+});
+
+test('classify derives kind and migrate from the sidecar, the final URL and the request', () => {
+  const html = { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } };
+  const url = `${ORIGIN}/a.html`;
+  assert.deepEqual(classify({ url, sidecar: html, finalUrl: url }),
+    { kind: 'page', migrate: 'yes' });
+  const pdf = { status: 200, headers: { 'content-type': 'application/pdf' } };
+  assert.deepEqual(classify({ url: `${ORIGIN}/d.pdf`, sidecar: pdf, finalUrl: null }),
+    { kind: 'binary', migrate: 'asset' });
+  const moved = { status: 301, headers: { location: `${ORIGIN}/b.html` } };
+  assert.deepEqual(classify({ url, sidecar: moved, finalUrl: `${ORIGIN}/b.html` }),
+    { kind: 'redirect', migrate: 'target' });
+  assert.deepEqual(classify({ url, sidecar: html, finalUrl: `${ORIGIN}/c.html` }),
+    { kind: 'redirect', migrate: 'target' }, 'a client-side redirect: 200 but landed elsewhere');
+  assert.deepEqual(classify({ url, sidecar: html, finalUrl: `${url}#top` }),
+    { kind: 'page', migrate: 'yes' }, 'a fragment is not a redirect');
+  assert.deepEqual(classify({ url, sidecar: { status: 404, headers: {} }, finalUrl: url }),
+    { kind: 'error', migrate: 'no' });
+  assert.deepEqual(classify({ url, sidecar: null, finalUrl: null }),
+    { kind: 'unreachable', migrate: 'no' });
+});
+
+test('siteUrl maps a proxy address back to the site and drops the fragment', () => {
+  assert.equal(siteUrl('http://127.0.0.1:3002/a/b.html?x=1&_origin=https%3A%2F%2Fsite.example#f',
+    ORIGIN), `${ORIGIN}/a/b.html?x=1`);
+  assert.equal(siteUrl('https://other.example/landed', ORIGIN), 'https://other.example/landed');
+  assert.equal(siteUrl('not a url', ORIGIN), null);
+});
+
+test('warm records http facts, redirects and finalUrl into the inventory', async () => {
+  const p = await project();
+  const target = `${ORIGIN}/a.html`;
+  const cacheDir = path.join(p.dir, 'cache/.page-cache');
+  const proxy = fakeProxy(cacheDir, {
+    gone: new Set([`${ORIGIN}/missing.html`]),
+    moved: new Map([[`${ORIGIN}/old.html`, target]]),
+  });
+  const paths = ['/', '/a.html', '/missing.html', '/old.html', '/doc.pdf'];
+  await writeFile(path.join(p.dir, 'urls/subsets/s.txt'),
+    paths.map((rel) => `${ORIGIN}${rel}\n`).join(''));
+  await writeInventory(path.join(p.dir, 'urls'), mergeScan([], [
+    { url: `${ORIGIN}/` }, { url: target }, { url: `${ORIGIN}/missing.html` },
+    { url: `${ORIGIN}/old.html` }, { url: `${ORIGIN}/doc.pdf` },
+  ]));
+  const log = [];
+  const result = await warm(p, {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: fakeBrowser(log, { landsOn: new Map([[`${ORIGIN}/old.html`, target]]) }),
+    pace: 0,
+  });
+  const inv = await readInventory(path.join(p.dir, 'urls'));
+  const by = Object.fromEntries(inv.map((r) => [r.url, r]));
+  assert.equal(by[target].kind, 'page');
+  assert.equal(by[target].http.status, 200);
+  assert.equal(by[target].http.contentType, 'text/html');
+  assert.ok(by[target].http.bytes > 0);
+  assert.equal(by[target].cache.selection, 's');
+  assert.equal(by[`${ORIGIN}/old.html`].kind, 'redirect');
+  assert.equal(by[`${ORIGIN}/old.html`].redirect.target, target);
+  assert.equal(by[`${ORIGIN}/old.html`].redirect.status, 301);
+  assert.equal(by[`${ORIGIN}/old.html`].redirect.targetInList, true);
+  assert.equal(by[`${ORIGIN}/old.html`].migrate, 'target');
+  assert.equal(by[`${ORIGIN}/missing.html`].kind, 'error');
+  assert.equal(by[`${ORIGIN}/missing.html`].migrate, 'no');
+  assert.equal(by[`${ORIGIN}/doc.pdf`].kind, 'binary');
+  assert.ok(log.some(([k, v]) => k === 'eval' && /fetch\(/.test(v) && v.includes('doc.pdf')),
+    'a binary is fetched from the page, not navigated to');
+  assert.ok(log.some(([k, v]) => k === 'eval' && v.includes('location.href')), 'finalUrl read');
+  assert.equal(result.kinds.page, 2);
+  assert.equal(result.kinds.redirect, 1);
+  assert.equal(result.kinds.error, 1);
+  assert.equal(result.kinds.binary, 1);
+  const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
+  assert.match(md, /\| url \| status \| kind \| ms \| note \|/);
+  const movedRow = `\\| ${ORIGIN}/old.html \\| cached \\| redirect \\| \\d+ \\| 301 → ${target}`;
+  assert.match(md, new RegExp(movedRow));
+  assert.match(md, new RegExp(`\\| ${ORIGIN}/missing.html \\| cached \\| error \\| \\d+ \\| 404`));
+});
+
+test('parseEval unwraps the CLI encoding and our own JSON.stringify once each', () => {
+  assert.equal(parseEval('"\\"https://x.example/a\\""'), 'https://x.example/a');
+  assert.equal(parseEval('"https://x.example/a"'), 'https://x.example/a');
+  assert.deepEqual(parseEval('"{\\"status\\":200}"'), { status: 200 });
+  assert.equal(parseEval('ok'), 'ok');
+  assert.equal(parseEval(''), null);
 });

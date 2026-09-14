@@ -54,6 +54,12 @@ function proxyStarter(script, cacheDir) {
   };
 }
 
+/** The value playwright-cli printed for an eval: the text between `### Result` and `### Ran`. */
+function evalResult(stdout) {
+  const match = /### Result\s*\n([\s\S]*?)\n### Ran/.exec(stdout);
+  return (match ? match[1] : stdout).trim();
+}
+
 /** playwright-cli as the browser: one persistent session, one process per command. */
 function playwright(cli) {
   const run = (...args) => execFileP(cli, args, { maxBuffer: 16 * 1024 * 1024 });
@@ -61,7 +67,7 @@ function playwright(cli) {
     open: (url, { config, persistent }) => run('open', '--config', config,
       ...(persistent ? ['--persistent'] : []), url),
     goto: (url) => run('goto', url),
-    eval: (expression) => run('eval', expression),
+    eval: async (expression) => evalResult((await run('eval', expression)).stdout),
     close: () => run('close'),
   };
 }
