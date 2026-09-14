@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   access, mkdir, mkdtemp, readFile, writeFile, symlink,
 } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
@@ -476,4 +476,51 @@ test('approve cache with no selection under the threshold means all', async () =
   const one = JSON.stringify([{ url: 'https://example.com/' }]);
   await writeFile(path.join(m, 'urls/urls.json'), one);
   assert.equal((await cli(cwd, 'approve', 'cache')).cacheSelection, 'all');
+});
+
+test('pick --write builds a subset file of N pages that approve cache accepts', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/');
+  const project = resolveProject(cwd);
+  await mkdir(path.join(cwd, 'migration/urls'), { recursive: true });
+  await writeFile(path.join(cwd, 'migration/urls/urls.json'), JSON.stringify([
+    { url: 'https://example.com/' },
+    { url: 'https://example.com/a/1' }, { url: 'https://example.com/a/2' },
+    { url: 'https://example.com/b/1' }, { url: 'https://example.com/b/doc.pdf' },
+  ]));
+  const out = await pickUrls(project, {
+    count: 3, exclude: [], write: 'sample', reachable: async () => true,
+  });
+  assert.equal(out.count, 3);
+  const text = await readFile(path.join(cwd, 'migration/urls/subsets/sample.txt'), 'utf8');
+  assert.deepEqual(text.trim().split('\n'), [
+    'https://example.com/a/1', 'https://example.com/b/1', 'https://example.com/',
+  ]);
+  const approved = await cli(cwd, 'approve', 'cache', 'sample');
+  assert.deepEqual(approved.cacheSelection, ['sample']);
+});
+
+test('section upserts one REPORT.md section from stdin and refuses unknown steps', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/');
+  const run = (args, input) => new Promise((resolve) => {
+    const child = spawn('node', [cliPath, ...args], { cwd });
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
+    child.stdin.end(input);
+  });
+  assert.equal((await run(['section', 'probe'], 'Loads headless.\n')).code, 0);
+  assert.equal((await run(['section', 'probe'], 'Loads headless, no protection.\n')).code, 0);
+  const report = await readFile(path.join(cwd, 'migration/REPORT.md'), 'utf8');
+  assert.equal((report.match(/^## probe$/gm) ?? []).length, 1);
+  assert.match(report, /no protection/);
+  assert.ok(!report.includes('Loads headless.\n'));
+  const bad = await run(['section', 'nope'], 'x');
+  assert.equal(bad.code, 1);
+  assert.match(bad.stderr, /Unknown step "nope"/);
+  const empty = await run(['section', 'probe'], '   ');
+  assert.equal(empty.code, 1);
+  assert.match(empty.stderr, /empty/);
 });

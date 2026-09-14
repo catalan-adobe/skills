@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  distribution, pick, proposal, relativeSegments, renderUrlsMd, scopeOf, writeSubsets,
+  distribution, pick, proposal, relativeSegments, renderUrlsMd, scopeOf, writeSubset, writeSubsets,
 } from './urls.mjs';
 
 const execFileP = promisify(execFile);
@@ -288,3 +288,27 @@ test('urls.md opens with the proposal and caps every table at 25 rows', () => {
   const small = renderUrlsMd(distribution(mixed), { all: true, total: 5 });
   assert.ok(!small.includes('more |'), 'no truncation row under the cap');
 });
+
+test('pick with fill rounds over the groups until count, HTML pages only, no duplicates',
+  async () => {
+    const urls = [
+      { url: 'https://x.example/' },
+      { url: 'https://x.example/a/1.html' }, { url: 'https://x.example/a/2.html' },
+      { url: 'https://x.example/a/3.html' }, { url: 'https://x.example/a/doc.pdf' },
+      { url: 'https://x.example/b/1.html' }, { url: 'https://x.example/b/tool.php' },
+      { url: 'https://x.example/c/1.html' },
+    ];
+    const reachable = async () => true;
+    const five = await pick(urls, { count: 5, fill: true, reachable });
+    assert.deepEqual(five.map((p) => p.url), [
+      'https://x.example/a/1.html', 'https://x.example/b/1.html', 'https://x.example/c/1.html',
+      'https://x.example/', 'https://x.example/a/2.html',
+    ]);
+    const everything = await pick(urls, { count: 50, fill: true, reachable });
+    assert.equal(everything.length, 6, 'pdf and php are never picked, no duplicates');
+    const dir = await fresh();
+    const written = await writeSubset(dir, 'sample', five.map((p) => p.url));
+    const text = await readFile(written, 'utf8');
+    assert.equal(text.trim().split('\n').length, 5);
+    assert.match(written, /subsets\/sample\.txt$/);
+  });

@@ -226,35 +226,77 @@ export async function reachableByFetch(url) {
  * homepage's, typically — so a check runs on pages that differ from what was already seen.
  *
  * @param {{url: string}[]} urls `URLExtended[]`.
- * @param {{count?: number, exclude?: string[],
- *   reachable?: (url: string) => Promise<boolean>}} [options]
+ * @param {{count?: number, exclude?: string[], fill?: boolean,
+ *   reachable?: (url: string) => Promise<boolean>}} [options] `fill` keeps rounding over the
+ *   groups until `count` pages are picked (HTML pages only), for building a cache selection.
  * @returns {Promise<{url: string, group: string, count: number}[]>} At most `count` picks,
  *   fewer when the site has fewer groups.
  */
-export async function pick(urls, { count = 2, exclude = [], reachable = reachableByFetch } = {}) {
+export async function pick(urls, {
+  count = 2, exclude = [], fill = false, reachable = reachableByFetch,
+} = {}) {
   const scope = scopeOf(urls);
   const groupOf = (url) => relativeSegments(url, scope)[0] ?? '';
   const skip = new Set(exclude.map(groupOf));
   const byGroup = new Map();
   for (const { url } of urls) {
     const group = groupOf(url);
-    if (skip.has(group)) continue;
+    if (skip.has(group) || (fill && !isPage(url))) continue;
     byGroup.set(group, [...(byGroup.get(group) ?? []), url]);
   }
   // Larger groups first; on a tie by name, the scope root ('') last.
   const ranked = [...byGroup].sort((a, b) => b[1].length - a[1].length
     || (a[0] === '') - (b[0] === '') || a[0].localeCompare(b[0]));
-  const picks = [];
   // Pages inside the group before its landing page: they are what the group looks like.
   const inside = (url) => (relativeSegments(url, scope).length >= 2 ? 0 : 1);
-  for (const [group, members] of ranked) {
-    if (picks.length >= count) break;
-    for (const url of [...members].sort((a, b) => inside(a) - inside(b))) {
-      if (await reachable(url)) {
-        picks.push({ url, group, count: members.length });
-        break;
+  const queues = ranked.map(([group, members]) => ({
+    group, count: members.length, rest: [...members].sort((a, b) => inside(a) - inside(b)),
+  }));
+  const picks = [];
+  let progressed = true;
+  while (picks.length < count && progressed) {
+    progressed = false;
+    for (const q of queues) {
+      if (picks.length >= count) break;
+      while (q.rest.length) {
+        const url = q.rest.shift();
+        if (await reachable(url)) {
+          picks.push({ url, group: q.group, count: q.count });
+          progressed = true;
+          break;
+        }
       }
     }
+    if (!fill) break;
   }
   return picks;
+}
+
+const NOT_A_PAGE = /\.(pdf|xml|txt|php|json|csv|zip|jpe?g|png|gif|svg|mp4|css|js)$/i;
+
+/** True for URLs that render as pages; documents and scripts are not worth a browser visit. */
+function isPage(url) {
+  try {
+    return !NOT_A_PAGE.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Writes an operator selection as `urls/subsets/<name>.txt`, one URL per line, for
+ * `approve cache <name>`.
+ *
+ * @param {string} urlsDir `migration/urls`.
+ * @param {string} name Subset name (letters, digits, `-`, `_`).
+ * @param {string[]} urls
+ * @returns {Promise<string>} The file written.
+ */
+export async function writeSubset(urlsDir, name, urls) {
+  if (!/^[\w-]+$/.test(name)) throw new Error(`subset name "${name}" must be [A-Za-z0-9_-]`);
+  const dir = path.join(urlsDir, 'subsets');
+  await mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${name}.txt`);
+  await writeFile(file, linesOf(urls.map((url) => ({ url }))));
+  return file;
 }

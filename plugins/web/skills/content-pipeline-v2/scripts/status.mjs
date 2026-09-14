@@ -9,7 +9,7 @@ import {
 } from './lib/project.mjs';
 import { stepById, stepStates } from './lib/steps.mjs';
 import {
-  distribution, pick, proposal, renderUrlsMd, writeSubsets,
+  distribution, pick, proposal, renderUrlsMd, writeSubset, writeSubsets,
 } from './lib/urls.mjs';
 import {
   commandOnPath, defaultExec, detect, install, missingReasons, writeSetupJson,
@@ -23,10 +23,13 @@ status.mjs approve <step> [<subset>...]
                                   record the operator's yes for a gated step (cache);
                                   subset names select "urls/subsets/<name>.txt" (default: all)
 status.mjs urls                  distribution + caching proposal from urls/urls.json
+status.mjs section <step> < body.md
+                                 write that step's "## <step>" in REPORT.md (replaces it)
 status.mjs free-port [--from 3001]
                                  a loopback port nothing listens on (for the cache proxy)
-status.mjs pick [--count 2] [--exclude <url>]...
-                                 one reachable URL per largest group, for checks
+status.mjs pick [--count 2] [--exclude <url>]... [--write <subset>]
+                                 one reachable page per largest group; with --write, fill
+                                 to count and save urls/subsets/<subset>.txt for approve
 status.mjs setup [--install] [--skills-repo <owner/repo>] [--skills-ref <branch>]
                                  detect preconditions; --install fixes them in project scope`;
 
@@ -205,9 +208,17 @@ async function skillsSource(project, { skillsRepo, skillsRef }) {
  * Representative pages for a check: one reachable URL from each of the `count` largest
  * groups below the shared scope, skipping the groups of the `--exclude` URLs.
  */
-export async function pickUrls(project, { count, exclude, reachable }) {
+export async function pickUrls(project, {
+  count, exclude, write, reachable,
+}) {
   const entries = await readUrls(project);
-  return pick(entries, { count, exclude, ...(reachable ? { reachable } : {}) });
+  const fill = Boolean(write);
+  const picks = await pick(entries, {
+    count, exclude, fill, ...(reachable ? { reachable } : {}),
+  });
+  if (!write) return picks;
+  const file = await writeSubset(project.step('urls'), write, picks.map((p) => p.url));
+  return { subset: write, file, count: picks.length, picks };
 }
 
 /** The flags each command accepts (value-taking flags listed once; booleans too). */
@@ -215,12 +226,19 @@ const FLAGS = {
   status: ['--text'],
   check: [],
   init: ['--origin', '--skills-repo', '--skills-ref'],
-  pick: ['--count', '--exclude'],
+  pick: ['--count', '--exclude', '--write'],
   approve: [],
   urls: [],
   setup: ['--install', '--skills-repo', '--skills-ref'],
   'free-port': ['--from'],
+  section: [],
 };
+
+async function readStdin() {
+  let text = '';
+  for await (const chunk of process.stdin) text += chunk;
+  return text;
+}
 
 function rejectUnknownFlags(name, argv) {
   const unknown = argv.filter((a) => a.startsWith('--') && !FLAGS[name].includes(a));
@@ -249,6 +267,7 @@ const COMMANDS = {
   pick: (argv, project) => pickUrls(project, {
     count: Number(flag(argv, '--count') ?? 2),
     exclude: argv.flatMap((a, i) => (a === '--exclude' ? [argv[i + 1]] : [])),
+    write: flag(argv, '--write'),
   }),
   approve(argv, project) {
     const [id, ...subsets] = argv;
@@ -257,6 +276,13 @@ const COMMANDS = {
   },
   urls: (argv, project) => urls(project),
   'free-port': async (argv) => ({ port: await freePort(Number(flag(argv, '--from') ?? 3001)) }),
+  async section(argv, project) {
+    const id = stepById(argv[0] ?? '').id;
+    const body = await readStdin();
+    if (!body.trim()) throw new Error(`section ${id}: the body on stdin is empty`);
+    await upsertSection(project, id, body);
+    return { section: id, file: project.report };
+  },
   setup: (argv, project) => setup({
     shouldInstall: argv.includes('--install'),
     skillsRepo: flag(argv, '--skills-repo'),
