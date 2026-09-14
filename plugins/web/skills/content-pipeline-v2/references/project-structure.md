@@ -55,9 +55,16 @@ approvals must be given again.
 
 ## urls/
 
+`urls/scan.json`
+: Written by the scan snippet during `scan`: the crawler's raw `URLExtended[]`.
+: Read by `status.mjs urls`, which merges it into the inventory.
+
 `urls/urls.json`
-: Written by the scan script during `scan` (`URLExtended[]`).
-: Read by `check scan`, `status.mjs urls`, `prep-verify`, `cache` and later skills.
+: The URL inventory: one record per URL for the whole project. Written only by the runner
+  (`status.mjs urls` merges crawls and operator lists; `warm.mjs` adds what the cache visit
+  learned: `http`, `redirect`, `finalUrl`, `kind`, `migrate`, `cache`). Records are never
+  deleted; a URL missing from the latest crawl carries `inLastScan: false`.
+: Read by `check scan`, `status.mjs urls`/`pick`, `prep-verify`, `cache` and later skills.
 
 `urls/urls.md`
 : Written by `status.mjs urls`. Read by `check scan`, by the agent for the proposal

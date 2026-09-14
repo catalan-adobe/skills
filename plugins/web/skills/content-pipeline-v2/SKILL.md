@@ -47,7 +47,7 @@ migration/
   setup.json      resolved binary, package and skill paths from setup
   probe/          browser-recipe.json · probe.md · playwright-config.json
   prep/           page-prep.json · prep.md
-  urls/           urls.json · urls.md · subsets/<prefix>.txt
+  urls/           scan.json · urls.json (the inventory) · urls.md · subsets/<prefix>.txt
   cache/          .page-cache/ · cache.md
   .work/          scratch: npm installs, scan script, browser profiles (gitignored)
   REPORT.md       one ## <step> section per step that ran
@@ -64,7 +64,7 @@ Each step has a brief in `steps/<id>.md`: hand that one file to whoever runs the
 | `setup` | low | — (runner) | `setup.json` |
 | `probe` | low | browser-probe | `probe/browser-recipe.json`, `probe/probe.md` |
 | `prep` | medium | page-prep | `prep/page-prep.json`, `prep/prep.md` |
-| `scan` | low* | site-scan | `urls/urls.json`, `urls/urls.md` |
+| `scan` | low* | site-scan | `urls/scan.json` → `urls/urls.json`, `urls/urls.md` |
 | `prep-verify` | medium | page-prep | `prep/page-prep.json`, `prep/prep.md` |
 | `cache` | low | page-cache (via `warm.mjs`) | `cache/cache.md`, `cache/.page-cache/` |
 | `report` | medium | — | `REPORT.md` |

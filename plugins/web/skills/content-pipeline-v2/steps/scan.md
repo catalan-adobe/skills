@@ -35,21 +35,21 @@ const result = await Web.crawl(strategy === 'sitemaps' ? site.origin : origin, {
 if (urls.length === 0) throw new Error(`no valid URLs with strategy ${strategy}`);
 if (limit && urls.length >= limit) console.warn(`hit the limit of ${limit}; raise it`);
 mkdirSync(path.join(migration, 'urls'), { recursive: true });
-writeFileSync(path.join(migration, 'urls/urls.json'), JSON.stringify(urls, null, 2));
+writeFileSync(path.join(migration, 'urls/scan.json'), JSON.stringify(urls, null, 2));
 console.log(`${urls.length} URLs, ${result.errors.length} errors`, result.sitemaps);
 ```
 
 One inclusion pattern only (the library requires every pattern to match); a sitemap index on
 another host is fine. When sitemaps yield nothing, rerun with `http`. Given an operator's
-list, convert each line to a `URLExtended` (`url`, `origin`, `status: 'valid'`, `level1..3`,
-`filename`, `lang`, `message`) instead. Any change to the snippet goes in `REPORT.md`.
-Then run `node <skill>/scripts/status.mjs urls`: it writes `urls/urls.md` (counts below the
-path prefix every URL shares) and, over the threshold, `urls/subsets/<prefix>.txt`. Put the
-proposal sentence that opens `urls.md` to the operator word for word; `cache` waits for
-`approve`.
+list, run `status.mjs urls import <file>` (one URL per line) instead of the snippet. Any
+change to the snippet goes in `REPORT.md`. Then run `node <skill>/scripts/status.mjs urls`:
+it merges `scan.json` into the inventory `urls/urls.json` (the one record per URL the whole
+project reads and the runner alone writes), writes `urls/urls.md` and, over the threshold,
+`urls/subsets/<prefix>.txt`. Put the proposal sentence that opens `urls.md` to the operator
+word for word; `cache` waits for `approve`.
 
 ## Outputs
-`migration/urls/urls.json` (`URLExtended[]`, valid entries only); `urls/urls.md` and
+`urls/scan.json` (the crawler's `URLExtended[]`); `urls/urls.json`, `urls/urls.md` and
 `urls/subsets/*.txt` come from `status.mjs urls`. Report with `status.mjs section scan` (body
 on stdin, no heading): total, the strategy (or the operator list), errors, groups, proposal.
 
@@ -57,4 +57,4 @@ on stdin, no heading): total, the strategy (or the operator list), errors, group
 ```bash
 node <skill>/scripts/status.mjs check scan
 ```
-If it fails, fix the artefact: every entry needs a `url`; `urls.md` comes from `status.mjs urls`.
+If it fails, fix the artefact: rerun the snippet, then `status.mjs urls` (it builds the rest).

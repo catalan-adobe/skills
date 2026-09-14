@@ -7,6 +7,9 @@ import { createServer } from 'node:net';
 import {
   init, readProject, resolveProject, upsertSection, writeProject,
 } from './lib/project.mjs';
+import {
+  fromList, mergeScan, normalise, readInventory, writeInventory,
+} from './lib/inventory.mjs';
 import { stepById, stepStates } from './lib/steps.mjs';
 import {
   distribution, pick, proposal, renderUrlsMd, writeSubset, writeSubsets,
@@ -22,7 +25,9 @@ status.mjs init --origin <url> [--skills-repo <owner/repo>] [--skills-ref <branc
 status.mjs approve <step> [<subset>...]
                                   record the operator's yes for a gated step (cache);
                                   subset names select "urls/subsets/<name>.txt" (default: all)
-status.mjs urls                  distribution + caching proposal from urls/urls.json
+status.mjs urls                  merge urls/scan.json into the inventory urls/urls.json;
+                                 distribution + caching proposal → urls/urls.md, subsets/
+status.mjs urls import <file>    merge an operator's URL list (one per line) the same way
 status.mjs section <step|next> [--file body.md] (else stdin)
                                  write that "## <step>" in REPORT.md from a body without
                                  heading (the command adds it; replaces a previous one)
@@ -97,41 +102,59 @@ async function cacheSelectionFrom(subsets, data, project) {
     + 'or approve cache all');
 }
 
-/**
- * Reads `urls/urls.json`, writes `urls/urls.md` and the subsets under `urls/subsets/`,
- * and returns the caching proposal.
- */
+/** The inventory, or a clear error when the scan step has not produced anything yet. */
 async function readUrls(project) {
-  const file = path.join(project.step('urls'), 'urls.json');
-  const text = await readFile(file, 'utf8').catch((err) => {
-    if (err.code === 'ENOENT') return null;
-    throw err;
-  });
-  if (text === null) {
+  const records = await readInventory(project.step('urls'));
+  if (!records.length) {
     throw new Error('missing migration/urls/urls.json; run the scan step first');
   }
-  let entries;
-  try {
-    entries = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`${file} is not valid JSON (${err.message}); rerun the scan step`);
-  }
-  if (!Array.isArray(entries)) {
-    throw new Error('migration/urls/urls.json must be a JSON array of URLExtended entries');
-  }
-  return entries;
+  return records;
 }
 
+/**
+ * Folds the crawler's `urls/scan.json` (when present) into the inventory, then writes
+ * `urls/urls.md` and the subsets under `urls/subsets/` and returns the caching proposal.
+ */
 export async function urls(project) {
   const data = await readProject(project);
   if (!data) throw new Error(`No project at ${project.projectFile}`);
   const urlsDir = project.step('urls');
-  const entries = await readUrls(project);
+  await mergeScanFile(urlsDir);
+  const entries = normalise(await readUrls(project));
+  await writeInventory(urlsDir, entries);
   const dist = distribution(entries);
   const prop = proposal(dist, { cacheAllUpTo: data.cacheAllUpTo });
   await writeFile(path.join(urlsDir, 'urls.md'), renderUrlsMd(dist, prop));
   await writeSubsets(entries, prop, urlsDir);
   return prop;
+}
+
+/** Merges `urls/scan.json` into the inventory when the crawler left one. */
+async function mergeScanFile(urlsDir) {
+  const file = path.join(urlsDir, 'scan.json');
+  const text = await readFile(file, 'utf8').catch(() => null);
+  if (text === null) return;
+  let scanned;
+  try {
+    scanned = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`${file} is not valid JSON (${err.message}); rerun the scan step`);
+  }
+  if (!Array.isArray(scanned)) throw new Error(`${file} must be a JSON array of URLExtended`);
+  await writeInventory(urlsDir, mergeScan(await readInventory(urlsDir), scanned));
+}
+
+/** `urls import <file>`: an operator's URL list, one per line, merged like a crawl result. */
+export async function importList(project, file) {
+  const text = await readFile(path.resolve(project.root, file), 'utf8').catch(() => {
+    throw new Error(`cannot read ${file}`);
+  });
+  const entries = fromList(text);
+  if (!entries.length) throw new Error(`${file} holds no URL`);
+  const urlsDir = project.step('urls');
+  const merged = mergeScan(await readInventory(urlsDir), entries);
+  await writeInventory(urlsDir, merged);
+  return { imported: entries.length, total: merged.length };
 }
 
 /**
@@ -284,7 +307,9 @@ const COMMANDS = {
     if (!id) throw new Error(USAGE);
     return approve(id, subsets, project);
   },
-  urls: (argv, project) => urls(project),
+  urls: (argv, project) => (argv[0] === 'import'
+    ? importList(project, argv[1] ?? (() => { throw new Error(USAGE); })())
+    : urls(project)),
   'free-port': async (argv) => ({ port: await freePort(Number(flag(argv, '--from') ?? 3001)) }),
   async section(argv, project) {
     const id = argv[0] === 'next' ? 'next' : stepById(argv[0] ?? '').id;

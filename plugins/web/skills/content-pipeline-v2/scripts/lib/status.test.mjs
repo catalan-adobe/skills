@@ -570,3 +570,37 @@ test('section --file reads the body from a file instead of stdin', async () => {
   assert.equal(missing.code, 1);
   assert.match(missing.stderr, /nope\.md/);
 });
+
+test('urls merges scan.json into the inventory and import adds an operator list', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/');
+  const m = path.join(cwd, 'migration');
+  await mkdir(path.join(m, 'urls'), { recursive: true });
+  const entry = (url) => ({
+    url, origin: 'https://example.com', status: 'valid', level1: 'a', level2: '', level3: '',
+    filename: '', search: '', lang: '', message: '',
+  });
+  await writeFile(path.join(m, 'urls/scan.json'), JSON.stringify([
+    entry('https://example.com/a/1'), entry('https://example.com/c/2'),
+  ]));
+  await cli(cwd, 'urls');
+  let inv = JSON.parse(await readFile(path.join(m, 'urls/urls.json'), 'utf8'));
+  assert.equal(inv.length, 2);
+  assert.deepEqual(inv.map((r) => r.group), ['a', 'c']);
+  assert.ok(inv.every((r) => r.inLastScan === true && r.firstSeen));
+  inv[0].kind = 'page';
+  await writeFile(path.join(m, 'urls/urls.json'), JSON.stringify(inv));
+  const onlyOne = JSON.stringify([entry('https://example.com/a/1')]);
+  await writeFile(path.join(m, 'urls/scan.json'), onlyOne);
+  await cli(cwd, 'urls');
+  inv = JSON.parse(await readFile(path.join(m, 'urls/urls.json'), 'utf8'));
+  assert.equal(inv.find((r) => r.url.endsWith('/1')).kind, 'page', 'enrichment kept');
+  assert.equal(inv.find((r) => r.url.endsWith('/2')).inLastScan, false, 'vanished, kept');
+  await writeFile(path.join(cwd, 'list.txt'), 'https://example.com/b/1\nhttps://example.com/a/1\n');
+  const imported = await cli(cwd, 'urls', 'import', 'list.txt');
+  assert.deepEqual(imported, { imported: 2, total: 3 });
+  inv = JSON.parse(await readFile(path.join(m, 'urls/urls.json'), 'utf8'));
+  assert.equal(inv.find((r) => r.url.endsWith('/b/1')).message, 'operator-provided list');
+  const bad = await cli(cwd, 'urls', 'import', 'nope.txt').catch((e) => e);
+  assert.match(bad.stderr, /cannot read nope\.txt/);
+});
