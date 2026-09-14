@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { STEPS } from './steps.mjs';
@@ -170,8 +171,42 @@ function tableCells(line) {
     .filter((cell) => cell.length > 0);
 }
 
-/** `cache`: `cache/cache.md` lists every URL of the approved selection as cached/failed/skipped. */
-export function checkCache(files) {
+/**
+ * Where the page-cache proxy stores the body of `url`, relative to its cache directory:
+ * `<host>_<sha256(origin)[0:8]>/<path>`, `index.html` for `/` and extension-less paths, the
+ * query string before the extension after `!` (md5 when the path would exceed 200 chars).
+ *
+ * @param {string} url
+ * @returns {string}
+ */
+export function cacheRelativePath(url) {
+  const u = new URL(url);
+  const dir = `${u.hostname}_${createHash('sha256').update(u.origin).digest('hex').slice(0, 8)}`;
+  let seg = u.pathname.slice(1);
+  if (seg === '' || seg.endsWith('/')) seg += 'index.html';
+  else if (!path.extname(seg)) seg += '/index.html';
+  let rel = `${dir}/${seg}`;
+  if (u.search) {
+    let qs = u.search.slice(1);
+    if (rel.length + qs.length > 200) qs = createHash('md5').update(qs).digest('hex');
+    const ext = path.extname(rel);
+    rel = ext ? `${rel.slice(0, -ext.length)}!${qs}${ext}` : `${rel}!${qs}`;
+  }
+  return rel;
+}
+
+const ASSET = /\.(css|js|mjs|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|mp4|webm)$/i;
+
+/**
+ * `cache`: `cache/cache.md` lists every URL of the approved selection as cached, failed or
+ * skipped; every `cached` row has its body in the proxy's cache directory; and the cache
+ * holds at least one asset — a browser requests CSS, scripts and images through the proxy,
+ * a plain HTTP fetch does not.
+ *
+ * @param {Record<string, string>} files Text files under `migration/`.
+ * @param {string[]} [cacheFiles] Paths under `cache/.page-cache/`, relative to it.
+ */
+export function checkCache(files, cacheFiles = []) {
   const { urls, reasons: selectionReasons } = approvedSelection(files);
   const md = files['cache/cache.md'];
   if (md === undefined) {
@@ -179,16 +214,39 @@ export function checkCache(files) {
   }
   const statusPattern = /^(cached|failed|skipped)$/i;
   const rows = md.split('\n').map(tableCells);
+  const stored = new Set(cacheFiles);
+  let cachedRows = 0;
   const rowReasons = urls.flatMap((url) => {
     const cells = rows.find((row) => row[0] === url);
     if (!cells) return [`migration/cache/cache.md has no row for ${url}`];
     if (!cells[1] || !statusPattern.test(cells[1])) {
       return [`migration/cache/cache.md row for ${url} has no cached|failed|skipped status`];
     }
-    return [];
+    if (cells[1].toLowerCase() !== 'cached') return [];
+    cachedRows += 1;
+    return stored.has(cacheRelativePath(url)) ? [] : [`no stored body for ${url} in the cache`];
   });
-  const reasons = [...selectionReasons, ...rowReasons];
+  const assetReasons = cachedRows && !cacheFiles.some((f) => ASSET.test(f))
+    ? ['the cache holds pages but no CSS, JS, image or font: warmed without a browser']
+    : [];
+  const reasons = [...selectionReasons, ...rowReasons, ...assetReasons];
   return { pass: reasons.length === 0, reasons };
+}
+
+/** Every file under `cache/.page-cache/`, relative to it (empty when the directory is absent). */
+async function listCacheFiles(project) {
+  const root = path.join(project.step('cache'), '.page-cache');
+  const out = [];
+  async function walk(dir, prefix) {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      const rel = prefix ? `${prefix}/${e.name}` : e.name;
+      if (e.isDirectory()) await walk(path.join(dir, e.name), rel);
+      else out.push(rel);
+    }
+  }
+  await walk(root, '');
+  return out;
 }
 
 const nonDirWrites = (step) => step.writes.filter((w) => !w.endsWith('/'));
@@ -278,6 +336,11 @@ export const CHECKS = Object.fromEntries(
     if (step.id === 'setup') return [step.id, checkSetup];
     const contentCheck = CONTENT_CHECKS[step.id];
     if (!contentCheck) throw new Error(`Step "${step.id}" has no done-check`);
+    if (step.id === 'cache') {
+      return [step.id, async (project) => checkCache(
+        await loadFiles(project), await listCacheFiles(project),
+      )];
+    }
     return [step.id, async (project) => contentCheck(await loadFiles(project))];
   }),
 );

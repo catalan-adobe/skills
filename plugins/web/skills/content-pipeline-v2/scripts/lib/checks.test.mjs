@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
-  checkProbe, checkPrep, checkPrepVerify, checkScan, checkCache, checkReport,
+  cacheRelativePath, checkCache, checkPrep, checkPrepVerify, checkProbe, checkReport, checkScan,
 } from './checks.mjs';
 
 test('checkProbe passes when the recipe parses and probe.md is non-empty', () => {
@@ -125,6 +126,13 @@ test('checkScan lists missing files, invalid JSON, an empty array, an entry with
   });
 });
 
+/** Bodies for the given URLs plus one stylesheet, as the proxy would have stored them. */
+const stored = (...urls) => [
+  ...urls.flatMap((u) => [cacheRelativePath(u), `${cacheRelativePath(u)}.json`]),
+  'example.com_x/site.css',
+];
+const AB = stored('https://example.com/a', 'https://example.com/b');
+
 const withCache = (rows, extra = {}) => ({
   'project.json': JSON.stringify({ approved: { cache: true } }),
   'urls/urls.json': JSON.stringify([
@@ -140,7 +148,7 @@ test('checkCache passes when every selected URL is cached, failed or skipped', (
     + '| --- | --- |\n'
     + '| https://example.com/a | cached |\n'
     + '| https://example.com/b | skipped |\n';
-  assert.deepEqual(checkCache(withCache(rows)), { pass: true, reasons: [] });
+  assert.deepEqual(checkCache(withCache(rows), AB), { pass: true, reasons: [] });
 });
 
 test('checkCache lists a missing cache.md, no selection, a missing row, an unstatused row', () => {
@@ -152,7 +160,7 @@ test('checkCache lists a missing cache.md, no selection, a missing row, an unsta
       'migration/urls/urls.json has no URLs to select',
     ],
   });
-  const noRow = checkCache(withCache('| url | status |\n| --- | --- |\n'));
+  const noRow = checkCache(withCache('| url | status |\n| --- | --- |\n'), AB);
   assert.deepEqual(noRow, {
     pass: false,
     reasons: [
@@ -162,7 +170,7 @@ test('checkCache lists a missing cache.md, no selection, a missing row, an unsta
   });
   const noStatus = checkCache(withCache(
     '| https://example.com/a |\n| https://example.com/b | cached |\n',
-  ));
+  ), AB);
   assert.deepEqual(noStatus, {
     pass: false,
     reasons: [
@@ -176,7 +184,7 @@ test('checkCache reports invalid project.json JSON instead of ignoring it', () =
     'project.json': 'not json',
     'cache/cache.md': 'x',
   };
-  assert.deepEqual(checkCache(files), {
+  assert.deepEqual(checkCache(files, AB), {
     pass: false,
     reasons: ['migration/project.json is not valid JSON'],
   });
@@ -187,7 +195,7 @@ test('checkCache rejects a cacheSelection that is neither "all" nor subset names
     'project.json': JSON.stringify({ approved: { cache: true }, cacheSelection: 123 }),
     'cache/cache.md': 'x',
   };
-  assert.deepEqual(checkCache(files), {
+  assert.deepEqual(checkCache(files, AB), {
     pass: false,
     reasons: ['project.json.cacheSelection must be "all" or subset names'],
   });
@@ -200,7 +208,8 @@ test('checkCache follows named subsets when project.json.cacheSelection lists th
     'cache/cache.md': '| https://example.com/blog/a | cached |\n'
       + '| https://example.com/blog/b | failed |\n',
   };
-  assert.deepEqual(checkCache(files), { pass: true, reasons: [] });
+  const bodies = stored('https://example.com/blog/a');
+  assert.deepEqual(checkCache(files, bodies), { pass: true, reasons: [] });
 });
 
 test('checkCache reports a missing named subset file', () => {
@@ -208,7 +217,7 @@ test('checkCache reports a missing named subset file', () => {
     'project.json': JSON.stringify({ approved: { cache: true }, cacheSelection: ['blog'] }),
     'cache/cache.md': 'x',
   };
-  assert.deepEqual(checkCache(files), {
+  assert.deepEqual(checkCache(files, AB), {
     pass: false,
     reasons: ['missing migration/urls/subsets/blog.txt'],
   });
@@ -220,7 +229,7 @@ test('checkCache reports an empty named subset instead of passing vacuously', ()
     'urls/subsets/blog.txt': '\n   \n',
     'cache/cache.md': 'x',
   };
-  assert.deepEqual(checkCache(files), {
+  assert.deepEqual(checkCache(files, AB), {
     pass: false,
     reasons: ['migration/project.json.cacheSelection resolves to no URLs'],
   });
@@ -235,7 +244,7 @@ test('checkCache matches the URL cell exactly, not as a substring of another row
     ]),
     'cache/cache.md': '| https://example.com/a | cached |\n',
   };
-  assert.deepEqual(checkCache(files), {
+  assert.deepEqual(checkCache(files, AB), {
     pass: false,
     reasons: ['migration/cache/cache.md has no row for https://example.com/'],
   });
@@ -249,7 +258,7 @@ test('checkCache requires the status cell, not just the word appearing in the UR
     ]),
     'cache/cache.md': '| https://example.com/failed-logins | |\n',
   };
-  assert.deepEqual(checkCache(files), {
+  assert.deepEqual(checkCache(files, AB), {
     pass: false,
     reasons: [
       'migration/cache/cache.md row for https://example.com/failed-logins '
@@ -330,10 +339,10 @@ test('cache is not done without the recorded approval, and the status cell is ex
   assert.equal(unapproved.pass, false);
   assert.match(unapproved.reasons.join(' '), /not approved; run status\.mjs approve cache/);
   const approved = { 'project.json': JSON.stringify({ approved: { cache: true } }) };
-  assert.equal(checkCache({ ...base, ...approved }).pass, true);
+  assert.equal(checkCache({ ...base, ...approved }, stored('https://example.com/a')).pass, true);
   const loose = checkCache({
     ...base, ...approved, 'cache/cache.md': '| https://example.com/a | not cached |',
-  });
+  }, stored('https://example.com/a'));
   assert.equal(loose.pass, false);
   assert.match(loose.reasons.join(' '), /no cached\|failed\|skipped status/);
 });
@@ -387,7 +396,7 @@ test('prep-verify counts path prefixes below the scope every URL in urls.json sh
 test('checkCache accepts URL cells wrapped as <url> by a markdown autofix', () => {
   const files = withCache('| url | status |\n| --- | --- |\n'
     + '| <https://example.com/a> | cached |\n| https://example.com/b | failed |\n');
-  assert.deepEqual(checkCache(files), { pass: true, reasons: [] });
+  assert.deepEqual(checkCache(files, AB), { pass: true, reasons: [] });
 });
 
 test('checkReport rejects a step section that appears twice', () => {
@@ -398,4 +407,33 @@ test('checkReport rejects a step section that appears twice', () => {
   const result = checkReport(files);
   assert.equal(result.pass, false);
   assert.deepEqual(result.reasons, ['migration/REPORT.md has 2 "## probe" sections; keep one']);
+});
+
+test('cacheRelativePath mirrors the proxy layout', () => {
+  const origin = 'https://example.com';
+  const dir = `example.com_${createHash('sha256').update(origin).digest('hex').slice(0, 8)}`;
+  assert.equal(cacheRelativePath('https://example.com/'), `${dir}/index.html`);
+  assert.equal(cacheRelativePath('https://example.com/a/b.html'), `${dir}/a/b.html`);
+  assert.equal(cacheRelativePath('https://example.com/docs'), `${dir}/docs/index.html`);
+  assert.equal(cacheRelativePath('https://example.com/docs/'), `${dir}/docs/index.html`);
+  assert.equal(cacheRelativePath('https://example.com/p.php?x=1'), `${dir}/p!x=1.php`);
+});
+
+test('checkCache needs a stored body per cached row and at least one asset', () => {
+  const files = withCache('| url | status |\n| --- | --- |\n'
+    + '| https://example.com/a | cached |\n| https://example.com/b | cached |\n');
+  const a = cacheRelativePath('https://example.com/a');
+  const b = cacheRelativePath('https://example.com/b');
+  const htmlOnly = checkCache(files, [a, `${a}.json`, b, `${b}.json`]);
+  assert.equal(htmlOnly.pass, false);
+  assert.match(htmlOnly.reasons.join(' '), /no CSS, JS, image or font.*warmed without a browser/);
+  const missingBody = checkCache(files, [a, `${a}.json`, 'example.com_x/site.css']);
+  assert.equal(missingBody.pass, false);
+  assert.match(missingBody.reasons.join(' '), /no stored body for https:\/\/example\.com\/b/);
+  const good = checkCache(files, [a, `${a}.json`, b, `${b}.json`, 'example.com_x/site.css']);
+  assert.deepEqual(good, { pass: true, reasons: [] });
+  const failedRow = withCache(
+    '| https://example.com/a | failed |\n| https://example.com/b | skipped |\n',
+  );
+  assert.equal(checkCache(failedRow, []).pass, true, 'failed/skipped rows need no body');
 });

@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
+import { cacheRelativePath } from './checks.mjs';
 import { resolveProject } from './project.mjs';
 import { pickUrls, setup } from '../status.mjs';
 
@@ -153,6 +154,17 @@ test('approve cache <subset> persists the selection so check cache scopes to it'
     + '| https://example.com/blog/b | cached |\n'
     + '| https://example.com/blog/c | skipped |\n',
   );
+  const htmlOnly = await cli(cwd, 'check', 'cache').catch((e) => e);
+  assert.equal(htmlOnly.code, 1, 'no bodies on disk yet');
+  for (const u of ['https://example.com/blog/a', 'https://example.com/blog/b']) {
+    const body = path.join(m, 'cache/.page-cache', cacheRelativePath(u));
+    await mkdir(path.dirname(body), { recursive: true });
+    await writeFile(body, '<html></html>');
+    await writeFile(`${body}.json`, '{"status":200,"headers":{}}');
+  }
+  const stillHtmlOnly = await cli(cwd, 'check', 'cache').catch((e) => e);
+  assert.match(stillHtmlOnly.stdout, /warmed without a browser/);
+  await writeFile(path.join(m, 'cache/.page-cache/example.com_x.css'), 'body{}');
   const passing = await cli(cwd, 'check', 'cache');
   assert.equal(passing.pass, true);
 
@@ -428,4 +440,40 @@ test('free-port answers a port nothing listens on, from the requested start', as
     const next = await cli(cwd, 'free-port', '--from', String(out.port));
     assert.ok(next.port > out.port, 'the busy port is skipped');
   } finally { await new Promise((r) => srv.close(r)); }
+});
+
+test('approve cache needs an explicit selection over the threshold; "all" must be typed',
+  async () => {
+    const cwd = await fresh();
+    await cli(cwd, 'init', '--origin', 'https://example.com/');
+    const m = path.join(cwd, 'migration');
+    const project = JSON.parse(await readFile(path.join(m, 'project.json'), 'utf8'));
+    await writeFile(path.join(m, 'project.json'), JSON.stringify({ ...project, cacheAllUpTo: 2 }));
+    await mkdir(path.join(m, 'urls/subsets'), { recursive: true });
+    await writeFile(path.join(m, 'urls/urls.json'), JSON.stringify([
+      { url: 'https://example.com/a/1' }, { url: 'https://example.com/a/2' },
+      { url: 'https://example.com/b/1' },
+    ]));
+    await writeFile(path.join(m, 'urls/subsets/a.txt'), 'https://example.com/a/1\n');
+    const bare = await cli(cwd, 'approve', 'cache').catch((e) => e);
+    assert.equal(bare.code, 1);
+    assert.match(bare.stderr, /3 URLs exceed cacheAllUpTo 2/);
+    assert.match(bare.stderr, /subsets: a/);
+    assert.match(bare.stderr, /approve cache all/);
+    const named = await cli(cwd, 'approve', 'cache', 'a');
+    assert.deepEqual(named.cacheSelection, ['a']);
+    const all = await cli(cwd, 'approve', 'cache', 'all');
+    assert.equal(all.cacheSelection, 'all');
+    const missing = await cli(cwd, 'approve', 'cache', 'nope').catch((e) => e);
+    assert.match(missing.stderr, /no subset file urls\/subsets\/nope\.txt/);
+  });
+
+test('approve cache with no selection under the threshold means all', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/');
+  const m = path.join(cwd, 'migration');
+  await mkdir(path.join(m, 'urls'), { recursive: true });
+  const one = JSON.stringify([{ url: 'https://example.com/' }]);
+  await writeFile(path.join(m, 'urls/urls.json'), one);
+  assert.equal((await cli(cwd, 'approve', 'cache')).cacheSelection, 'all');
 });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runAllChecks, runCheck } from './lib/checks.mjs';
@@ -59,12 +59,38 @@ export async function approve(id, subsets, project) {
   if (!step.operatorGate) throw new Error(`Step "${id}" needs no approval`);
   const data = await readProject(project);
   if (!data) throw new Error(`No project at ${project.projectFile}`);
+  if (id === 'cache') data.cacheSelection = await cacheSelectionFrom(subsets, data, project);
   data.approved = { ...(data.approved ?? {}), [id]: true };
-  if (id === 'cache') data.cacheSelection = subsets.length ? subsets : 'all';
   await writeProject(project, data);
   return {
     step: id, approved: true, ...(id === 'cache' ? { cacheSelection: data.cacheSelection } : {}),
   };
+}
+
+/**
+ * The selection an approval records. Named subsets must exist; `all` is explicit; a bare
+ * approval means `all` only when the site is under the caching threshold — above it, the
+ * operator has to say what to cache.
+ */
+async function cacheSelectionFrom(subsets, data, project) {
+  const subsetsDir = path.join(project.step('urls'), 'subsets');
+  if (subsets.length === 1 && subsets[0] === 'all') return 'all';
+  if (subsets.length) {
+    for (const name of subsets) {
+      const file = path.join(subsetsDir, `${name}.txt`);
+      await readFile(file, 'utf8').catch(() => {
+        throw new Error(`no subset file urls/subsets/${name}.txt; write it or run pick --write`);
+      });
+    }
+    return subsets;
+  }
+  const total = (await readUrls(project).catch(() => [])).length;
+  if (total <= data.cacheAllUpTo) return 'all';
+  const names = (await readdir(subsetsDir).catch(() => []))
+    .filter((f) => f.endsWith('.txt')).map((f) => f.replace(/\.txt$/, ''));
+  throw new Error(`${total} URLs exceed cacheAllUpTo ${data.cacheAllUpTo}: name the selection — `
+    + `approve cache <subset>... (subsets: ${names.join(', ') || 'none yet'}) `
+    + 'or approve cache all');
 }
 
 /**
