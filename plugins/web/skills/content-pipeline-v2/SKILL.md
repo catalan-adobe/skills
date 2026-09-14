@@ -32,8 +32,10 @@ node $SKILL/scripts/status.mjs --text
 
 `init` creates `migration/project.json`; `setup --install` puts `playwright-cli`,
 `franklin-bulk-shared` and the four sibling skills in project scope (`migration/.work/`,
-`.agents/skills/`) and stops only on Node < 22; `status.mjs --text` shows each step as
-`done`, `ready`, `blocked (by …)` or `waiting-operator`. Then follow the loop below.
+`.agents/skills/`) and stops only on Node < 22. The skills come from `adobe/skills` unless
+the operator names another source — `--skills-repo <owner/repo> --skills-ref <branch>` —
+which `project.json` then remembers. `status.mjs --text` shows each step as `done`,
+`ready`, `blocked (by …)` or `waiting-operator`. Then follow the loop below.
 
 ## Project structure
 

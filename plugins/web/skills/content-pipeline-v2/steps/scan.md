@@ -1,7 +1,7 @@
 # scan
 
-Purpose: collect every URL of the site and describe how they are distributed, so the
-operator can decide what to cache. Tier: low; medium without a usable sitemap.
+Purpose: collect every URL of the site and describe their distribution so the operator can
+decide what to cache. Tier: low; medium without a usable sitemap.
 ## Inputs
 - `migration/project.json`: `origin` (a site root or a section page such as `/en/x.html`);
   `migration/setup.json`: `packages["franklin-bulk-shared"].path`, `skills["site-scan"].path`;
@@ -13,7 +13,7 @@ package is already under `migration/.work/node_modules`; do not install again.
 
 ## Method
 
-Write this to `migration/.work/scan.mjs` and run it from the project root (crawl from the
+Write this to `migration/.work/scan.mjs`, run it from the project root (it crawls from the
 site root, scoped to the origin's path — a section page is a scope, not a sitemap):
 
 ```js
@@ -27,7 +27,7 @@ const strategy = process.argv[2] ?? 'sitemaps';
 const urls = [];
 const result = await Web.crawl(strategy === 'sitemaps' ? site.origin : origin, {
   strategy, timeout: 15000, sameDomain: true, limit: 2000, httpHeaders: {},
-  inclusionPatterns: scope ? [`${scope}/**`, `${scope}.html`] : [],
+  inclusionPatterns: scope ? [`${scope}*`] : [],
   urlStreamFn: async (batch) => {
     for (const e of batch) if (e.status === 'valid') urls.push(e);
   },
@@ -38,15 +38,15 @@ writeFileSync('migration/urls/urls.json', JSON.stringify(urls, null, 2));
 console.log(`${urls.length} URLs, ${result.errors.length} errors`, result.sitemaps);
 ```
 
-When sitemaps yield nothing (none, or on another host), rerun with `http` and note the
-limit. Given an operator's list, convert each line to a `URLExtended` entry (`url`,
-`origin`, `status: 'valid'`, `level1..3`, `filename`, `lang`, `message`) instead of crawling.
+One inclusion pattern only (the library requires every pattern to match); a sitemap index on
+another host is fine, its child sitemaps for this host are followed. When sitemaps yield
+nothing, rerun with `http`. Given an operator's list, convert each line to a `URLExtended`
+(`url`, `origin`, `status: 'valid'`, `level1..3`, `filename`, `lang`, `message`) instead.
 Then run `node <skill>/scripts/status.mjs urls`: it writes `urls/urls.md` (counts below the
 path prefix every URL shares) and, over the threshold, `urls/subsets/<prefix>.txt`. Put the
 last sentence of `urls.md` to the operator word for word; `cache` waits for `approve`.
 
 ## Outputs
-
 `migration/urls/urls.json` (`URLExtended[]`, valid entries only); `urls/urls.md` and
 `urls/subsets/*.txt` come from `status.mjs urls`. Append `## scan` to `REPORT.md`: total,
 the strategy that worked (or the operator list), errors, largest groups, the proposal.

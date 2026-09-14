@@ -128,11 +128,16 @@ async function runInstall(exec, file, args, options) {
  *
  * @param {Awaited<ReturnType<typeof detect>>} detection
  * @param {{exec: (file: string, args: string[], options?: object) =>
- *   Promise<unknown>, cwd: string, hasUpskill: boolean}} options `cwd` is the project root;
- *   `hasUpskill` says whether the `upskill` command is on `PATH`.
+ *   Promise<unknown>, cwd: string, hasUpskill: boolean, skillsRepo?: string,
+ *   skillsRef?: string}} options `cwd` is the project root; `hasUpskill` says whether the
+ *   `upskill` command is on `PATH`; `skillsRepo` (default `adobe/skills`) and `skillsRef`
+ *   (a branch, tag or commit; default the repository's default branch) say where the
+ *   sibling skills come from.
  * @returns {Promise<{target: string, command: string[], ok: boolean, error?: string}[]>}
  */
-export async function install(detection, { exec, cwd, hasUpskill }) {
+export async function install(detection, {
+  exec, cwd, hasUpskill, skillsRepo = 'adobe/skills', skillsRef,
+}) {
   if (!detection.node.ok) {
     return [{
       target: 'node', command: [], ok: false, error: 'install Node >= 22; nothing else can proceed',
@@ -156,7 +161,10 @@ export async function install(detection, { exec, cwd, hasUpskill }) {
 
   for (const [name, info] of Object.entries(detection.skills)) {
     if (info.ok) continue;
-    const skillArgs = ['adobe/skills', '--path', 'plugins/web/skills', '--skill', name];
+    const skillArgs = [
+      skillsRepo, ...(skillsRef ? ['-b', skillsRef] : []),
+      '--path', 'plugins/web/skills', '--skill', name,
+    ];
     const file = hasUpskill ? 'upskill' : 'npx';
     const args = hasUpskill ? skillArgs : ['-y', 'upskill', ...skillArgs];
     // eslint-disable-next-line no-await-in-loop

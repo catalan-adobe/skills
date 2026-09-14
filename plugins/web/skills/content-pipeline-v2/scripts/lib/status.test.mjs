@@ -329,3 +329,28 @@ test('check setup re-detects instead of trusting setup.json', async () => {
   assert.equal(passing.pass, true);
   assert.deepEqual(passing.reasons, []);
 });
+
+test('setup --install records --skills-repo and --skills-ref in project.json for later runs',
+  async () => {
+    const cwd = await fresh();
+    await cli(cwd, 'init', '--origin', 'https://example.com/');
+    const project = resolveProject(cwd);
+    const calls = [];
+    const exec = async (file, args) => { calls.push([file, ...args]); return { ok: false }; };
+    await setup({
+      shouldInstall: true, nodeVersion: '24.0.0', exec,
+      skillsRepo: 'someone/skills', skillsRef: 'wip',
+    }, project);
+    process.exitCode = 0;
+    const data = JSON.parse(await readFile(path.join(cwd, 'migration/project.json'), 'utf8'));
+    assert.deepEqual(data.skills, { repo: 'someone/skills', ref: 'wip' });
+    assert.ok(calls.some((c) => c.includes('someone/skills') && c.includes('wip')));
+    const again = [];
+    await setup({
+      shouldInstall: true,
+      nodeVersion: '24.0.0',
+      exec: async (f, a) => { again.push([f, ...a]); return { ok: false }; },
+    }, project);
+    process.exitCode = 0;
+    assert.ok(again.some((c) => c.includes('someone/skills')), 'the recorded repo is reused');
+  });

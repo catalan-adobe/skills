@@ -21,7 +21,8 @@ status.mjs approve <step> [<subset>...]
                                   record the operator's yes for a gated step (cache);
                                   subset names select "urls/subsets/<name>.txt" (default: all)
 status.mjs urls                  distribution + caching proposal from urls/urls.json
-status.mjs setup [--install]     detect preconditions; --install fixes them in project scope`;
+status.mjs setup [--install] [--skills-repo <owner/repo>] [--skills-ref <branch>]
+                                 detect preconditions; --install fixes them in project scope`;
 
 const flag = (argv, name) => {
   const i = argv.indexOf(name);
@@ -99,18 +100,37 @@ export async function urls(project) {
  * runs nothing else); never installs globally. `nodeVersion` and `exec` are injectable for
  * tests; the CLI passes neither.
  */
-export async function setup({ shouldInstall, nodeVersion, exec = defaultExec }, project) {
+export async function setup({
+  shouldInstall, nodeVersion, exec = defaultExec, skillsRepo, skillsRef,
+}, project) {
   let detection = await detect({ cwd: project.root, nodeVersion });
   let installs = [];
   if (shouldInstall) {
+    const source = await skillsSource(project, { skillsRepo, skillsRef });
     const hasUpskill = !!(await commandOnPath('upskill'));
-    installs = await install(detection, { exec, cwd: project.root, hasUpskill });
+    installs = await install(detection, {
+      exec, cwd: project.root, hasUpskill, ...source,
+    });
     detection = await detect({ cwd: project.root, nodeVersion });
   }
   await writeSetupJson(project, detection);
   const reasons = missingReasons(detection);
   if (reasons.length) process.exitCode = 1;
   return { detection, reasons, installs };
+}
+
+/**
+ * Where the sibling skills are installed from: `--skills-repo`/`--skills-ref` when given
+ * (and recorded in `project.json.skills` for later runs), else what was recorded, else the
+ * defaults.
+ */
+async function skillsSource(project, { skillsRepo, skillsRef }) {
+  const data = (await readProject(project)) ?? {};
+  if (skillsRepo || skillsRef) {
+    data.skills = { repo: skillsRepo ?? data.skills?.repo, ref: skillsRef ?? data.skills?.ref };
+    await writeProject(project, data);
+  }
+  return { skillsRepo: data.skills?.repo, skillsRef: data.skills?.ref };
 }
 
 const COMMANDS = {
@@ -132,7 +152,11 @@ const COMMANDS = {
     return approve(id, subsets, project);
   },
   urls: (argv, project) => urls(project),
-  setup: (argv, project) => setup({ shouldInstall: argv.includes('--install') }, project),
+  setup: (argv, project) => setup({
+    shouldInstall: argv.includes('--install'),
+    skillsRepo: flag(argv, '--skills-repo'),
+    skillsRef: flag(argv, '--skills-ref'),
+  }, project),
 };
 
 async function cli(argv) {

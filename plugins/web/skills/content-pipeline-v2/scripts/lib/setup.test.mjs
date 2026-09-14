@@ -269,3 +269,20 @@ test('writeSetupJson writes the resolved detection to migration/setup.json', asy
   const onDisk = JSON.parse(await readFile(project.setupFile, 'utf8'));
   assert.deepEqual(onDisk, detection);
 });
+
+test('install takes the skills from another repository and branch when told to', async () => {
+  const calls = [];
+  const exec = async (file, args) => { calls.push([file, ...args]); return { ok: true }; };
+  const detection = await detect({
+    env: { PATH: '' }, cwd: '/p', home: '/h', exists: fakeExists([]), nodeVersion: '24.0.0',
+  });
+  await install(detection, {
+    exec, cwd: '/p', hasUpskill: true, skillsRepo: 'someone/skills', skillsRef: 'a-branch',
+  });
+  const skill = calls.find((c) => c.includes('--skill') && c.includes('browser-probe'));
+  assert.deepEqual(skill, [
+    'upskill', 'someone/skills', '-b', 'a-branch', '--path', 'plugins/web/skills',
+    '--skill', 'browser-probe',
+  ]);
+  assert.ok(!calls.some((c) => c.includes('-g') || c.includes('--global')));
+});
