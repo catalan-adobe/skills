@@ -19,7 +19,10 @@ skill's script expects the command by name.
 
 1. Run the probe script from the skill with the origin and `migration/probe/` as the
    output directory. It writes `probe-report.json` there.
-2. Read `firstSuccess` and `detectedSignals`. When `firstSuccess` is null, no headless
+2. Read `firstSuccess`, `detectedSignals` and `health.hasMainContent`. When
+   `hasMainContent` is false the page's main content is not in the initial HTML (rendered
+   by scripts): write that in `probe.md` — later steps must read the browser's DOM, not the
+   fetched HTML. When `firstSuccess` is null, no headless
    configuration loads the site: write `probe/probe.md` saying so, list the signals and the
    skill's options for the operator, and stop without writing a recipe.
 3. Otherwise write the recipe exactly as the skill describes.
@@ -33,15 +36,17 @@ skill's script expects the command by name.
 - `migration/probe/browser-recipe.json`: the recipe (`url`, `generated`, `cliConfig`,
   `stealthInitScript`, `notes`, optional `persistent`).
 - `migration/probe/probe.md`: working configuration, detected signals, what the escalation
-  ladder tried, and the `playwright-cli open` flags that reproduce it.
+  ladder tried, the `playwright-cli open` flags that reproduce it, and one line "Main
+  content in initial HTML: yes|no" (the check requires it).
 - `migration/probe/probe-report.json`, `playwright-config.json`, `stealth-init.js` (when
   needed): supporting files.
 
 ## REPORT.md
 
-`node <skill>/scripts/status.mjs section probe` with the body on stdin (no heading — the command
-adds it, and replaces a previous section): the configuration that worked (or that none did), the
-protection detected, and the flags `prep`, `prep-verify` and `cache` must use.
+`node <skill>/scripts/status.mjs section probe` with the body in a file (`--file body.md`) or on
+stdin (no heading — the command adds it, and replaces a previous section): the configuration
+that worked (or that none did), the protection detected, and the flags `prep`, `prep-verify` and
+`cache` must use.
 
 ## Done
 

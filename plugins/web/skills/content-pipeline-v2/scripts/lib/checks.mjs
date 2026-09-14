@@ -52,6 +52,9 @@ export function checkProbe(files) {
     reasons.push('missing migration/probe/probe.md');
   } else if (!probeMd.trim()) {
     reasons.push('migration/probe/probe.md is empty');
+  } else if (!/main content/i.test(probeMd)) {
+    reasons.push('migration/probe/probe.md must say whether the main content is in the initial '
+      + 'HTML (the probe report\'s hasMainContent); later steps read that');
   }
   return { pass: reasons.length === 0, reasons };
 }
@@ -295,6 +298,14 @@ export function checkReport(files) {
     if (count > 1) return [`migration/REPORT.md has ${count} "## ${id}" sections; keep one`];
     return [];
   });
+  // A shell variable that never expanded is a body that was never read back.
+  for (const literal of new Set(md.match(/\$[A-Z_][A-Z0-9_]*\b/g) ?? [])) {
+    reasons.push(`migration/REPORT.md contains the unexpanded shell variable ${literal}`);
+  }
+  const next = md.split(/^## next\s*$/m)[1]?.split(/^## /m)[0] ?? '';
+  if (next && !STEPS.some((s) => new RegExp(`\\b${escapeRegExp(s.id)}\\b`).test(next))) {
+    reasons.push('migration/REPORT.md "## next" names no step; say what is pending or done');
+  }
   return { pass: reasons.length === 0, reasons };
 }
 

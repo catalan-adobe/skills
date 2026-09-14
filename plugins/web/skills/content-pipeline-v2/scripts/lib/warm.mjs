@@ -47,11 +47,12 @@ function renderCacheMd({
   return [
     '# cache', '',
     `Selection: ${selection} (${rows.length} URLs). ${counts}; ${assets} asset file(s) stored.`, '',
-    '| url | status | note |', '| --- | --- | --- |',
-    ...rows.map((r) => `| ${r.url} | ${r.status} | ${r.note ?? ''} |`), '',
+    '| url | status | ms | note |', '| --- | --- | --- | --- |',
+    ...rows.map((r) => `| ${r.url} | ${r.status} | ${r.ms} | ${r.note ?? ''} |`), '',
     `Proxy \`/__status\` after the offline check: \`${JSON.stringify(status)}\`.`, '',
     `Settings: port ${port}, one browser session, ${pace} ms between pages, hide rules and `
-      + 'scroll on every page, statuses from the offline replay.', '',
+      + 'scroll on every page, statuses from the offline replay; ms = time in the browser '
+      + 'until the hide rules applied.', '',
   ].join('\n');
 }
 
@@ -84,6 +85,7 @@ export async function warm(project, io) {
   const expression = pageExpression(recipe);
 
   const online = await startProxy({ offline: false });
+  const timings = new Map();
   const via = (url) => {
     const u = new URL(url);
     return `http://127.0.0.1:${online.port}${u.pathname}${u.search}`
@@ -91,9 +93,11 @@ export async function warm(project, io) {
   };
   try {
     for (const [i, url] of urls.entries()) {
+      const started = Date.now();
       if (i === 0) await browser.open(via(url), { config, persistent: probe.persistent === true });
       else await browser.goto(via(url));
       await browser.eval(expression).catch(() => {});
+      timings.set(url, Date.now() - started);
       await sleep(pace);
       await browser.eval('window.scrollTo(0, 0)').catch(() => {});
     }
@@ -111,9 +115,12 @@ export async function warm(project, io) {
       const res = await fetchImpl(`http://127.0.0.1:${offline.port}${u.pathname}${u.search}`
         + `${u.search ? '&' : '?'}_origin=${encodeURIComponent(origin)}`).catch(() => null);
       if (res) await res.arrayBuffer().catch(() => {});
+      const ms = timings.get(url) ?? 0;
       rows.push(res?.ok
-        ? { url, status: 'cached' }
-        : { url, status: 'failed', note: res ? `${res.status}` : 'no response' });
+        ? { url, status: 'cached', ms }
+        : {
+          url, status: 'failed', ms, note: res ? `${res.status}` : 'no response',
+        });
     }
     status = await fetchImpl(`http://127.0.0.1:${offline.port}/__status`)
       .then((r) => r.json()).catch(() => null);

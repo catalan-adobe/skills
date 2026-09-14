@@ -45,9 +45,10 @@ so the probe's configuration is in effect.
 
 ## REPORT.md
 
-`node <skill>/scripts/status.mjs section prep` with the body on stdin (no heading — the command
-adds it, and replaces a previous section): overlays found, which strategy cleaned each, anything
-left on screen, and the hide rules `prep-verify` and `cache` should apply.
+`node <skill>/scripts/status.mjs section prep` with the body in a file (`--file body.md`) or on
+stdin (no heading — the command adds it, and replaces a previous section): overlays found, which
+strategy cleaned each, anything left on screen, and the hide rules `prep-verify` and `cache`
+should apply.
 
 ## Done
 

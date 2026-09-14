@@ -23,7 +23,7 @@ status.mjs approve <step> [<subset>...]
                                   record the operator's yes for a gated step (cache);
                                   subset names select "urls/subsets/<name>.txt" (default: all)
 status.mjs urls                  distribution + caching proposal from urls/urls.json
-status.mjs section <step|next> < body.md
+status.mjs section <step|next> [--file body.md] (else stdin)
                                  write that "## <step>" in REPORT.md from a body without
                                  heading (the command adds it; replaces a previous one)
 status.mjs free-port [--from 3001]
@@ -241,7 +241,7 @@ const FLAGS = {
   urls: [],
   setup: ['--install', '--skills-repo', '--skills-ref'],
   'free-port': ['--from'],
-  section: [],
+  section: ['--file'],
 };
 
 async function readStdin() {
@@ -288,7 +288,12 @@ const COMMANDS = {
   'free-port': async (argv) => ({ port: await freePort(Number(flag(argv, '--from') ?? 3001)) }),
   async section(argv, project) {
     const id = argv[0] === 'next' ? 'next' : stepById(argv[0] ?? '').id;
-    const body = await readStdin();
+    const file = flag(argv, '--file');
+    const body = file
+      ? await readFile(path.resolve(project.root, file), 'utf8').catch(() => {
+        throw new Error(`section ${id}: cannot read ${file}`);
+      })
+      : await readStdin();
     if (!body.trim()) throw new Error(`section ${id}: the body on stdin is empty`);
     await upsertSection(project, id, body);
     return { section: id, file: project.report };

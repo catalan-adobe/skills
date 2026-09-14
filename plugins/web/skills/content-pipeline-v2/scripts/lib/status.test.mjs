@@ -99,7 +99,7 @@ test('status follows the artefacts on disk; approve opens the operator gate', as
   assert.equal(s.prep.state, 'blocked');
   for (const dir of ['probe', 'prep', 'urls']) await mkdir(path.join(m, dir), { recursive: true });
   await writeFile(path.join(m, 'probe/browser-recipe.json'), '{"engine":"chromium"}');
-  await writeFile(path.join(m, 'probe/probe.md'), 'x');
+  await writeFile(path.join(m, 'probe/probe.md'), 'Main content in initial HTML: yes.');
   await writeFile(path.join(m, 'prep/page-prep.json'), JSON.stringify({
     checked: ['https://example.com/'], overlays: [],
   }));
@@ -553,7 +553,20 @@ test('section accepts "next" for the report step and check report requires it', 
   await new Promise((resolve) => {
     const child = spawn('node', [cliPath, 'section', 'next'], { cwd });
     child.on('close', resolve);
-    child.stdin.end('Nothing pending.\n');
+    child.stdin.end('cache waits for approval.\n');
   });
   assert.equal((await cli(cwd, 'check', 'report')).pass, true);
+});
+
+test('section --file reads the body from a file instead of stdin', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/');
+  await writeFile(path.join(cwd, 'body.md'), 'Loads headless.\n');
+  const out = await cli(cwd, 'section', 'probe', '--file', 'body.md');
+  assert.equal(out.section, 'probe');
+  const report = await readFile(path.join(cwd, 'migration/REPORT.md'), 'utf8');
+  assert.match(report, /## probe\n\nLoads headless\./);
+  const missing = await cli(cwd, 'section', 'probe', '--file', 'nope.md').catch((e) => e);
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /nope\.md/);
 });

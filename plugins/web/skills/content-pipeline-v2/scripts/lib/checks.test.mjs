@@ -8,7 +8,7 @@ import {
 test('checkProbe passes when the recipe parses and probe.md is non-empty', () => {
   const files = {
     'probe/browser-recipe.json': '{"engine":"chromium"}',
-    'probe/probe.md': '# probe notes',
+    'probe/probe.md': '# probe notes\n\nMain content in initial HTML: yes.',
   };
   assert.deepEqual(checkProbe(files), { pass: true, reasons: [] });
 });
@@ -272,9 +272,9 @@ test('checkCache requires the status cell, not just the word appearing in the UR
 
 test('checkReport passes when REPORT.md has a section for every step whose files exist', () => {
   const files = {
-    'REPORT.md': '## probe\n\ndone\n\n## scan\n\ndone\n\n## next\n\nx\n',
+    'REPORT.md': '## probe\n\ndone\n\n## scan\n\ndone\n\n## next\n\ncache waits\n',
     'probe/browser-recipe.json': '{}',
-    'probe/probe.md': 'x',
+    'probe/probe.md': 'main content: yes',
     'urls/urls.json': '[]',
     'urls/urls.md': 'x',
   };
@@ -284,9 +284,9 @@ test('checkReport passes when REPORT.md has a section for every step whose files
 test('checkReport lists a missing REPORT.md and a missing section for a ran step', () => {
   assert.deepEqual(checkReport({}), { pass: false, reasons: ['missing migration/REPORT.md'] });
   const files = {
-    'REPORT.md': '## probe\n\ndone\n\n## next\n\nx\n',
+    'REPORT.md': '## probe\n\ndone\n\n## next\n\ncache waits\n',
     'probe/browser-recipe.json': '{}',
-    'probe/probe.md': 'x',
+    'probe/probe.md': 'main content: yes',
     'urls/urls.json': '[]',
     'urls/urls.md': 'x',
   };
@@ -298,7 +298,7 @@ test('checkReport lists a missing REPORT.md and a missing section for a ran step
 
 test('checkReport does not demand a prep-verify section from prep artefacts alone', () => {
   const files = {
-    'REPORT.md': '## prep\n\ndone\n\n## next\n\nx\n',
+    'REPORT.md': '## prep\n\ndone\n\n## next\n\ncache waits\n',
     'prep/page-prep.json': '{}',
     'prep/prep.md': 'x',
   };
@@ -307,7 +307,7 @@ test('checkReport does not demand a prep-verify section from prep artefacts alon
 
 test('checkReport does not accept a "## prep-verify" header as the "## prep" section', () => {
   const files = {
-    'REPORT.md': '## prep-verify\n\ndone\n\n## next\n\nx\n',
+    'REPORT.md': '## prep-verify\n\ndone\n\n## next\n\ncache waits\n',
     'prep/page-prep.json': '{}',
     'prep/prep.md': 'x',
   };
@@ -318,9 +318,9 @@ test('checkReport does not accept a "## prep-verify" header as the "## prep" sec
 });
 
 test('checks never throw on JSON that parses to null or a scalar', () => {
-  const nullRecipe = { 'probe/browser-recipe.json': 'null', 'probe/probe.md': 'ok' };
+  const nullRecipe = { 'probe/browser-recipe.json': 'null', 'probe/probe.md': 'main content ok' };
   assert.equal(checkProbe(nullRecipe).pass, false);
-  assert.match(checkProbe({ 'probe/browser-recipe.json': '"x"', 'probe/probe.md': 'ok' })
+  assert.match(checkProbe({ 'probe/browser-recipe.json': '"x"', 'probe/probe.md': 'main content' })
     .reasons.join(' '), /not a JSON object/);
   const prep = checkPrep({ 'prep/page-prep.json': 'null' }, ['prep/home.png']);
   assert.equal(prep.pass, false);
@@ -353,10 +353,10 @@ test('cache is not done without the recorded approval, and the status cell is ex
 test('report requires a prep-verify section only once prep-verify itself passed', () => {
   const onePage = JSON.stringify({ checked: ['https://example.com/'], overlays: [] });
   const files = {
-    'probe/browser-recipe.json': '{}', 'probe/probe.md': 'ok',
+    'probe/browser-recipe.json': '{}', 'probe/probe.md': 'main content: yes',
     'prep/page-prep.json': onePage, 'prep/prep.md': 'ok',
     'urls/urls.json': '[{"url":"https://example.com/"}]', 'urls/urls.md': 'ok',
-    'REPORT.md': '## probe\n## prep\n## scan\n\n## next\n\nx\n',
+    'REPORT.md': '## probe\n## prep\n## scan\n\n## next\n\ncache waits\n',
   };
   assert.equal(checkReport(files).pass, true, JSON.stringify(checkReport(files)));
   const three = JSON.stringify({
@@ -404,8 +404,8 @@ test('checkCache accepts URL cells wrapped as <url> by a markdown autofix', () =
 
 test('checkReport rejects a step section that appears twice', () => {
   const files = {
-    'probe/browser-recipe.json': '{}', 'probe/probe.md': 'ok',
-    'REPORT.md': '## probe\n\nfirst\n\n## probe\n\nsecond\n\n## next\n\nx\n',
+    'probe/browser-recipe.json': '{}', 'probe/probe.md': 'main content: yes',
+    'REPORT.md': '## probe\n\nfirst\n\n## probe\n\nsecond\n\n## next\n\ncache waits\n',
   };
   const result = checkReport(files);
   assert.equal(result.pass, false);
@@ -446,7 +446,7 @@ test('report is done only once its own "## next" section exists', () => {
   const before = checkReport(files);
   assert.equal(before.pass, false);
   assert.match(before.reasons.join(' '), /no "## next" section/);
-  const withNext = { 'REPORT.md': `${files['REPORT.md']}\n## next\n\nnothing\n` };
+  const withNext = { 'REPORT.md': `${files['REPORT.md']}\n## next\n\ncache pending\n` };
   assert.equal(checkReport(withNext).pass, true);
 });
 
@@ -467,4 +467,26 @@ test('prep needs one screenshot, prep-verify two', () => {
   assert.match(verifyOne.reasons.join(' '), /1 screenshot.*needs >= 2/);
   assert.equal(checkPrepVerify({ 'prep/page-prep.json': three, 'prep/prep.md': 'ok' },
     ['prep/home.png', 'prep/a.png']).pass, true);
+});
+
+test('report rejects unexpanded shell variables and a "## next" that names no step', () => {
+  const base = '# Migration report\n\n## setup\n\nok\n\n';
+  const literal = checkReport({ 'REPORT.md': `${base}## next\n\n$STATUS_OUT\n\ncache waits\n` });
+  assert.equal(literal.pass, false);
+  assert.match(literal.reasons.join(' '), /unexpanded shell variable \$STATUS_OUT/);
+  const vague = checkReport({ 'REPORT.md': `${base}## next\n\nAll good.\n` });
+  assert.equal(vague.pass, false);
+  assert.match(vague.reasons.join(' '), /"## next" names no step/);
+  const good = checkReport({ 'REPORT.md': `${base}## next\n\ncache waits for approval.\n` });
+  assert.deepEqual(good, { pass: true, reasons: [] });
+});
+
+test('probe.md must say whether the main content is in the initial HTML', () => {
+  const files = { 'probe/browser-recipe.json': '{}', 'probe/probe.md': 'default config works' };
+  const silent = checkProbe(files);
+  assert.equal(silent.pass, false);
+  assert.match(silent.reasons.join(' '), /main content/);
+  const note = 'Main content in initial HTML: no (JS-rendered).';
+  const said = checkProbe({ ...files, 'probe/probe.md': note });
+  assert.equal(said.pass, true);
 });

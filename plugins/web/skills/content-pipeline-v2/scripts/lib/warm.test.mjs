@@ -108,7 +108,7 @@ test('warm drives the browser through the proxy, verifies offline, writes cache.
   assert.equal(result.pass, false, 'one URL failed');
   const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
   assert.match(md, new RegExp(`\\| ${ORIGIN}/a.html \\| cached \\|`));
-  assert.match(md, new RegExp(`\\| ${ORIGIN}/missing.html \\| failed \\| 404`));
+  assert.match(md, new RegExp(`\\| ${ORIGIN}/missing.html \\| failed \\| \\d+ \\| 404`));
   assert.ok(log.some(([k, v]) => k === 'eval' && v.includes('#cmp')), 'hide rules injected');
   assert.ok(log[0][0] === 'open' && log[0][1].config.endsWith('playwright-config.json'));
   assert.ok(log.at(-1)[0] === 'close');
@@ -130,4 +130,22 @@ test('the cache path of a stored page is where check cache looks', () => {
   const url = `${ORIGIN}/a.html`;
   const hash = createHash('sha256').update(ORIGIN).digest('hex').slice(0, 8);
   assert.equal(cacheRelativePath(url), `site.example_${hash}/a.html`);
+});
+
+test('cache.md carries the time each page took in the browser', async () => {
+  const p = await project();
+  const proxy = fakeProxy(path.join(p.dir, 'cache/.page-cache'));
+  const log = [];
+  await warm(p, {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: fakeBrowser(log),
+    pace: 0,
+  });
+  const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
+  assert.match(md, /\| url \| status \| ms \| note \|/);
+  assert.match(md, new RegExp(`\\| ${ORIGIN}/a.html \\| cached \\| \\d+ \\|`));
 });

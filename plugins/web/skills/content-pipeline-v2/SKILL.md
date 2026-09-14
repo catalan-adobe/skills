@@ -35,7 +35,9 @@ node $SKILL/scripts/status.mjs --text
 `.agents/skills/`) and stops only on Node < 22. The skills come from `adobe/skills` unless
 the operator names another source — `--skills-repo <owner/repo> --skills-ref <branch>` —
 which `project.json` then remembers. `status.mjs --text` shows each step as `done`,
-`ready`, `blocked (by …)` or `waiting-operator`. Then follow the loop below.
+`ready`, `blocked (by …)` or `waiting-operator`. Then follow the loop below. An operator who
+wants the steps fanned out to agents at their tiers says so in the prompt ("run the
+migration analysis as a workflow"); the skill does not opt in for them.
 
 ## Project structure
 
@@ -90,12 +92,13 @@ warm.mjs [--pace ms]         the cache step: proxy + browser + offline check →
 
 ## Harness ladder
 
-Pick the first mode the harness supports and **say which one and why before the first
-step** — a session that can dispatch subagents or run a workflow and works through a todo
-list instead has chosen the weakest mode without saying so. In every mode the loop is the
-same: run `status.mjs` → run every `ready` step from its brief → `status.mjs check <step>`
-→ repeat until every step is `done` or `waiting-operator`. The agent never marks a step
-done; only a passing check does.
+Pick the first mode that applies and **say which one and why before the first step**;
+record it in `REPORT.md ## setup`. A workflow tool usually needs the operator's own opt-in
+(a trigger word or "run this as a workflow" in the prompt): use it only when the prompt
+gave that, never on the skill's say-so. Otherwise dispatch subagents when the harness has
+them; otherwise a todo list. In every mode the loop is the same: run `status.mjs` → run
+every `ready` step from its brief → `status.mjs check <step>` → repeat until every step is
+`done` or `waiting-operator`. The agent never marks a step done; only a passing check does.
 
 The tier column is an instruction, not a comment: `low` steps run a script and read JSON,
 `medium` steps judge. Run each step on a model of its tier — a subagent or workflow agent
@@ -103,9 +106,10 @@ at that tier, or a model switch when the session runs alone. When the harness ca
 change models, write that in `REPORT.md` under `## setup` ("all steps ran on <model>")
 so the cost is visible to the operator instead of silent.
 
-1. **Workflow tool**: one agent per step, model tier from the table, `prep` and `scan` in
-   parallel after `probe`, `prep-verify` after both, `cache` only once approved, `report`
-   last. Each agent gets `steps/<id>.md` and returns the check output.
+1. **Workflow tool** (when the operator asked for it): one agent per step, model tier from
+   the table, `prep` and `scan` in parallel after `probe`, `prep-verify` after both, `cache`
+   only once approved, `report` last. Each agent gets `steps/<id>.md` and returns the check
+   output.
 2. **Subagents**: dispatch one subagent per ready step with the tier from the table and the
    brief as its whole task; run `prep` and `scan` together; check each result yourself.
 3. **Todo list**: one item per step, named by the step id, in dependency order (`setup`,
