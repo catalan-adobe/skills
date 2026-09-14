@@ -77,7 +77,8 @@ const REPORT_TITLE = '# Migration report';
  */
 export async function upsertSection(project, id, body) {
   const current = await readFile(project.report, 'utf8').catch(() => `${REPORT_TITLE}\n`);
-  const section = `## ${id}\n\n${body.trim()}\n`;
+  const text = body.trim().replace(new RegExp(`^##\\s+${id}\\s*\\n+`), '');
+  const section = `## ${id}\n\n${text}\n`;
   const heading = new RegExp(`^## ${id.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[ \\t]*$`, 'm');
   const lines = current.split('\n');
   const start = lines.findIndex((l) => heading.test(l));

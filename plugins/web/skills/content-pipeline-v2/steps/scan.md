@@ -50,8 +50,8 @@ proposal sentence that opens `urls.md` to the operator word for word; `cache` wa
 
 ## Outputs
 `migration/urls/urls.json` (`URLExtended[]`, valid entries only); `urls/urls.md` and
-`urls/subsets/*.txt` come from `status.mjs urls`. Append `## scan` to `REPORT.md`: total,
-the strategy that worked (or the operator list), errors, largest groups, the proposal.
+`urls/subsets/*.txt` come from `status.mjs urls`. Report with `status.mjs section scan` (body
+on stdin, no heading): total, the strategy (or the operator list), errors, groups, proposal.
 
 ## Done
 ```bash

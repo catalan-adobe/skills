@@ -23,8 +23,9 @@ status.mjs approve <step> [<subset>...]
                                   record the operator's yes for a gated step (cache);
                                   subset names select "urls/subsets/<name>.txt" (default: all)
 status.mjs urls                  distribution + caching proposal from urls/urls.json
-status.mjs section <step> < body.md
-                                 write that step's "## <step>" in REPORT.md (replaces it)
+status.mjs section <step|next> < body.md
+                                 write that "## <step>" in REPORT.md from a body without
+                                 heading (the command adds it; replaces a previous one)
 status.mjs free-port [--from 3001]
                                  a loopback port nothing listens on (for the cache proxy)
 status.mjs pick [--count 2] [--exclude <url>]... [--write <subset>]
@@ -141,7 +142,7 @@ export async function urls(project) {
  * tests; the CLI passes neither.
  */
 export async function setup({
-  shouldInstall, nodeVersion, exec = defaultExec, skillsRepo, skillsRef,
+  shouldInstall, nodeVersion, exec = defaultExec, skillsRepo, skillsRef, env = process.env,
 }, project) {
   let detection = await detect({ cwd: project.root, nodeVersion });
   let installs = [];
@@ -155,13 +156,21 @@ export async function setup({
   }
   await writeSetupJson(project, detection);
   const reasons = missingReasons(detection);
-  await upsertSection(project, 'setup', setupSection(detection, installs, reasons));
+  await upsertSection(project, 'setup', setupSection(detection, installs, reasons, env));
   if (reasons.length) process.exitCode = 1;
   return { detection, reasons, installs };
 }
 
+const MODEL_VARS = ['PI_MODEL', 'CLAUDE_MODEL', 'ANTHROPIC_MODEL', 'OPENAI_MODEL', 'MODEL'];
+
+/** The model name the harness exposes in the environment, or an honest "unknown". */
+function harnessModel(env) {
+  const name = MODEL_VARS.map((v) => env[v]).find(Boolean);
+  return name ?? 'unknown (not exposed by the harness; do not guess it)';
+}
+
 /** The `## setup` body: what was found, what was installed, what is still missing. */
-function setupSection(detection, installs, reasons) {
+function setupSection(detection, installs, reasons, env) {
   const skills = Object.entries(detection.skills)
     .map(([name, s]) => `${name} (${s.ok ? s.path : 'missing'})`).join(', ');
   const pkg = detection.packages['franklin-bulk-shared'].ok ? 'present' : 'missing';
@@ -177,6 +186,7 @@ function setupSection(detection, installs, reasons) {
     lines.push(`Installed in project scope: ${outcomes.join('; ')}.`);
   }
   lines.push(reasons.length ? `Still missing: ${reasons.join('; ')}.` : 'Every precondition met.');
+  lines.push(`Model reported by the harness: ${harnessModel(env)}.`);
   return lines.join('\n');
 }
 
@@ -277,7 +287,7 @@ const COMMANDS = {
   urls: (argv, project) => urls(project),
   'free-port': async (argv) => ({ port: await freePort(Number(flag(argv, '--from') ?? 3001)) }),
   async section(argv, project) {
-    const id = stepById(argv[0] ?? '').id;
+    const id = argv[0] === 'next' ? 'next' : stepById(argv[0] ?? '').id;
     const body = await readStdin();
     if (!body.trim()) throw new Error(`section ${id}: the body on stdin is empty`);
     await upsertSection(project, id, body);

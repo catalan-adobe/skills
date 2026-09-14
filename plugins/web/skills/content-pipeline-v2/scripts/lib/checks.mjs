@@ -60,7 +60,7 @@ export function checkProbe(files) {
  * `page-prep.json`'s content: `checked` URLs and every `overlays[]` entry has a `selector`.
  * Shared by `prep` (>= 1 checked) and `prep-verify` (>= 3 checked, >= 2 path prefixes).
  */
-function checkPrepManifest(files, { minChecked, minPrefixes }) {
+function checkPrepManifest(files, { minChecked, minPrefixes, minShots }, shots) {
   const rel = 'prep/page-prep.json';
   const text = files[rel];
   if (text === undefined) return { pass: false, reasons: [`missing migration/${rel}`] };
@@ -86,17 +86,29 @@ function checkPrepManifest(files, { minChecked, minPrefixes }) {
       reasons.push(`migration/${rel} overlay ${i} has no selector`);
     }
   });
+  const pngs = shots.filter((f) => /\.png$/i.test(f)).length;
+  if (pngs < minShots) {
+    reasons.push(pngs === 0
+      ? 'no screenshot of a cleaned page under migration/prep/ (a .png is the evidence)'
+      : `${pngs} screenshot(s) under migration/prep/, needs >= ${minShots}`);
+  }
   return { pass: reasons.length === 0, reasons };
 }
 
-/** `prep`: `page-prep.json` has >= 1 checked URL; every overlay has a selector. */
-export function checkPrep(files) {
-  return checkPrepManifest(files, { minChecked: 1, minPrefixes: 0 });
+/**
+ * `prep`: `page-prep.json` has >= 1 checked URL, every overlay has a selector, and one
+ * screenshot of the cleaned page sits under `prep/`.
+ *
+ * @param {Record<string, string>} files Text files under `migration/`.
+ * @param {string[]} [prepFiles] Paths under `prep/` (`prep/<name>`).
+ */
+export function checkPrep(files, prepFiles = []) {
+  return checkPrepManifest(files, { minChecked: 1, minPrefixes: 0, minShots: 1 }, prepFiles);
 }
 
 /** `prep-verify`: `page-prep.json` has >= 3 checked URLs from >= 2 first path segments. */
-export function checkPrepVerify(files) {
-  return checkPrepManifest(files, { minChecked: 3, minPrefixes: 2 });
+export function checkPrepVerify(files, prepFiles = []) {
+  return checkPrepManifest(files, { minChecked: 3, minPrefixes: 2, minShots: 2 }, prepFiles);
 }
 
 /** `scan`: `urls/urls.json` is a non-empty `URLExtended[]`; `urls/urls.md` exists. */
@@ -233,6 +245,12 @@ export function checkCache(files, cacheFiles = []) {
   return { pass: reasons.length === 0, reasons };
 }
 
+/** The files directly under `dir`, as `<prefix>/<name>` (empty when the directory is absent). */
+async function listDir(dir, prefix) {
+  const names = await readdir(dir).catch(() => []);
+  return names.map((n) => `${prefix}/${n}`);
+}
+
 /** Every file under `cache/.page-cache/`, relative to it (empty when the directory is absent). */
 async function listCacheFiles(project) {
   const root = path.join(project.step('cache'), '.page-cache');
@@ -259,7 +277,8 @@ function stepsThatRan(files) {
   return STEPS
     .filter((step) => step.id !== 'report')
     .filter((step) => nonDirWrites(step).every((w) => files[w] !== undefined))
-    .filter((step) => step.id !== 'prep-verify' || checkPrepVerify(files).pass)
+    .filter((step) => step.id !== 'prep-verify'
+      || checkPrepManifest(files, { minChecked: 3, minPrefixes: 2, minShots: 0 }, []).pass)
     .map((step) => step.id);
 }
 
@@ -269,7 +288,8 @@ const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function checkReport(files) {
   const md = files['REPORT.md'];
   if (md === undefined) return { pass: false, reasons: ['missing migration/REPORT.md'] };
-  const reasons = stepsThatRan(files).flatMap((id) => {
+  // `## next` is the report step's own output; without it the step has not run.
+  const reasons = [...stepsThatRan(files), 'next'].flatMap((id) => {
     const count = (md.match(new RegExp(`^##\\s+${escapeRegExp(id)}\\s*$`, 'gm')) ?? []).length;
     if (count === 0) return [`migration/REPORT.md has no "## ${id}" section`];
     if (count > 1) return [`migration/REPORT.md has ${count} "## ${id}" sections; keep one`];
@@ -350,6 +370,11 @@ export const CHECKS = Object.fromEntries(
     if (step.id === 'cache') {
       return [step.id, async (project) => checkCache(
         await loadFiles(project), await listCacheFiles(project),
+      )];
+    }
+    if (step.id === 'prep' || step.id === 'prep-verify') {
+      return [step.id, async (project) => contentCheck(
+        await loadFiles(project), await listDir(project.step('prep'), 'prep'),
       )];
     }
     return [step.id, async (project) => contentCheck(await loadFiles(project))];

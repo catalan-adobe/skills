@@ -36,3 +36,9 @@ test('stepById names the known steps on a miss', () => {
   assert.equal(stepById('cache').operatorGate, true);
   assert.throws(() => stepById('nope'), /Unknown step "nope"; steps: setup, probe/);
 });
+
+test('a done step lists nothing as blocking it, whatever its dependencies say', () => {
+  const probe = stepStates({ probe: true }).find((s) => s.id === 'probe');
+  assert.equal(probe.state, 'done');
+  assert.deepEqual(probe.blockedBy, []);
+});

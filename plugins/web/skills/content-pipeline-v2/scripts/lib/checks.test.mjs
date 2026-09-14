@@ -40,25 +40,26 @@ const manifest = (checked, overlays = []) => ({
 
 test('checkPrep passes with >= 1 checked URL and every overlay has a selector', () => {
   const files = manifest(['https://example.com/'], [{ selector: '.cookies', hide: true }]);
-  assert.deepEqual(checkPrep(files), { pass: true, reasons: [] });
+  assert.deepEqual(checkPrep(files, ['prep/home.png']), { pass: true, reasons: [] });
 });
 
 test('checkPrep lists missing/invalid/empty/no-selector reasons', () => {
-  assert.deepEqual(checkPrep({}), {
+  assert.deepEqual(checkPrep({}, ['prep/home.png']), {
     pass: false,
     reasons: ['missing migration/prep/page-prep.json'],
   });
-  assert.deepEqual(checkPrep({ 'prep/page-prep.json': 'not json' }), {
+  assert.deepEqual(checkPrep({ 'prep/page-prep.json': 'not json' }, ['prep/home.png']), {
     pass: false,
     reasons: ['migration/prep/page-prep.json is not valid JSON'],
   });
-  assert.deepEqual(checkPrep(manifest([])), {
+  assert.deepEqual(checkPrep(manifest([]), ['prep/home.png']), {
     pass: false,
     reasons: [
       'migration/prep/page-prep.json has 0 checked URL(s), needs >= 1',
     ],
   });
-  const noSelector = checkPrep(manifest(['https://example.com/'], [{ hide: true }]));
+  const bare = manifest(['https://example.com/'], [{ hide: true }]);
+  const noSelector = checkPrep(bare, ['prep/h.png']);
   assert.deepEqual(noSelector, {
     pass: false,
     reasons: ['migration/prep/page-prep.json overlay 0 has no selector'],
@@ -71,11 +72,13 @@ test('checkPrepVerify passes with >= 3 checked URLs from >= 2 first path segment
     'https://example.com/blog/a',
     'https://example.com/docs/b',
   ]);
-  assert.deepEqual(checkPrepVerify(files), { pass: true, reasons: [] });
+  const shots = ['prep/home.png', 'prep/a.png'];
+  assert.deepEqual(checkPrepVerify(files, shots), { pass: true, reasons: [] });
 });
 
 test('checkPrepVerify lists too few checked URLs and too few path prefixes', () => {
-  assert.deepEqual(checkPrepVerify(manifest(['https://example.com/'])), {
+  const two = ['prep/1.png', 'prep/2.png'];
+  assert.deepEqual(checkPrepVerify(manifest(['https://example.com/']), two), {
     pass: false,
     reasons: [
       'migration/prep/page-prep.json has 1 checked URL(s), needs >= 3',
@@ -86,7 +89,7 @@ test('checkPrepVerify lists too few checked URLs and too few path prefixes', () 
     'https://example.com/blog/a',
     'https://example.com/blog/b',
     'https://example.com/blog/c',
-  ]));
+  ]), ['prep/1.png', 'prep/2.png']);
   assert.deepEqual(sameSegment, {
     pass: false,
     reasons: [
@@ -269,7 +272,7 @@ test('checkCache requires the status cell, not just the word appearing in the UR
 
 test('checkReport passes when REPORT.md has a section for every step whose files exist', () => {
   const files = {
-    'REPORT.md': '## probe\n\ndone\n\n## scan\n\ndone\n',
+    'REPORT.md': '## probe\n\ndone\n\n## scan\n\ndone\n\n## next\n\nx\n',
     'probe/browser-recipe.json': '{}',
     'probe/probe.md': 'x',
     'urls/urls.json': '[]',
@@ -281,7 +284,7 @@ test('checkReport passes when REPORT.md has a section for every step whose files
 test('checkReport lists a missing REPORT.md and a missing section for a ran step', () => {
   assert.deepEqual(checkReport({}), { pass: false, reasons: ['missing migration/REPORT.md'] });
   const files = {
-    'REPORT.md': '## probe\n\ndone\n',
+    'REPORT.md': '## probe\n\ndone\n\n## next\n\nx\n',
     'probe/browser-recipe.json': '{}',
     'probe/probe.md': 'x',
     'urls/urls.json': '[]',
@@ -295,7 +298,7 @@ test('checkReport lists a missing REPORT.md and a missing section for a ran step
 
 test('checkReport does not demand a prep-verify section from prep artefacts alone', () => {
   const files = {
-    'REPORT.md': '## prep\n\ndone\n',
+    'REPORT.md': '## prep\n\ndone\n\n## next\n\nx\n',
     'prep/page-prep.json': '{}',
     'prep/prep.md': 'x',
   };
@@ -304,7 +307,7 @@ test('checkReport does not demand a prep-verify section from prep artefacts alon
 
 test('checkReport does not accept a "## prep-verify" header as the "## prep" section', () => {
   const files = {
-    'REPORT.md': '## prep-verify\n\ndone\n',
+    'REPORT.md': '## prep-verify\n\ndone\n\n## next\n\nx\n',
     'prep/page-prep.json': '{}',
     'prep/prep.md': 'x',
   };
@@ -319,7 +322,7 @@ test('checks never throw on JSON that parses to null or a scalar', () => {
   assert.equal(checkProbe(nullRecipe).pass, false);
   assert.match(checkProbe({ 'probe/browser-recipe.json': '"x"', 'probe/probe.md': 'ok' })
     .reasons.join(' '), /not a JSON object/);
-  const prep = checkPrep({ 'prep/page-prep.json': 'null' });
+  const prep = checkPrep({ 'prep/page-prep.json': 'null' }, ['prep/home.png']);
   assert.equal(prep.pass, false);
   assert.match(prep.reasons.join(' '), /not a JSON object/);
   const cache = checkCache({
@@ -353,7 +356,7 @@ test('report requires a prep-verify section only once prep-verify itself passed'
     'probe/browser-recipe.json': '{}', 'probe/probe.md': 'ok',
     'prep/page-prep.json': onePage, 'prep/prep.md': 'ok',
     'urls/urls.json': '[{"url":"https://example.com/"}]', 'urls/urls.md': 'ok',
-    'REPORT.md': '## probe\n## prep\n## scan\n',
+    'REPORT.md': '## probe\n## prep\n## scan\n\n## next\n\nx\n',
   };
   assert.equal(checkReport(files).pass, true, JSON.stringify(checkReport(files)));
   const three = JSON.stringify({
@@ -379,7 +382,7 @@ test('prep-verify counts path prefixes below the scope every URL in urls.json sh
       'https://x.example/en/section/diseases/asthma.html',
       'https://x.example/en/section/clinics/one.html',
     ]),
-  });
+  }, ['prep/home.png', 'prep/a.png']);
   assert.equal(scopedPass.pass, true, JSON.stringify(scopedPass));
   const samePrefix = checkPrepVerify({
     'urls/urls.json': urls,
@@ -388,7 +391,7 @@ test('prep-verify counts path prefixes below the scope every URL in urls.json sh
       'https://x.example/en/section/diseases/b.html',
       'https://x.example/en/section/diseases/c.html',
     ]),
-  });
+  }, ['prep/home.png', 'prep/a.png']);
   assert.equal(samePrefix.pass, false);
   assert.match(samePrefix.reasons.join(' '), /cover 1 path prefix/);
 });
@@ -402,7 +405,7 @@ test('checkCache accepts URL cells wrapped as <url> by a markdown autofix', () =
 test('checkReport rejects a step section that appears twice', () => {
   const files = {
     'probe/browser-recipe.json': '{}', 'probe/probe.md': 'ok',
-    'REPORT.md': '## probe\n\nfirst\n\n## probe\n\nsecond\n',
+    'REPORT.md': '## probe\n\nfirst\n\n## probe\n\nsecond\n\n## next\n\nx\n',
   };
   const result = checkReport(files);
   assert.equal(result.pass, false);
@@ -436,4 +439,32 @@ test('checkCache needs a stored body per cached row and at least one asset', () 
     '| https://example.com/a | failed |\n| https://example.com/b | skipped |\n',
   );
   assert.equal(checkCache(failedRow, []).pass, true, 'failed/skipped rows need no body');
+});
+
+test('report is done only once its own "## next" section exists', () => {
+  const files = { 'REPORT.md': '# Migration report\n\n## setup\n\nok\n' };
+  const before = checkReport(files);
+  assert.equal(before.pass, false);
+  assert.match(before.reasons.join(' '), /no "## next" section/);
+  const withNext = { 'REPORT.md': `${files['REPORT.md']}\n## next\n\nnothing\n` };
+  assert.equal(checkReport(withNext).pass, true);
+});
+
+test('prep needs one screenshot, prep-verify two', () => {
+  const one = JSON.stringify({ checked: ['https://x.example/'], overlays: [] });
+  const three = JSON.stringify({
+    checked: ['https://x.example/', 'https://x.example/a/1', 'https://x.example/b/2'], overlays: [],
+  });
+  const noShot = checkPrep({ 'prep/page-prep.json': one, 'prep/prep.md': 'ok' }, []);
+  assert.equal(noShot.pass, false);
+  assert.match(noShot.reasons.join(' '), /no screenshot .* migration\/prep\//);
+  const onePage = { 'prep/page-prep.json': one, 'prep/prep.md': 'ok' };
+  const withShot = checkPrep(onePage, ['prep/home.png']);
+  assert.equal(withShot.pass, true);
+  const verifyOne = checkPrepVerify({ 'prep/page-prep.json': three, 'prep/prep.md': 'ok' },
+    ['prep/home.png']);
+  assert.equal(verifyOne.pass, false);
+  assert.match(verifyOne.reasons.join(' '), /1 screenshot.*needs >= 2/);
+  assert.equal(checkPrepVerify({ 'prep/page-prep.json': three, 'prep/prep.md': 'ok' },
+    ['prep/home.png', 'prep/a.png']).pass, true);
 });

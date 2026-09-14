@@ -81,7 +81,8 @@ status.mjs pick [--count n] [--exclude <url>]… [--write <subset>]
                              one reachable page per largest group; --write fills to n pages
                              and saves urls/subsets/<subset>.txt
 status.mjs approve cache <subset>...|all   record the operator's yes and the selection
-status.mjs section <step> < body.md        write that step's REPORT.md section (replaces it)
+status.mjs section <step|next> < body.md   write that REPORT.md section from a body without
+                                           heading (the command adds it; replaces)
 status.mjs free-port [--from n]            a loopback port nothing listens on
 status.mjs setup [--install] detect preconditions; install the missing ones in project scope
 warm.mjs [--pace ms]         the cache step: proxy + browser + offline check → cache.md

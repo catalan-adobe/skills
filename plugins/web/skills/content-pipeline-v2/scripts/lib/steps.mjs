@@ -78,7 +78,7 @@ export function stepById(id) {
  */
 export function stepStates(done, approved = {}) {
   return STEPS.map((step) => {
-    const blockedBy = step.dependsOn.filter((dep) => !done[dep]);
+    const blockedBy = done[step.id] ? [] : step.dependsOn.filter((dep) => !done[dep]);
     let state = 'ready';
     if (done[step.id]) state = 'done';
     else if (blockedBy.length) state = 'blocked';

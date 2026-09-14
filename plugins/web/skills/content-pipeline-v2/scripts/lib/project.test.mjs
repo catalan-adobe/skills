@@ -20,3 +20,13 @@ test('upsertSection replaces an existing "## <id>" block and appends a new one',
   assert.match(text, /## setup\n\nNode 24, all skills present\.\n\n## probe\n\nLoads headless\./);
   assert.ok(!text.includes('Node 24.\n'), 'old body gone');
 });
+
+test('upsertSection drops a heading the caller put in the body', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'cpv2-report-'));
+  const project = resolveProject(dir);
+  await mkdir(project.dir, { recursive: true });
+  await upsertSection(project, 'probe', '## probe\n\nLoads headless.\n');
+  const text = await readFile(project.report, 'utf8');
+  assert.equal((text.match(/^## probe$/gm) ?? []).length, 1);
+  assert.match(text, /## probe\n\nLoads headless\.\n/);
+});

@@ -104,6 +104,7 @@ test('status follows the artefacts on disk; approve opens the operator gate', as
     checked: ['https://example.com/'], overlays: [],
   }));
   await writeFile(path.join(m, 'prep/prep.md'), 'x');
+  await writeFile(path.join(m, 'prep/home.png'), 'png');
   await writeFile(
     path.join(m, 'urls/urls.json'),
     JSON.stringify([{ url: 'https://example.com/' }]),
@@ -523,4 +524,36 @@ test('section upserts one REPORT.md section from stdin and refuses unknown steps
   const empty = await run(['section', 'probe'], '   ');
   assert.equal(empty.code, 1);
   assert.match(empty.stderr, /empty/);
+});
+
+test('setup records the model the harness reports, never a guess', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/');
+  const project = resolveProject(cwd);
+  await setup({ shouldInstall: false, nodeVersion: '24.0.0', env: { PI_MODEL: 'some-model-1' } },
+    project);
+  process.exitCode = 0;
+  let report = await readFile(path.join(cwd, 'migration/REPORT.md'), 'utf8');
+  assert.match(report, /Model reported by the harness: some-model-1/);
+  await setup({ shouldInstall: false, nodeVersion: '24.0.0', env: {} }, project);
+  process.exitCode = 0;
+  report = await readFile(path.join(cwd, 'migration/REPORT.md'), 'utf8');
+  assert.match(report, /Model reported by the harness: unknown \(not exposed/);
+});
+
+test('section accepts "next" for the report step and check report requires it', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/');
+  const project = resolveProject(cwd);
+  await setup({ shouldInstall: false, nodeVersion: '24.0.0', env: {} }, project);
+  process.exitCode = 0;
+  const before = await cli(cwd, 'check', 'report').catch((e) => e);
+  assert.equal(before.code, 1);
+  assert.match(before.stdout, /no \\"## next\\" section/);
+  await new Promise((resolve) => {
+    const child = spawn('node', [cliPath, 'section', 'next'], { cwd });
+    child.on('close', resolve);
+    child.stdin.end('Nothing pending.\n');
+  });
+  assert.equal((await cli(cwd, 'check', 'report')).pass, true);
 });

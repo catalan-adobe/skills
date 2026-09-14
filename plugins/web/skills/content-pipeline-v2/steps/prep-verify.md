@@ -22,7 +22,8 @@ quick mode is enough unless a new overlay appears.
    when it returns fewer (a site with one group), say so in the report and take what it gives.
 2. For each URL: open it with the probe configuration, apply every `hide` rule from
    `page-prep.json` in one `eval` (an expression — wrap statements in `(() => { … })()`),
-   then run the skill's residual check; screenshots under `migration/prep/`.
+   then run the skill's residual check and save a screenshot under `migration/prep/`
+   (the check wants two or more there in total).
 3. If a new overlay shows, detect it with the skill's bundle (cut the `eval` output at
    `### Result`) and add it to `overlays`
    with its `selector`, `hide` and `dismiss`. Never remove an existing overlay entry.
@@ -36,9 +37,9 @@ quick mode is enough unless a new overlay appears.
 
 ## REPORT.md
 
-Write the `## prep-verify` section (replace a previous one): the URLs checked, whether the
-recipe held, what was added, and whether `cache` can rely on hide rules alone or needs dismiss
-clicks.
+`node <skill>/scripts/status.mjs section prep-verify` with the body on stdin (no heading — the
+command adds it, and replaces a previous section): the URLs checked, whether the recipe held,
+what was added, and whether `cache` can rely on hide rules alone or needs dismiss clicks.
 
 ## Done
 

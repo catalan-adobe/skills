@@ -39,8 +39,9 @@ skill's script expects the command by name.
 
 ## REPORT.md
 
-Write the `## probe` section (replace a previous one): the configuration that worked (or that
-none did), the protection detected, and the flags `prep`, `prep-verify` and `cache` must use.
+`node <skill>/scripts/status.mjs section probe` with the body on stdin (no heading — the command
+adds it, and replaces a previous section): the configuration that worked (or that none did), the
+protection detected, and the flags `prep`, `prep-verify` and `cache` must use.
 
 ## Done
 
