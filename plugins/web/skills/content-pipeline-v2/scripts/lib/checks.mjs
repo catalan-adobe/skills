@@ -330,6 +330,17 @@ async function checkSetup(project) {
   return { pass: reasons.length === 0, reasons };
 }
 
+/**
+ * The approved cache selection of a project on disk: its URLs and the reasons it cannot be
+ * used (not approved, no URLs, a missing subset file).
+ *
+ * @param {import('./project.mjs').Project} project
+ * @returns {Promise<{urls: string[], reasons: string[]}>}
+ */
+export async function resolveSelection(project) {
+  return approvedSelection(await loadFiles(project));
+}
+
 /** Step id → `async (project) => { pass, reasons }`. */
 export const CHECKS = Object.fromEntries(
   STEPS.map((step) => {

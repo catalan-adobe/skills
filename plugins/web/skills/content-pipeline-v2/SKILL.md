@@ -64,11 +64,12 @@ Each step has a brief in `steps/<id>.md`: hand that one file to whoever runs the
 | `prep` | medium | page-prep | `prep/page-prep.json`, `prep/prep.md` |
 | `scan` | low* | site-scan | `urls/urls.json`, `urls/urls.md` |
 | `prep-verify` | medium | page-prep | `prep/page-prep.json`, `prep/prep.md` |
-| `cache` | low** | page-cache | `cache/cache.md`, `cache/.page-cache/` |
+| `cache` | low | page-cache (via `warm.mjs`) | `cache/cache.md`, `cache/.page-cache/` |
 | `report` | medium | — | `REPORT.md` |
 
-\* medium when the site has no usable sitemap. \*\* medium for reading the coverage at
-the end. `cache` also needs the operator's yes: `status.mjs approve cache [<subset>...]`.
+\* medium when the site has no usable sitemap. `cache` also needs the operator's yes
+(`status.mjs approve cache <subset>...|all`) and runs as one process, `scripts/warm.mjs`,
+which drives the proxy and the browser and writes its own artefacts.
 
 Runner commands:
 
@@ -76,9 +77,14 @@ Runner commands:
 status.mjs [--text]          state of every step
 status.mjs check <step>      the step's done-check; exit 1 and reasons when it fails
 status.mjs urls              URL distribution and caching proposal → urls/urls.md, subsets/
-status.mjs pick [--count n] [--exclude <url>]…  one reachable page per largest group
-status.mjs approve cache     record the operator's yes (and the chosen subsets)
+status.mjs pick [--count n] [--exclude <url>]… [--write <subset>]
+                             one reachable page per largest group; --write fills to n pages
+                             and saves urls/subsets/<subset>.txt
+status.mjs approve cache <subset>...|all   record the operator's yes and the selection
+status.mjs section <step> < body.md        write that step's REPORT.md section (replaces it)
+status.mjs free-port [--from n]            a loopback port nothing listens on
 status.mjs setup [--install] detect preconditions; install the missing ones in project scope
+warm.mjs [--pace ms]         the cache step: proxy + browser + offline check → cache.md
 ```
 
 ## Harness ladder
@@ -111,7 +117,12 @@ After `scan`, put the proposal sentence from `urls/urls.md` to the operator and 
 
 - Never skip `setup` or `probe`; every browser step depends on the probe's recipe.
 - Never install globally; `setup --install` uses `--prefix migration/.work` and `upskill`.
-- Never start `cache` before `status.mjs approve cache`; `waiting-operator` means wait.
+- Never start `cache` before `status.mjs approve cache`; `waiting-operator` means wait. A
+  prompt that pre-authorises "cache N pages" names a size, not a selection: build it with
+  `pick --count N --write <name>`, approve that name, record the operator's words.
+- Never delete anything under `migration/cache/`; the driver is idempotent.
+- Never warm the cache with `curl` or any plain HTTP client; `check cache` rejects a cache
+  without assets, and only a browser requests them.
 - Every deliverable goes under `migration/`; a step writes only its own directory and its
   `REPORT.md` section — one `## <step>` per step, replaced on a re-run, never appended
   twice (`check report` rejects duplicates). Bare URLs in tables are fine; `<url>` too.

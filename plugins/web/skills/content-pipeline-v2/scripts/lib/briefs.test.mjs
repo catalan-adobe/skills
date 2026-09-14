@@ -107,3 +107,14 @@ test('SKILL.md makes the harness rung and the tier column actionable', async () 
   assert.match(text, /REPORT\.md.*## setup/s);
   assert.match(text, /never two steps in one item/);
 });
+
+test('the cache brief runs the driver and forbids plain HTTP warming and deletions', async () => {
+  const text = await readBrief('cache');
+  assert.match(text, /scripts\/warm\.mjs/);
+  assert.match(text, /Never fetch pages with `curl`/);
+  assert.match(text, /Never delete anything under `migration\/cache\/`/);
+  assert.match(text, /pick --count <n> --write <name>/);
+  const skill = await readFile(path.join(skillRoot, 'SKILL.md'), 'utf8');
+  assert.match(skill, /warm\.mjs/);
+  assert.match(skill, /Never warm the cache with `curl`/);
+});

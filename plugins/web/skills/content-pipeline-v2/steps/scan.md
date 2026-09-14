@@ -10,8 +10,8 @@ decide what to cache. Tier: low; medium without a usable sitemap.
   when the snippet below fails. The package is already under `migration/.work/node_modules`.
 
 ## Method
-Write this to `migration/.work/scan.mjs` and run it from any directory (it crawls from the
-site root, scoped to the origin's path — a section page is a scope, not a sitemap):
+Write this to `migration/.work/scan.mjs` and run it in the foreground, from any directory
+(it crawls from the site root, scoped to the origin's path); quote its last line in the report:
 
 ```js
 import { Web } from 'franklin-bulk-shared';

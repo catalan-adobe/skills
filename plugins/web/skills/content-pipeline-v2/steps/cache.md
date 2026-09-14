@@ -1,54 +1,49 @@
 # cache
 
-Run only after `status.mjs approve cache [<subset>...]`: `status.mjs` must show `cache` as
+Run only after `status.mjs approve cache <subset>...|all`: `status.mjs` must show `cache` as
 `ready`, not `waiting-operator`. Purpose: store the selected pages and their same-origin
-assets on disk so later analysis works offline. Tier: low; medium for the coverage read.
+assets on disk so later analysis works offline. Tier: low.
 
 ## Inputs
-- `migration/project.json`: `cacheSelection` (`"all"` or subset names).
-- `migration/urls/urls.json`, or `urls/subsets/<name>.txt` for each selected subset.
-- `migration/probe/playwright-config.json`, `probe/browser-recipe.json` (`persistent`).
-- `migration/prep/page-prep.json`: `overlays[].hide` and `scroll_fix`.
-- `migration/setup.json`: `playwrightCli.path`, `skills["page-cache"].path`.
-
-## Sibling skill
-Read and follow `.agents/skills/page-cache/SKILL.md` (or the path `setup.json` gives).
+- `migration/project.json` (`cacheSelection`), `urls/urls.json` or `urls/subsets/<name>.txt`,
+  `probe/playwright-config.json`, `probe/browser-recipe.json`, `prep/page-prep.json`,
+  `setup.json` — all read by the driver, none by you.
+- Sibling skill `.agents/skills/page-cache/SKILL.md`: the proxy the driver starts; read it
+  only when the driver fails and its message points there.
 
 ## Method
 
-1. Resolve the selection to a URL list. `"all"` means every `url` in `urls.json`;
-   otherwise the union of the named subset files, one URL per line.
-2. Start the proxy on a free port: `PORT=$(node <skill>/scripts/status.mjs free-port | jq
-   .port)`, then `--port $PORT --cache migration/cache/.page-cache`.
-3. Open the first URL through the proxy with `playwright-cli open --config
-   migration/probe/playwright-config.json` (add `--persistent` when the recipe says so).
-   Then `goto` each remaining URL through the proxy in the same session.
-4. On every page: inject the `hide` rules and `scroll_fix` from `page-prep.json` in one
-   `eval` (an expression), scroll to the bottom and back for lazy content. The proxy stores
-   the raw responses, so the cached HTML still holds the overlay markup; the injection only
-   makes the page load what a reader would see. Stay at the skill's pace.
-5. Verify rather than trust the warm-up: close the browser, restart the proxy with
-   `--offline`, request every selected URL through it and record `cached` on 2xx, `failed`
-   with the status otherwise; `skipped` for URLs you deliberately left out (say why). Read
-   `/__status`, stop the proxy.
+1. If the operator asked for a number of pages rather than a subset, build the subset first:
+   `node <skill>/scripts/status.mjs pick --count <n> --write <name>` (reachable HTML pages,
+   round-robin over the URL groups, no duplicates), then `status.mjs approve cache <name>`.
+2. Run the driver from the project root, in the foreground, and wait for it:
+
+   ```bash
+   node <skill>/scripts/warm.mjs [--pace 1500]
+   ```
+
+   It starts the page-cache proxy on a free port, opens the first URL with the probe
+   configuration and visits every selected URL through the proxy in one browser session,
+   injecting the overlay hide rules and scrolling for lazy content; then it restarts the
+   proxy offline, requests every URL from the cache, writes `cache/cache.md` and the
+   `## cache` report section, and exits 1 when a URL failed or no asset was stored.
+3. Read its JSON: `cached`, `failed`, `assets`. A failed URL is a source problem (404,
+   blocked) — say so; do not retry by other means. Never fetch pages with `curl` or any HTTP
+   client to "warm" the cache: only a browser requests the CSS, scripts and images, and the
+   check rejects a cache without them.
+4. Never delete anything under `migration/cache/`; a second run of the driver is idempotent
+   (the proxy serves stored files and fetches only what is missing).
+
+The cached HTML is the raw response: overlay markup is still in it. The hide rules only make
+the browser load what a reader sees; consumers apply the recipe at render time.
 
 ## Outputs
 
 - `migration/cache/.page-cache/`: the proxy's cache directory (gitignored).
-- `migration/cache/cache.md`: a table with one row per selected URL, first column the
-  URL exactly as in the selection, second column `cached`, `failed` or `skipped`:
-  ```markdown
-  | url | status | note |
-  | --- | --- | --- |
-  | <url> | cached | |
-  ```
-  followed by the `/__status` counts and the settings that held (port, pace, session).
-
-## REPORT.md
-
-Write the `## cache` section (replace it when a previous attempt left one): selection
-cached, counts by status, failures and their causes, the port and pace that held, and how
-to serve the cache offline for the analysis steps that follow.
+- `migration/cache/cache.md`: written by the driver — one row per selected URL with
+  `cached`, `failed` or `skipped`, the proxy status and the settings that held.
+- `REPORT.md` `## cache`: written by the driver; add a sentence with
+  `status.mjs section cache` only if the operator needs more (e.g. a failed URL's cause).
 
 ## Done
 
@@ -56,5 +51,5 @@ to serve the cache offline for the analysis steps that follow.
 node <skill>/scripts/status.mjs check cache
 ```
 
-If it fails, fix the artefact: every selected URL needs a row with a status. Do not edit
-the check and do not change the selection to make it pass.
+If it fails, fix the artefact: a missing body or asset means the driver did not finish —
+run it again and read its message; do not edit `cache.md` by hand.

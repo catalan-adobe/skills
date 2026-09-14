@@ -17,8 +17,9 @@ None.
 ## Method
 
 1. Run `status.mjs`. Every step whose artefacts exist needs a `## <step>` section; add the
-   missing ones from the artefacts (`## setup`, `## probe`, `## prep`, `## scan`,
-   `## prep-verify`, `## cache` as applicable). Keep existing sections; do not rename them.
+   missing ones from the artefacts with `status.mjs section <step> < body.md`. Never rewrite
+   `REPORT.md` as a whole: the runner and the steps own their sections. Name the model each
+   step ran on exactly as the harness reports it, or say the harness did not tell you.
 2. Put a short header above the sections: origin, the `status.mjs --text` output as a
    code block, and a one-line status per step. Then a `## next` section: what is still
    `waiting-operator` or `blocked`, what `cache` would need, and which files the later
