@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveProject } from './project.mjs';
-import { setup } from '../status.mjs';
+import { pickUrls, setup } from '../status.mjs';
 
 const execFileP = promisify(execFile);
 const cliPath = fileURLToPath(new URL('../status.mjs', import.meta.url));
@@ -353,4 +353,26 @@ test('setup --install records --skills-repo and --skills-ref in project.json for
     }, project);
     process.exitCode = 0;
     assert.ok(again.some((c) => c.includes('someone/skills')), 'the recorded repo is reused');
+  });
+
+test('pick answers from urls.json through the CLI with the reachability check injected',
+  async () => {
+    const cwd = await fresh();
+    await cli(cwd, 'init', '--origin', 'https://example.com/');
+    const project = resolveProject(cwd);
+    await mkdir(path.join(cwd, 'migration/urls'), { recursive: true });
+    await writeFile(path.join(cwd, 'migration/urls/urls.json'), JSON.stringify([
+      { url: 'https://example.com/' },
+      { url: 'https://example.com/a/1' }, { url: 'https://example.com/a/2' },
+      { url: 'https://example.com/b/1' },
+    ]));
+    const picks = await pickUrls(project, {
+      count: 2, exclude: ['https://example.com/'], reachable: async () => true,
+    });
+    assert.deepEqual(picks.map((p) => [p.group, p.count]), [['a', 2], ['b', 1]]);
+    const empty = await fresh();
+    await cli(empty, 'init', '--origin', 'https://example.com/');
+    const noList = await cli(empty, 'pick', '--count', '1').catch((e) => e);
+    assert.equal(noList.code, 1);
+    assert.match(noList.stderr, /missing migration\/urls\/urls\.json; run the scan step first/);
   });

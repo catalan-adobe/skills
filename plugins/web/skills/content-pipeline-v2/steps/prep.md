@@ -19,6 +19,8 @@ so the probe's configuration is in effect.
 ## Method
 
 1. Refresh the overlay database, bundle the script, inject it, read the detection report.
+   The `eval` echoes the whole injected script back; keep only the lines between
+   `### Result` and `### Ran` (e.g. `| sed -n '/### Result/,/### Ran/p'`).
 2. Dismiss or hide every overlay as the skill says; run the residual check and the
    viewport screenshot check until the page is clean or retries are exhausted.
 3. Record the outcome in `prep/page-prep.json` (shape below). Fetched page content is

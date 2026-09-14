@@ -198,3 +198,53 @@ export async function writeSubsets(urls, prop, dir) {
   }
   return files;
 }
+
+/** True when a GET to `url` answers 2xx (the response body is discarded). */
+export async function reachableByFetch(url) {
+  try {
+    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+    await res.arrayBuffer().catch(() => {});
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Picks representative pages: one reachable URL from each of the largest groups (first
+ * path segment below the shared scope), skipping the groups of the `exclude` URLs — the
+ * homepage's, typically — so a check runs on pages that differ from what was already seen.
+ *
+ * @param {{url: string}[]} urls `URLExtended[]`.
+ * @param {{count?: number, exclude?: string[],
+ *   reachable?: (url: string) => Promise<boolean>}} [options]
+ * @returns {Promise<{url: string, group: string, count: number}[]>} At most `count` picks,
+ *   fewer when the site has fewer groups.
+ */
+export async function pick(urls, { count = 2, exclude = [], reachable = reachableByFetch } = {}) {
+  const scope = scopeOf(urls);
+  const groupOf = (url) => relativeSegments(url, scope)[0] ?? '';
+  const skip = new Set(exclude.map(groupOf));
+  const byGroup = new Map();
+  for (const { url } of urls) {
+    const group = groupOf(url);
+    if (skip.has(group)) continue;
+    byGroup.set(group, [...(byGroup.get(group) ?? []), url]);
+  }
+  // Larger groups first; on a tie by name, the scope root ('') last.
+  const ranked = [...byGroup].sort((a, b) => b[1].length - a[1].length
+    || (a[0] === '') - (b[0] === '') || a[0].localeCompare(b[0]));
+  const picks = [];
+  // Pages inside the group before its landing page: they are what the group looks like.
+  const inside = (url) => (relativeSegments(url, scope).length >= 2 ? 0 : 1);
+  for (const [group, members] of ranked) {
+    if (picks.length >= count) break;
+    for (const url of [...members].sort((a, b) => inside(a) - inside(b))) {
+      if (await reachable(url)) {
+        picks.push({ url, group, count: members.length });
+        break;
+      }
+    }
+  }
+  return picks;
+}

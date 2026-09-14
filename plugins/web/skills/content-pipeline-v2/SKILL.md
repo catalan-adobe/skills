@@ -76,6 +76,7 @@ Runner commands:
 status.mjs [--text]          state of every step
 status.mjs check <step>      the step's done-check; exit 1 and reasons when it fails
 status.mjs urls              URL distribution and caching proposal → urls/urls.md, subsets/
+status.mjs pick [--count n] [--exclude <url>]…  one reachable page per largest group
 status.mjs approve cache     record the operator's yes (and the chosen subsets)
 status.mjs setup [--install] detect preconditions; install the missing ones in project scope
 ```

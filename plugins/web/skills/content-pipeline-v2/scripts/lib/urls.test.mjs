@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  distribution, proposal, relativeSegments, renderUrlsMd, scopeOf, writeSubsets,
+  distribution, pick, proposal, relativeSegments, renderUrlsMd, scopeOf, writeSubsets,
 } from './urls.mjs';
 
 const execFileP = promisify(execFile);
@@ -245,4 +245,30 @@ test('subsets over a scoped site are cut by the relative first segment', async (
   const clinics = await readFile(path.join(dir, 'subsets', 'clinics.txt'), 'utf8');
   assert.equal(clinics.trim().split('\n').length, 2);
   assert.equal(files.length, 2);
+});
+
+test('pick returns one reachable URL per largest group, skipping excluded groups', async () => {
+  const urls = [
+    { url: 'https://x.example/en/section.html' },
+    { url: 'https://x.example/en/section/diseases.html' },
+    { url: 'https://x.example/en/section/diseases/gone.html' },
+    { url: 'https://x.example/en/section/diseases/asthma.html' },
+    { url: 'https://x.example/en/section/diseases/gout.html' },
+    { url: 'https://x.example/en/section/clinics/one.html' },
+    { url: 'https://x.example/en/section/clinics/two.html' },
+    { url: 'https://x.example/en/section/about/team.html' },
+  ];
+  const probed = [];
+  const reachable = async (url) => { probed.push(url); return !url.includes('gone'); };
+  const picked = await pick(urls, {
+    count: 2, exclude: ['https://x.example/en/section.html'], reachable,
+  });
+  assert.deepEqual(picked, [
+    { url: 'https://x.example/en/section/diseases/asthma.html', group: 'diseases', count: 4 },
+    { url: 'https://x.example/en/section/clinics/one.html', group: 'clinics', count: 2 },
+  ]);
+  assert.ok(probed.includes('https://x.example/en/section/diseases/gone.html'), 'skipped 404');
+  const few = await pick(urls, { count: 5, exclude: [], reachable });
+  assert.deepEqual(few.map((p) => p.group), ['diseases', 'clinics', 'about', '']);
+  assert.equal(few.length, 4, 'no more picks than groups');
 });

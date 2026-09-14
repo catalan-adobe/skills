@@ -8,7 +8,7 @@ import {
 } from './lib/project.mjs';
 import { stepById, stepStates } from './lib/steps.mjs';
 import {
-  distribution, proposal, renderUrlsMd, writeSubsets,
+  distribution, pick, proposal, renderUrlsMd, writeSubsets,
 } from './lib/urls.mjs';
 import {
   commandOnPath, defaultExec, detect, install, missingReasons, writeSetupJson,
@@ -21,6 +21,8 @@ status.mjs approve <step> [<subset>...]
                                   record the operator's yes for a gated step (cache);
                                   subset names select "urls/subsets/<name>.txt" (default: all)
 status.mjs urls                  distribution + caching proposal from urls/urls.json
+status.mjs pick [--count 2] [--exclude <url>]...
+                                 one reachable URL per largest group, for checks
 status.mjs setup [--install] [--skills-repo <owner/repo>] [--skills-ref <branch>]
                                  detect preconditions; --install fixes them in project scope`;
 
@@ -65,11 +67,8 @@ export async function approve(id, subsets, project) {
  * Reads `urls/urls.json`, writes `urls/urls.md` and the subsets under `urls/subsets/`,
  * and returns the caching proposal.
  */
-export async function urls(project) {
-  const data = await readProject(project);
-  if (!data) throw new Error(`No project at ${project.projectFile}`);
-  const urlsDir = project.step('urls');
-  const file = path.join(urlsDir, 'urls.json');
+async function readUrls(project) {
+  const file = path.join(project.step('urls'), 'urls.json');
   const text = await readFile(file, 'utf8').catch((err) => {
     if (err.code === 'ENOENT') return null;
     throw err;
@@ -86,6 +85,14 @@ export async function urls(project) {
   if (!Array.isArray(entries)) {
     throw new Error('migration/urls/urls.json must be a JSON array of URLExtended entries');
   }
+  return entries;
+}
+
+export async function urls(project) {
+  const data = await readProject(project);
+  if (!data) throw new Error(`No project at ${project.projectFile}`);
+  const urlsDir = project.step('urls');
+  const entries = await readUrls(project);
   const dist = distribution(entries);
   const prop = proposal(dist, { cacheAllUpTo: data.cacheAllUpTo });
   await writeFile(path.join(urlsDir, 'urls.md'), renderUrlsMd(dist, prop));
@@ -133,6 +140,15 @@ async function skillsSource(project, { skillsRepo, skillsRef }) {
   return { skillsRepo: data.skills?.repo, skillsRef: data.skills?.ref };
 }
 
+/**
+ * Representative pages for a check: one reachable URL from each of the `count` largest
+ * groups below the shared scope, skipping the groups of the `--exclude` URLs.
+ */
+export async function pickUrls(project, { count, exclude, reachable }) {
+  const entries = await readUrls(project);
+  return pick(entries, { count, exclude, ...(reachable ? { reachable } : {}) });
+}
+
 const COMMANDS = {
   async status(argv, project) {
     const result = await status(project);
@@ -146,6 +162,10 @@ const COMMANDS = {
     return result;
   },
   init: (argv, project) => init({ origin: flag(argv, '--origin') }, project),
+  pick: (argv, project) => pickUrls(project, {
+    count: Number(flag(argv, '--count') ?? 2),
+    exclude: argv.flatMap((a, i) => (a === '--exclude' ? [argv[i + 1]] : [])),
+  }),
   approve(argv, project) {
     const [id, ...subsets] = argv;
     if (!id) throw new Error(USAGE);
