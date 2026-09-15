@@ -10,7 +10,7 @@ import { main } from './lib/warm-cli.mjs';
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2), resolveProject())
-    .then((out) => console.log(JSON.stringify(out, null, 2)))
+    .then((out) => console.log(typeof out === 'string' ? out : JSON.stringify(out, null, 2)))
     .catch((err) => {
       console.error(err.message);
       process.exit(1);

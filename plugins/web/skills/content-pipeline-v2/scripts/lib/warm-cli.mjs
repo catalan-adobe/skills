@@ -160,7 +160,15 @@ export async function workerMain(project, io = defaultIo) {
 }
 
 /** `warm.mjs [--pace ms] [--force] | --worker | status | stop`. */
+export const WARM_HELP = `warm.mjs [--pace ms] [--force]
+    queue the approved selection as a background job; a rerun resumes what is left
+warm.mjs status
+    the jobs and the worker
+warm.mjs stop
+    end the worker after its current URL`;
+
 export async function main(argv, project, io = defaultIo) {
+  if (argv.includes('--help') || argv[0] === 'help') return WARM_HELP;
   if (argv[0] === '--worker') return workerMain(project, io);
   if (argv[0] === 'status') {
     return { worker: await readWorker(project), jobs: await readJobs(project) };

@@ -94,25 +94,10 @@ queues the approved selection as a job and returns; one detached worker drives t
 and the browser and writes the artefacts. Caching happens in phases — approve a subset, run
 `warm.mjs`, keep working; approve the next, run `warm.mjs` again, it queues behind.
 
-Runner commands:
-
-```text
-status.mjs [--text]          state of every step
-status.mjs check <step>      the step's done-check; exit 1 and reasons when it fails
-status.mjs urls              URL distribution and caching proposal → urls/urls.md, subsets/
-                             (regenerates only its own subset files; picked ones stay)
-status.mjs pick [--count n] [--exclude <url>]… [--write <subset>]
-                             one reachable, not yet cached page per largest group; --write
-                             fills to n pages and saves urls/subsets/<subset>.txt
-status.mjs approve cache <subset>...|all   record the operator's yes and the selection
-status.mjs section <step|next> < body.md   write that REPORT.md section from a body without
-                                           heading (the command adds it; replaces)
-status.mjs free-port [--from n]            a loopback port nothing listens on
-status.mjs dashboard [stop]                serve tools/migration/ on a free port; print URL
-status.mjs setup [--install] detect preconditions; install the missing ones in project scope
-warm.mjs [--pace ms] [--force]  queue the approved selection; a rerun resumes what is left
-warm.mjs status | stop       the jobs and the worker; stop ends it after its current URL
-```
+Runner commands: `node $SKILL/scripts/status.mjs --help` lists every command with its
+arguments in one line each; `node $SKILL/scripts/warm.mjs --help` the caching ones. The
+help is generated from the command table, so it is always current; the briefs name the
+commands a step needs.
 
 ## Harness ladder
 

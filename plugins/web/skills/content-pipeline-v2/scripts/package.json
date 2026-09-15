@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test \"lib/**/*.test.mjs\"",
+    "test": "node --test \"lib/**/*.test.mjs\" \"*.test.mjs\"",
     "check": "node check-lines.mjs && node check-residue.mjs",
     "test:integration": "node --test --test-concurrency=1 \"integration/*.test.mjs\""
   }

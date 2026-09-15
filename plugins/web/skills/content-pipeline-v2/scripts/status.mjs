@@ -19,27 +19,40 @@ import {
   commandOnPath, defaultExec, detect, install, missingReasons, writeSetupJson,
 } from './lib/setup.mjs';
 
-const USAGE = `status.mjs [--text]              every step: done|ready|blocked|waiting-operator
-status.mjs check <step>          the step's done-check; exit 1 when it fails
-status.mjs init --origin <url> [--skills-repo <owner/repo>] [--skills-ref <branch>]
-                                 create migration/ and project.json
-status.mjs approve <step> [<subset>...]
-                                  record the operator's yes for a gated step (cache);
-                                  subset names select "urls/subsets/<name>.txt" (default: all)
-status.mjs urls                  merge urls/scan.json into the inventory urls/urls.json;
-                                 distribution + caching proposal → urls/urls.md, subsets/
-status.mjs urls import <file>    merge an operator's URL list (one per line) the same way
-status.mjs section <step|next> [--file body.md] (else stdin)
-                                 write that "## <step>" in REPORT.md from a body without
-                                 heading (the command adds it; replaces a previous one)
-status.mjs free-port [--from 3001]
-status.mjs dashboard [stop]                 serve tools/migration/ with aem up on a free port
-                                 a loopback port nothing listens on (for the cache proxy)
-status.mjs pick [--count 2] [--exclude <url>]... [--write <subset>]
-                                 one reachable page per largest group; with --write, fill
-                                 to count and save urls/subsets/<subset>.txt for approve
-status.mjs setup [--install] [--skills-repo <owner/repo>] [--skills-ref <branch>]
-                                 detect preconditions; --install fixes them in project scope`;
+/** The command table: help text and accepted flags both come from here. */
+export const COMMAND_TABLE = [
+  { name: 'status', usage: '[--text]', flags: ['--text'],
+    help: 'every step: done|ready|blocked|waiting-operator|running' },
+  { name: 'check', usage: '<step>', flags: [],
+    help: "the step's done-check; exit 1 when it fails" },
+  { name: 'init', usage: '--origin <url> [--skills-repo <owner/repo>] [--skills-ref <ref>]',
+    flags: ['--origin', '--skills-repo', '--skills-ref'],
+    help: 'create migration/ and project.json' },
+  { name: 'setup', usage: '[--install] [--skills-repo <owner/repo>] [--skills-ref <ref>]',
+    flags: ['--install', '--skills-repo', '--skills-ref'],
+    help: 'detect preconditions; --install fixes them in project scope' },
+  { name: 'urls', usage: '[import <file>]', flags: [],
+    help: 'merge urls/scan.json (or a URL list) into urls/urls.json; proposal → urls/urls.md' },
+  { name: 'pick', usage: '[--count 2] [--exclude <url>]... [--write <subset>]',
+    flags: ['--count', '--exclude', '--write'],
+    help: 'one reachable, uncached page per largest group; --write fills to count into a subset' },
+  { name: 'approve', usage: '<step> [<subset>...]', flags: [],
+    help: "record the operator's yes for a gated step; subsets name urls/subsets/<name>.txt" },
+  { name: 'section', usage: '<step|next> [--file body.md]', flags: ['--file'],
+    help: 'write "## <step>" in REPORT.md from a heading-free body (file or stdin)' },
+  { name: 'dashboard', usage: '[stop]', flags: [],
+    help: 'serve tools/migration/ with aem up on a free port (reuses a live one)' },
+  { name: 'free-port', usage: '[--from 3001]', flags: ['--from'],
+    help: 'a loopback port nothing listens on' },
+];
+
+/** Renders `--help` for a command table: the usage line, then the one-line help indented. */
+export function renderHelp(table, prefix = 'status.mjs') {
+  return table.map((c) => `${prefix} ${`${c.name} ${c.usage}`.trim()}\n    ${c.help}`).join('\n');
+}
+
+const USAGE = renderHelp(COMMAND_TABLE);
+const FLAGS = Object.fromEntries(COMMAND_TABLE.map((c) => [c.name, c.flags]));
 
 const flag = (argv, name) => {
   const i = argv.indexOf(name);
@@ -252,18 +265,6 @@ export async function pickUrls(project, {
 }
 
 /** The flags each command accepts (value-taking flags listed once; booleans too). */
-const FLAGS = {
-  status: ['--text'],
-  check: [],
-  init: ['--origin', '--skills-repo', '--skills-ref'],
-  pick: ['--count', '--exclude', '--write'],
-  approve: [],
-  urls: [],
-  setup: ['--install', '--skills-repo', '--skills-ref'],
-  'free-port': ['--from'],
-  dashboard: [],
-  section: ['--file'],
-};
 
 async function readStdin() {
   let text = '';
@@ -331,14 +332,15 @@ const COMMANDS = {
   }, project),
 };
 
-async function cli(argv) {
+export async function cli(argv, project = resolveProject()) {
   const [first, ...rest] = argv;
   const name = first && !first.startsWith('--') ? first : 'status';
   const args = name === 'status' ? argv : rest;
+  if (args.includes('--help') || first === 'help') return USAGE;
   const command = COMMANDS[name];
   if (!command) throw new Error(`Unknown command "${name}"\n${USAGE}`);
   rejectUnknownFlags(name, args);
-  return command(args, resolveProject());
+  return command(args, project);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
