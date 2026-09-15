@@ -1,5 +1,8 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+  access, cp, mkdir, readFile, writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const DEFAULTS = { cacheAllUpTo: 500 };
 
@@ -8,7 +11,7 @@ export const DEFAULTS = { cacheAllUpTo: 500 };
  *
  * @param {string} [cwd] Project root; defaults to the working directory.
  * @returns {{root: string, dir: string, projectFile: string, setupFile: string,
- *   report: string, work: string, step: (id: string) => string}}
+ *   statusFile: string, report: string, work: string, step: (id: string) => string}}
  */
 export function resolveProject(cwd = process.cwd()) {
   const dir = path.join(cwd, 'migration');
@@ -17,6 +20,7 @@ export function resolveProject(cwd = process.cwd()) {
     dir,
     projectFile: path.join(dir, 'project.json'),
     setupFile: path.join(dir, 'setup.json'),
+    statusFile: path.join(dir, 'status.json'),
     report: path.join(dir, 'REPORT.md'),
     work: path.join(dir, '.work'),
     step: (id) => path.join(dir, id),
@@ -61,7 +65,33 @@ export async function init({
   }
   await writeProject(project, data);
   await writeFile(path.join(project.dir, '.gitignore'), '.work/\ncache/.page-cache/\n');
-  return { project: project.dir, created: !existing, data };
+  const dashboard = await installDashboard(project);
+  return {
+    project: project.dir, created: !existing, data, dashboard,
+  };
+}
+
+const DASHBOARD_SRC = fileURLToPath(new URL('../../tools/migration/', import.meta.url));
+const exists = (file) => access(file).then(() => true, () => false);
+
+/**
+ * Copies the read-only dashboard to `<root>/tools/migration/` (served locally by `aem up` at
+ * `/tools/migration/`) unless one is already there, and keeps `migration/` out of the
+ * deployment by adding it to an existing `.hlxignore` once. No `.hlxignore` is created
+ * where none exists.
+ */
+async function installDashboard(project) {
+  const dest = path.join(project.root, 'tools', 'migration');
+  const installed = !(await exists(dest));
+  if (installed) await cp(DASHBOARD_SRC, dest, { recursive: true });
+  const hlxignore = path.join(project.root, '.hlxignore');
+  if (await exists(hlxignore)) {
+    const text = await readFile(hlxignore, 'utf8');
+    if (!text.split('\n').some((l) => l.trim() === 'migration/')) {
+      await writeFile(hlxignore, `${text.replace(/\n*$/, '')}\nmigration/\n`);
+    }
+  }
+  return { installed, path: 'tools/migration' };
 }
 
 const REPORT_TITLE = '# Migration report';

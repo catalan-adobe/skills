@@ -47,6 +47,7 @@ migration/
   setup.json      resolved binary, package and skill paths from setup
   probe/          browser-recipe.json · probe.md · playwright-config.json
   prep/           page-prep.json · prep.md
+  status.json     the runner's view of the steps, rewritten on every status/check
   urls/           scan.json · urls.json (the inventory) · urls.md · subsets/<prefix>.txt
   cache/          .page-cache/ · cache.md
   .work/          scratch: npm installs, scan script, browser profiles (gitignored)
@@ -54,6 +55,15 @@ migration/
 ```
 
 `references/project-structure.md` lists every file, who writes it and who reads it.
+
+## Dashboard
+
+`init` copies a read-only dashboard to `tools/migration/` in the repository. With the EDS
+local server running (`aem up`), open `http://localhost:3000/tools/migration/`: steps and
+their state, the inventory by kind and group, redirects, what is not to be migrated, a
+filterable URL table and the report — all read from `migration/` (`status.json`,
+`project.json`, `urls/urls.json`, `REPORT.md`). It writes nothing. `init` adds `migration/`
+to an existing `.hlxignore` so none of it is deployed; the local server still serves it.
 
 ## Steps
 

@@ -60,7 +60,15 @@ export async function status(project) {
   }
   const done = await runAllChecks(project);
   const approved = data.approved ?? {};
-  return { project: project.dir, origin: data.origin, steps: stepStates(done, approved) };
+  const result = {
+    project: project.dir,
+    origin: data.origin,
+    generatedAt: new Date().toISOString(),
+    steps: stepStates(done, approved),
+  };
+  // The dashboard (tools/migration/) reads this instead of recomputing the checks.
+  await writeFile(project.statusFile, `${JSON.stringify(result, null, 2)}\n`).catch(() => {});
+  return result;
 }
 
 export async function approve(id, subsets, project) {
@@ -289,6 +297,7 @@ const COMMANDS = {
     const [id] = argv;
     if (!id) throw new Error(USAGE);
     const result = await runCheck(stepById(id).id, project);
+    await status(project).catch(() => {});
     if (!result.pass) process.exitCode = 1;
     return result;
   },

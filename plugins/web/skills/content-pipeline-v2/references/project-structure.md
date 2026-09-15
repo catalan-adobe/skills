@@ -53,6 +53,10 @@ approvals must be given again.
 `prep/prep.md`
 : Written by `prep`; `prep-verify` adds a `## verify` section. Read by `report`.
 
+`status.json`
+: Written by `status.mjs` on every `status` and `check`: each step's state, tier and
+  blockers, with `generatedAt`. Read by the dashboard (`tools/migration/`), never by a step.
+
 ## urls/
 
 `urls/scan.json`
@@ -101,3 +105,10 @@ approvals must be given again.
 
 `setup --install` places the sibling skills under `.agents/skills/<name>/` when they are
 not already found there, under `.claude/skills/` or under `~/.agents/skills/`.
+
+## tools/migration/ (in the repository root, not under migration/)
+
+`index.html`, `dashboard.js`, `dashboard.css`
+: Copied by `init` when absent; never overwritten. A read-only view of `migration/` served by
+  the EDS local server at `/tools/migration/`. Reads `status.json`, `project.json`,
+  `setup.json`, `urls/urls.json`, `REPORT.md`.

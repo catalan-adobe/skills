@@ -604,3 +604,42 @@ test('urls merges scan.json into the inventory and import adds an operator list'
   const bad = await cli(cwd, 'urls', 'import', 'nope.txt').catch((e) => e);
   assert.match(bad.stderr, /cannot read nope\.txt/);
 });
+
+test('status writes migration/status.json for the dashboard on status and check', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/');
+  await cli(cwd);
+  const file = path.join(cwd, 'migration/status.json');
+  const first = JSON.parse(await readFile(file, 'utf8'));
+  assert.equal(first.origin, 'https://example.com/');
+  assert.equal(first.steps.find((s) => s.id === 'setup').state, 'ready');
+  assert.ok(first.generatedAt);
+  await cli(cwd, 'check', 'probe').catch(() => {});
+  const second = JSON.parse(await readFile(file, 'utf8'));
+  assert.ok(second.generatedAt >= first.generatedAt);
+  assert.equal(second.steps.length, first.steps.length);
+});
+
+test('init installs the dashboard under tools/migration and excludes migration/ from deploy',
+  async () => {
+    const cwd = await fresh();
+    await writeFile(path.join(cwd, '.hlxignore'), '.*\n*.md\n');
+    const out = await cli(cwd, 'init', '--origin', 'https://example.com/');
+    assert.deepEqual(out.dashboard, { installed: true, path: 'tools/migration' });
+    for (const f of ['index.html', 'dashboard.js', 'dashboard.css']) {
+      await access(path.join(cwd, 'tools/migration', f));
+    }
+    assert.match(await readFile(path.join(cwd, '.hlxignore'), 'utf8'), /\nmigration\/\n/);
+    await writeFile(path.join(cwd, 'tools/migration/dashboard.css'), 'body { color: red }');
+    const again = await cli(cwd, 'init', '--origin', 'https://example.com/');
+    assert.equal(again.dashboard.installed, false, 'an existing dashboard is left alone');
+    assert.equal(await readFile(path.join(cwd, 'tools/migration/dashboard.css'), 'utf8'),
+      'body { color: red }');
+    const ignore = await readFile(path.join(cwd, '.hlxignore'), 'utf8');
+    assert.equal(ignore.match(/migration\//g).length, 1, 'the ignore line is added once');
+    const noHlx = await fresh();
+    const plain = await cli(noHlx, 'init', '--origin', 'https://example.com/');
+    assert.equal(plain.dashboard.installed, true);
+    const created = await access(path.join(noHlx, '.hlxignore')).then(() => true, () => false);
+    assert.equal(created, false, 'no .hlxignore is created where none exists (not an EDS repo)');
+  });
