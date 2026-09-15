@@ -168,11 +168,23 @@ function waitForStable(session) {
   }
 }
 
+// How many requests get their headers read: the document and any challenge redirect
+// come first; CDN and bot-manager signals live in those response headers.
+const HEADER_REQUESTS = 3;
+
+/**
+ * The page's requests (`requests --static`) followed by the headers of the first few
+ * (`request <n>`): detectSignals matches on response headers, which the list alone lacks.
+ * A CLI failure is reported once on stderr instead of silently yielding no signals.
+ */
 function getNetworkLines(session) {
   try {
-    const raw = cli(session, 'network');
-    return raw.split('\n').filter(Boolean);
-  } catch {
+    const list = cli(session, 'requests', '--static').split('\n').filter(Boolean);
+    const numbered = list.filter((l) => /^\d+\. \[/.test(l)).slice(0, HEADER_REQUESTS);
+    const details = numbered.map((l) => cli(session, 'request', l.split('.')[0]));
+    return [...list, ...details.join('\n').split('\n')].filter(Boolean);
+  } catch (err) {
+    console.error(`warning: could not read network requests (${err.message.split('\n')[0]})`);
     return [];
   }
 }
