@@ -3,7 +3,12 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runAllChecks, runCheck } from './lib/checks.mjs';
+import {
+  cacheGet, cacheHas, cacheLs, cacheServerStatus, projectOrigin, proxiedUrl, serveCache,
+  stopCacheServer,
+} from './lib/cache-server.mjs';
 import { dashboard, stopDashboard } from './lib/dashboard.mjs';
+import { setupPaths } from './lib/warm-cli.mjs';
 import { freePort } from './lib/ports.mjs';
 import {
   init, readProject, resolveProject, upsertSection, writeProject,
@@ -40,6 +45,21 @@ export const COMMAND_TABLE = [
     help: "record the operator's yes for a gated step; subsets name urls/subsets/<name>.txt" },
   { name: 'section', usage: '<step|next> [--file body.md]', flags: ['--file'],
     help: 'write "## <step>" in REPORT.md from a heading-free body (file or stdin)' },
+  { name: 'cache', usage: '<verb> …', flags: ['--group', '--kind', '--headers'],
+    help: 'the local cache: serve, stop, status, url, ls, has, get — see cache --help',
+    verbs: [
+      { name: 'serve', usage: '', flags: [],
+        help: 'start the offline cache server on a free port, or reuse the live one' },
+      { name: 'stop', usage: '', flags: [], help: 'stop the cache server' },
+      { name: 'status', usage: '', flags: [], help: 'the cache server, if running' },
+      { name: 'url', usage: '<url>...', flags: [],
+        help: 'the proxied form of site URLs for the browser (starts the server if needed)' },
+      { name: 'ls', usage: '[--group <g>] [--kind <k>]', flags: ['--group', '--kind'],
+        help: 'cached URLs from the inventory, one per line' },
+      { name: 'has', usage: '<url>', flags: [], help: 'exit 0 when a body is stored, else 1' },
+      { name: 'get', usage: '<url> [--headers]', flags: ['--headers'],
+        help: 'the stored body on stdout; --headers wraps it with status and headers as JSON' },
+    ] },
   { name: 'dashboard', usage: '[stop]', flags: [],
     help: 'serve tools/migration/ with aem up on a free port (reuses a live one)' },
   { name: 'free-port', usage: '[--from 3001]', flags: ['--from'],
@@ -266,6 +286,55 @@ export async function pickUrls(project, {
 
 /** The flags each command accepts (value-taking flags listed once; booleans too). */
 
+const CACHE_TABLE = COMMAND_TABLE.find((c) => c.name === 'cache').verbs;
+const CACHE_HELP = renderHelp(CACHE_TABLE, 'status.mjs cache');
+
+const CACHE_VERBS = {
+  async serve(argv, project) {
+    const { proxyScript } = await setupPaths(project);
+    return serveCache(project, proxyScript, freePort);
+  },
+  stop: (argv, project) => stopCacheServer(project),
+  status: async (argv, project) => (await cacheServerStatus(project)) ?? { running: false },
+  async url(argv, project) {
+    const urls = argv.filter((a) => !a.startsWith('--'));
+    if (!urls.length) throw new Error(`cache url needs at least one URL\n${CACHE_HELP}`);
+    const origin = await projectOrigin(project);
+    const { port } = await CACHE_VERBS.serve(argv, project);
+    return urls.map((u) => proxiedUrl(origin, u, port)).join('\n');
+  },
+  async ls(argv, project) {
+    const urls = await cacheLs(project, {
+      group: flag(argv, '--group'), kind: flag(argv, '--kind'),
+    });
+    return urls.join('\n');
+  },
+  async has(argv, project) {
+    const [url] = argv;
+    if (!url) throw new Error(`cache has needs a URL\n${CACHE_HELP}`);
+    const stored = await cacheHas(project, url);
+    if (!stored) process.exitCode = 1;
+    return { url, cached: stored };
+  },
+  async get(argv, project) {
+    const url = argv.find((a) => !a.startsWith('--'));
+    if (!url) throw new Error(`cache get needs a URL\n${CACHE_HELP}`);
+    if (argv.includes('--headers')) return cacheGet(project, url, { headers: true });
+    process.stdout.write(await cacheGet(project, url));
+    return '';
+  },
+};
+
+async function cacheCommand(argv, project) {
+  const [verb, ...rest] = argv;
+  if (!verb || verb === '--help' || verb === 'help') return CACHE_HELP;
+  const spec = CACHE_TABLE.find((v) => v.name === verb);
+  if (!spec) throw new Error(`Unknown cache verb "${verb}"\n${CACHE_HELP}`);
+  const unknown = rest.filter((a) => a.startsWith('--') && !spec.flags.includes(a));
+  if (unknown.length) throw new Error(`Unknown flag ${unknown.join(', ')} for "cache ${verb}"`);
+  return CACHE_VERBS[verb](rest, project);
+}
+
 async function readStdin() {
   let text = '';
   for await (const chunk of process.stdin) text += chunk;
@@ -311,6 +380,7 @@ const COMMANDS = {
     ? importList(project, argv[1] ?? (() => { throw new Error(USAGE); })())
     : urls(project)),
   'free-port': async (argv) => ({ port: await freePort(Number(flag(argv, '--from') ?? 3001)) }),
+  cache: (argv, project) => cacheCommand(argv, project),
   dashboard: (argv, project) => (argv[0] === 'stop'
     ? stopDashboard(project) : dashboard(project, freePort)),
   async section(argv, project) {
@@ -336,10 +406,10 @@ export async function cli(argv, project = resolveProject()) {
   const [first, ...rest] = argv;
   const name = first && !first.startsWith('--') ? first : 'status';
   const args = name === 'status' ? argv : rest;
-  if (args.includes('--help') || first === 'help') return USAGE;
+  if (first === 'help' || (args.includes('--help') && name !== 'cache')) return USAGE;
   const command = COMMANDS[name];
   if (!command) throw new Error(`Unknown command "${name}"\n${USAGE}`);
-  rejectUnknownFlags(name, args);
+  if (name !== 'cache') rejectUnknownFlags(name, args);
   return command(args, project);
 }
 

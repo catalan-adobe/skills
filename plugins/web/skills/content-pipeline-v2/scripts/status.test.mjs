@@ -23,3 +23,16 @@ test('--help and help print the table without touching a project', async () => {
   assert.equal(await cli(['pick', '--help'], fake), renderHelp(COMMAND_TABLE));
   await assert.rejects(cli(['nope'], fake), /Unknown command "nope"\nstatus\.mjs status/);
 });
+
+test('cache --help lists the verbs; unknown verbs and flags are refused by name', async () => {
+  const fake = { projectFile: '/nonexistent/project.json' };
+  const help = await cli(['cache', '--help'], fake);
+  assert.match(help, /^status\.mjs cache serve\n/);
+  for (const verb of ['stop', 'status', 'url', 'ls', 'has', 'get']) {
+    assert.match(help, new RegExp(`\\nstatus\\.mjs cache ${verb}`));
+  }
+  assert.equal(await cli(['cache'], fake), help);
+  await assert.rejects(cli(['cache', 'nope'], fake), /Unknown cache verb "nope"/);
+  await assert.rejects(cli(['cache', 'ls', '--bogus'], fake), /--bogus for "cache ls"/);
+  await assert.rejects(cli(['cache', 'url'], fake), /needs at least one URL/);
+});
