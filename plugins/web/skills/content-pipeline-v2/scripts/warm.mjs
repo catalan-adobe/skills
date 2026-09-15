@@ -2,7 +2,8 @@
 // The cache step, always in the background: `warm.mjs` queues the approved selection as a
 // job and makes sure one detached worker is running, then returns at once. The worker
 // (`--worker`) takes jobs in order: proxy + browser + offline verification + cache.md.
-// Usage: node warm.mjs [--pace <ms>] | status | stop   (from the project root)
+// Usage: node warm.mjs [--pace <ms>] [--force] | status | stop   (from the project root)
+// A rerun visits only the URLs not yet cached under the approved selection; --force visits all.
 import { execFile, spawn } from 'node:child_process';
 import { mkdir, open as openFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -12,7 +13,8 @@ import {
   enqueue, jobsDir, readJobs, readWorker, runWorker,
 } from './lib/jobs.mjs';
 import { resolveProject } from './lib/project.mjs';
-import { approvedJob, warm } from './lib/warm.mjs';
+import { readInventory } from './lib/inventory.mjs';
+import { approvedJob, pendingUrls, warm } from './lib/warm.mjs';
 import { freePort } from './status.mjs';
 
 const execFileP = promisify(execFile);
@@ -122,14 +124,24 @@ async function main(argv) {
   }
   await setupPaths(project);
   const job = await approvedJob(project);
+  const urls = argv.includes('--force') ? job.urls
+    : pendingUrls(await readInventory(project.step('urls')), job.selection, job.urls);
+  const alreadyCached = job.urls.length - urls.length;
+  if (!urls.length) {
+    return {
+      added: false, alreadyCached,
+      note: `every URL of ${job.selection} is cached; rerun with --force to visit them again`,
+    };
+  }
   const pace = flag(argv, '--pace');
   const { job: queued, added } = await enqueue(project, {
-    ...job, ...(pace ? { pace: Number(pace) } : {}),
+    ...job, urls, ...(pace ? { pace: Number(pace) } : {}),
   });
   const worker = await ensureWorker(project);
   return {
     job: { id: queued.id, selection: queued.selection, total: queued.total, state: queued.state },
     added,
+    alreadyCached,
     worker,
     next: 'status.mjs shows the cache step as running; warm.mjs status lists the jobs',
   };

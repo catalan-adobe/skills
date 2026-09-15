@@ -320,6 +320,16 @@ export async function approvedJob(project) {
   return { selection: picked === 'all' ? 'all' : (picked ?? []).join(', '), urls };
 }
 
+/**
+ * The URLs of `selection` still to visit: those without a stored body recorded under this
+ * selection. A rerun after an interruption or a stop resumes where it left off.
+ */
+export function pendingUrls(inventory, selection, urls) {
+  const stored = new Set(inventory
+    .filter((r) => r.cache?.path && r.cache.selection === selection).map((r) => r.url));
+  return urls.filter((u) => !stored.has(u));
+}
+
 /** A cache.md row from an inventory record that was visited. */
 function rowOf(r) {
   const note = r.kind === 'redirect' && r.redirect

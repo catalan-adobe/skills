@@ -9,7 +9,7 @@ import { cacheRelativePath } from './checks.mjs';
 import { resolveProject, writeProject } from './project.mjs';
 import { mergeScan, readInventory, writeInventory } from './inventory.mjs';
 import {
-  classify, parseEval, siteUrl, warm,
+  classify, parseEval, pendingUrls, siteUrl, warm,
 } from './warm.mjs';
 
 const ORIGIN = 'https://site.example';
@@ -311,4 +311,17 @@ test('warm runs a queued job: progress per URL, stop between URLs, phases accumu
   assert.match(md, new RegExp(`\\| ${ORIGIN}/b.html \\| cached \\| page \\| \\d+ \\| ja-jp \\|`));
   const report = await readFile(p.report, 'utf8');
   assert.match(report, /Selection ja-jp: 1 cached, 0 failed, 0 skipped; 1 page\. In total 3 of 3/);
+});
+
+test('pendingUrls leaves out URLs already cached under the same selection only', () => {
+  const inventory = [
+    { url: 'https://x/a', cache: { path: 'x/a', selection: 'blogs' } },
+    { url: 'https://x/b', cache: { path: null, selection: 'blogs' } },
+    { url: 'https://x/c', cache: { path: 'x/c', selection: 'other' } },
+    { url: 'https://x/d' },
+  ];
+  const urls = ['https://x/a', 'https://x/b', 'https://x/c', 'https://x/d'];
+  assert.deepEqual(pendingUrls(inventory, 'blogs', urls),
+    ['https://x/b', 'https://x/c', 'https://x/d']);
+  assert.deepEqual(pendingUrls([], 'blogs', urls), urls);
 });
