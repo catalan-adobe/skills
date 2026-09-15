@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { openWork } from './jobs.mjs';
+import { openWork, unfinished } from './jobs.mjs';
 import { STEPS } from './steps.mjs';
 import { detect, missingReasons } from './setup.mjs';
 import { relativeSegments, scopeOf } from './urls.mjs';
@@ -398,7 +398,11 @@ export const CHECKS = Object.fromEntries(
               + 'half-warmed cache; warm.mjs status shows progress'],
           };
         }
-        return checkCache(await loadFiles(project), await listCacheFiles(project));
+        const result = checkCache(await loadFiles(project), await listCacheFiles(project));
+        const partial = (await unfinished(project)).map((j) => (
+          `cache: selection ${j.selection} is ${j.state} at ${j.done}/${j.total} — `
+          + 'approve it again and run warm.mjs to resume'));
+        return { pass: result.pass && !partial.length, reasons: [...result.reasons, ...partial] };
       }];
     }
     if (step.id === 'prep' || step.id === 'prep-verify') {

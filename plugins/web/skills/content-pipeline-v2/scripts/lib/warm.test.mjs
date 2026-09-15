@@ -313,7 +313,7 @@ test('warm runs a queued job: progress per URL, stop between URLs, phases accumu
   assert.match(report, /Selection ja-jp: 1 cached, 0 failed, 0 skipped; 1 page\. In total 3 of 3/);
 });
 
-test('pendingUrls leaves out URLs already cached under the same selection only', () => {
+test('pendingUrls leaves out URLs with a stored body, whichever selection stored it', () => {
   const inventory = [
     { url: 'https://x/a', cache: { path: 'x/a', selection: 'blogs' } },
     { url: 'https://x/b', cache: { path: null, selection: 'blogs' } },
@@ -321,7 +321,6 @@ test('pendingUrls leaves out URLs already cached under the same selection only',
     { url: 'https://x/d' },
   ];
   const urls = ['https://x/a', 'https://x/b', 'https://x/c', 'https://x/d'];
-  assert.deepEqual(pendingUrls(inventory, 'blogs', urls),
-    ['https://x/b', 'https://x/c', 'https://x/d']);
-  assert.deepEqual(pendingUrls([], 'blogs', urls), urls);
+  assert.deepEqual(pendingUrls(inventory, urls), ['https://x/b', 'https://x/d']);
+  assert.deepEqual(pendingUrls([], urls), urls);
 });

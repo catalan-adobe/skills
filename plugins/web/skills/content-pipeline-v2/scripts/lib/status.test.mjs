@@ -682,4 +682,8 @@ test('a queued or running warm job holds the cache step as running and fails its
       'a queued job with no worker still holds the step');
     assert.equal(after.steps.find((s) => s.id === 'cache').running,
       'worker not started · queued: ja-jp');
+    const jobs = await (await import('./jobs.mjs')).readJobs(project);
+    await updateJob(project, jobs[1].id, { state: 'stopped', done: 0 });
+    const partial = await cli(cwd, 'check', 'cache').catch((e) => e);
+    assert.match(partial.stdout, /selection ja-jp is stopped at 0\/1 — approve it again/);
   });

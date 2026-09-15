@@ -1,4 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+  mkdir, readFile, rename, writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { pathSegments, relativeSegments, scopeOf } from './urls.mjs';
 
@@ -32,7 +34,10 @@ export async function readInventory(urlsDir) {
 
 export async function writeInventory(urlsDir, records) {
   await mkdir(urlsDir, { recursive: true });
-  await writeFile(path.join(urlsDir, 'urls.json'), `${JSON.stringify(records, null, 2)}\n`);
+  const file = path.join(urlsDir, 'urls.json');
+  const tmp = `${file}.${process.pid}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(records, null, 2)}\n`);
+  await rename(tmp, file);
   return records;
 }
 

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolveProject } from './project.mjs';
 import {
-  enqueue, readJobs, readWorker, runWorker, updateJob,
+  enqueue, readJobs, readWorker, recordWorker, runWorker, unfinished, updateJob,
 } from './jobs.mjs';
 
 const fresh = async () => resolveProject(await mkdtemp(path.join(os.tmpdir(), 'cpv2-jobs-')));
@@ -89,4 +89,43 @@ test('runWorker marks a cut-short job stopped, a throwing job failed, and leaves
       [['stopped', null], ['failed', 'proxy exited']]);
     const raw = JSON.parse(await readFile(path.join(p.work, 'warm', `${jobs[1].id}.json`)));
     assert.equal(raw.current, null);
+  });
+
+test('recordWorker makes a just-spawned worker visible before it runs; no .tmp file remains',
+  async () => {
+    const p = await fresh();
+    await recordWorker(p, 4242, clock);
+    assert.equal((await readWorker(p, () => true)).pid, 4242);
+    assert.equal(await readWorker(p, () => false), null, 'a dead pid is no worker');
+    const { readdir } = await import('node:fs/promises');
+    assert.ok((await readdir(path.join(p.work, 'warm'))).every((n) => !n.includes('.tmp')));
+  });
+
+test('unfinished lists selections whose last job stopped, unless a later job finished them',
+  async () => {
+    const p = await fresh();
+    const a = await enqueue(p, { selection: 'a', urls: ['u1', 'u2'] }, { now: clock });
+    const b = await enqueue(p, { selection: 'b', urls: ['u3'] }, { now: clock });
+    await updateJob(p, a.job.id, { state: 'stopped', done: 1 });
+    await updateJob(p, b.job.id, { state: 'running', pid: 999999 });
+    assert.deepEqual((await unfinished(p, () => false)).map((j) => [j.selection, j.state]),
+      [['a', 'stopped'], ['b', 'interrupted']]);
+    const again = await enqueue(p, { selection: 'a', urls: ['u2'] }, { now: clock });
+    await updateJob(p, again.job.id, { state: 'done', done: 1 });
+    assert.deepEqual((await unfinished(p, () => false)).map((j) => j.selection), ['b']);
+  });
+
+test('claimWorker hands the start to exactly one concurrent caller and replaces stale claims',
+  async () => {
+    const { claimWorker } = await import('./jobs.mjs');
+    const p = await fresh();
+    const results = await Promise.all([1, 2, 3, 4].map(() => claimWorker(p, clock)));
+    assert.equal(results.filter((r) => r.claimed).length, 1);
+    await recordWorker(p, 4242, clock);
+    const later = await claimWorker(p, clock, () => true);
+    assert.deepEqual([later.claimed, later.worker.pid], [false, 4242]);
+    const dead = await claimWorker(p, clock, () => false);
+    assert.equal(dead.claimed, true, 'a dead worker\'s file is replaced');
+    const stale = await claimWorker(p, () => new Date(Date.UTC(2027, 0, 1)));
+    assert.equal(stale.claimed, true, 'an unfulfilled claim older than 10 s is replaced');
   });

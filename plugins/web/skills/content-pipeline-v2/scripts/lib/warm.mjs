@@ -182,6 +182,7 @@ export function parseEval(raw) {
  */
 export async function warm(project, io, job = {}) {
   const { selection, urls } = job.urls ? job : await approvedJob(project);
+  if (!urls.length) throw new Error(`the selection ${selection} resolves to no URLs`);
   const onProgress = job.onProgress ?? (() => {});
   const shouldStop = job.shouldStop ?? (() => false);
   const {
@@ -321,12 +322,12 @@ export async function approvedJob(project) {
 }
 
 /**
- * The URLs of `selection` still to visit: those without a stored body recorded under this
- * selection. A rerun after an interruption or a stop resumes where it left off.
+ * The URLs still to visit: those without a stored body, whichever selection stored it. A
+ * rerun after an interruption or a stop resumes where it left off; overlapping selections
+ * do not visit a page twice.
  */
-export function pendingUrls(inventory, selection, urls) {
-  const stored = new Set(inventory
-    .filter((r) => r.cache?.path && r.cache.selection === selection).map((r) => r.url));
+export function pendingUrls(inventory, urls) {
+  const stored = new Set(inventory.filter((r) => r.cache?.path).map((r) => r.url));
   return urls.filter((u) => !stored.has(u));
 }
 

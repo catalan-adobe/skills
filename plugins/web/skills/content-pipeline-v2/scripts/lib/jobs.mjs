@@ -2,7 +2,7 @@
 // by a single detached worker. States: queued → running → done | stopped | failed;
 // a `running` job whose worker died reads as `interrupted`.
 import {
-  mkdir, readdir, readFile, rm, writeFile,
+  link, mkdir, readdir, readFile, rename, rm, writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -16,16 +16,20 @@ export function alive(pid) {
 }
 
 const readJson = (file) => readFile(file, 'utf8').then(JSON.parse, () => null);
-async function writeJson(file, data) {
+
+/** Written whole or not at all: status and the dashboard read these files while we write. */
+export async function writeJson(file, data) {
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(data, null, 2)}\n`);
+  const tmp = `${file}.${process.pid}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`);
+  await rename(tmp, file);
 }
 
 /** Every job, oldest first; a running job with a dead worker is reported `interrupted`. */
 export async function readJobs(project, isAlive = alive) {
   const names = await readdir(jobsDir(project)).catch(() => []);
   const jobs = await Promise.all(names
-    .filter((n) => n.endsWith('.json') && n !== 'worker.json')
+    .filter((n) => n.endsWith('.json') && n !== 'worker.json' && !n.includes('.tmp'))
     .map((n) => readJson(path.join(jobsDir(project), n))));
   return jobs.filter(Boolean).sort((a, b) => a.id.localeCompare(b.id)).map((job) => (
     job.state === 'running' && !isAlive(job.pid) ? { ...job, state: 'interrupted' } : job));
@@ -35,6 +39,39 @@ export const readWorker = async (project, isAlive = alive) => {
   const worker = await readJson(workerFile(project));
   return worker && isAlive(worker.pid) ? worker : null;
 };
+
+/** Recorded by whoever spawns the worker, before it is up, so a second caller sees it. */
+export const recordWorker = (project, pid, now = () => new Date()) => writeJson(
+  workerFile(project), { pid, started: now().toISOString() },
+);
+
+/**
+ * The right to start the worker, taken by creating worker.json exclusively. Returns the
+ * live worker instead when another caller holds it; a stale file (dead pid) is replaced.
+ */
+export async function claimWorker(project, now = () => new Date(), isAlive = alive) {
+  await mkdir(jobsDir(project), { recursive: true });
+  const tmp = `${workerFile(project)}.${process.pid}.${now().getTime()}.claim`;
+  await writeFile(tmp, JSON.stringify({ pid: null, claimed: now().toISOString() }));
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await link(tmp, workerFile(project));
+      await rm(tmp, { force: true });
+      return { claimed: true, worker: null };
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      const existing = await readJson(workerFile(project));
+      const fresh = existing && !existing.pid && existing.claimed
+        && now() - new Date(existing.claimed) < 10_000;
+      if (existing?.pid ? isAlive(existing.pid) : fresh) {
+        return { claimed: false, worker: existing };
+      }
+      await rm(workerFile(project), { force: true });
+    }
+  }
+  await rm(tmp, { force: true });
+  return { claimed: false, worker: null };
+}
 
 /**
  * Adds a job for `selection` over `urls` unless one for the same selection is already
@@ -73,7 +110,7 @@ export const clearJobs = (project) => rm(jobsDir(project), { recursive: true, fo
 export async function runWorker(project, run, {
   pid = process.pid, stopping = () => false, now = () => new Date(), isAlive = alive,
 } = {}) {
-  await writeJson(workerFile(project), { pid, started: now().toISOString() });
+  await recordWorker(project, pid, now);
   const summary = [];
   try {
     for (;;) {
@@ -118,4 +155,14 @@ export async function openWork(project, isAlive = alive) {
     : 'worker not started';
   const tail = queued.length ? ` · queued: ${queued.map((j) => j.selection).join(', ')}` : '';
   return { label: `${head}${tail}`, running: running ?? null, queued };
+}
+
+/**
+ * Selections whose last job did not finish (`stopped`, `interrupted`, `failed`) — a later
+ * `done` job of the same selection supersedes an earlier unfinished one.
+ */
+export async function unfinished(project, isAlive = alive) {
+  const last = new Map();
+  for (const job of await readJobs(project, isAlive)) last.set(job.selection, job);
+  return [...last.values()].filter((j) => ['stopped', 'interrupted', 'failed'].includes(j.state));
 }

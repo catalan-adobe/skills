@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import {
-  enqueue, jobsDir, readJobs, readWorker, runWorker,
+  claimWorker, enqueue, jobsDir, readJobs, readWorker, recordWorker, runWorker, updateJob,
 } from './lib/jobs.mjs';
 import { resolveProject } from './lib/project.mjs';
 import { readInventory } from './lib/inventory.mjs';
@@ -67,9 +67,14 @@ function evalResult(stdout) {
   return (match ? match[1] : stdout).trim();
 }
 
-/** playwright-cli as the browser: one persistent session, one process per command. */
+/**
+ * playwright-cli as the browser: one named session of its own (`-s=cache`), so the default
+ * session stays free for whatever else runs meanwhile; one process per command.
+ */
 function playwright(cli) {
-  const run = (...args) => execFileP(cli, args, { maxBuffer: 16 * 1024 * 1024 });
+  const run = (...args) => execFileP(cli, ['-s=cache', ...args], {
+    maxBuffer: 16 * 1024 * 1024,
+  });
   return {
     open: (url, { config, persistent }) => run('open', '--config', config,
       ...(persistent ? ['--persistent'] : []), url),
@@ -84,15 +89,18 @@ function playwright(cli) {
  * never to our stdio: an inherited pipe would keep the caller's shell waiting.
  */
 export async function ensureWorker(project, spawnImpl = spawn) {
-  const running = await readWorker(project);
-  if (running) return { ...running, started: false };
-  await mkdir(jobsDir(project), { recursive: true });
+  const { claimed, worker } = await claimWorker(project);
+  if (!claimed) {
+    return worker?.pid ? { ...worker, started: false }
+      : { started: false, note: 'another caller is starting the worker' };
+  }
   const log = await openFile(path.join(jobsDir(project), 'worker.log'), 'a');
   const child = spawnImpl(process.execPath, [fileURLToPath(import.meta.url), '--worker'], {
     cwd: project.root, detached: true, stdio: ['ignore', log.fd, log.fd],
   });
   child.unref();
   await log.close();
+  await recordWorker(project, child.pid);
   return { pid: child.pid, started: true };
 }
 
@@ -120,14 +128,25 @@ async function main(argv) {
     const worker = await readWorker(project);
     if (!worker) return { stopped: false, reason: 'no worker is running' };
     process.kill(worker.pid, 'SIGTERM');
-    return { stopped: true, pid: worker.pid, note: 'the worker finishes its current URL first' };
+    return {
+      stopped: true, pid: worker.pid,
+      note: 'the worker finishes its current URL, verifies what it visited, then exits',
+    };
   }
   await setupPaths(project);
   const job = await approvedJob(project);
   const urls = argv.includes('--force') ? job.urls
-    : pendingUrls(await readInventory(project.step('urls')), job.selection, job.urls);
+    : pendingUrls(await readInventory(project.step('urls')), job.urls);
   const alreadyCached = job.urls.length - urls.length;
   if (!urls.length) {
+    // Recorded as a finished job so an earlier stopped or failed one no longer counts.
+    const { job: complete, added } = await enqueue(project, { ...job, urls: [] });
+    if (added) {
+      await updateJob(project, complete.id, {
+        state: 'done', done: 0, finished: new Date().toISOString(),
+        note: 'every URL already stored',
+      });
+    }
     return {
       added: false, alreadyCached,
       note: `every URL of ${job.selection} is cached; rerun with --force to visit them again`,
