@@ -35,6 +35,20 @@ const defaultIo = {
 
 export const cacheDirOf = (project) => path.join(project.step('cache'), '.page-cache');
 const stateFile = (project) => path.join(project.work, 'cache-server.json');
+const browserConfigFile = (project) => path.join(project.work, 'cache-browser-config.json');
+
+/**
+ * A playwright-cli config for browsing the cache: the probe's config (stealth and the like)
+ * plus `network.allowedOrigins` = the proxy only, so nothing leaves the machine — no
+ * analytics beacon, no live CDN. A resource that is not cached simply fails to load.
+ */
+async function writeBrowserConfig(project, url) {
+  const probe = path.join(project.step('probe'), 'playwright-config.json');
+  const base = await readFile(probe, 'utf8').then(JSON.parse, () => ({}));
+  const config = { ...base, network: { ...base.network, allowedOrigins: [url] } };
+  await writeFile(browserConfigFile(project), `${JSON.stringify(config, null, 2)}\n`);
+  return browserConfigFile(project);
+}
 const readState = (project) => readFile(stateFile(project), 'utf8').then(JSON.parse, () => null);
 
 async function requireCacheDir(project) {
@@ -61,7 +75,9 @@ export async function cacheServerStatus(project, io = defaultIo) {
 export async function serveCache(project, proxyScript, freePort, io = defaultIo) {
   const dir = await requireCacheDir(project);
   const live = await cacheServerStatus(project, io);
-  if (live) return { ...live, reused: true };
+  if (live) {
+    return { ...live, browserConfig: await writeBrowserConfig(project, live.url), reused: true };
+  }
   await mkdir(project.work, { recursive: true });
   const port = await freePort(3001);
   const logFile = path.join(project.work, 'cache-server.log');
@@ -78,7 +94,8 @@ export async function serveCache(project, proxyScript, freePort, io = defaultIo)
   }
   const state = { pid, port, dir, offline: true, url: `http://127.0.0.1:${port}` };
   await writeFile(stateFile(project), `${JSON.stringify(state, null, 2)}\n`);
-  return { ...state, cached: status.cached, reused: false };
+  const browserConfig = await writeBrowserConfig(project, state.url);
+  return { ...state, cached: status.cached, browserConfig, reused: false };
 }
 
 /** Stops the recorded server, if any, and forgets it. */

@@ -62,8 +62,12 @@ test('serve starts the offline proxy on a free port, records it, reuses it, stop
   assert.match(calls.spawned[0].logFile, /cache-server\.log$/);
   const recorded = JSON.parse(await readFile(path.join(p.work, 'cache-server.json'), 'utf8'));
   assert.equal(recorded.port, 3002);
+  const config = JSON.parse(await readFile(first.browserConfig, 'utf8'));
+  assert.deepEqual(config.network, { allowedOrigins: ['http://127.0.0.1:3002'] },
+    'the browser config lets the browser reach the proxy and nothing else');
   const second = await serveCache(p, '/skills/page-cache.js', async () => 9999, io);
   assert.deepEqual([second.port, second.reused], [3002, true], 'the live server is reused');
+  assert.equal(second.browserConfig, first.browserConfig);
   assert.equal(calls.spawned.length, 1);
   assert.deepEqual(await cacheServerStatus(p, io), {
     ...recorded, cached: 3, hits: 1, misses: 0,
@@ -73,6 +77,21 @@ test('serve starts the offline proxy on a free port, records it, reuses it, stop
   assert.equal(await cacheServerStatus(p, io), null);
   assert.deepEqual(await stopCacheServer(p, io), {
     stopped: false, reason: 'no cache server is recorded',
+  });
+});
+
+test('the browser config keeps the probe\'s settings under the network restriction', async () => {
+  const p = await project();
+  await mkdir(p.step('probe'), { recursive: true });
+  await writeFile(path.join(p.step('probe'), 'playwright-config.json'), JSON.stringify({
+    browser: { browserName: 'chromium', launchOptions: { args: ['--x'] } },
+    network: { blockedOrigins: ['https://ads.example'] },
+  }));
+  const served = await serveCache(p, '/s.js', async () => 3002, fakeIo().io);
+  const config = JSON.parse(await readFile(served.browserConfig, 'utf8'));
+  assert.deepEqual(config.browser.launchOptions.args, ['--x']);
+  assert.deepEqual(config.network, {
+    blockedOrigins: ['https://ads.example'], allowedOrigins: ['http://127.0.0.1:3002'],
   });
 });
 

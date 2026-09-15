@@ -34,7 +34,11 @@ node <skill>/scripts/status.mjs cache url <url>...   the address to open for eac
 
 `serve` picks a free port, starts the page-cache proxy in offline mode, records it in
 `migration/.work/cache-server.json` and reuses it on every later call — never start it any
-other way, never pick a port. `cache url` prints the address the browser must open; it
+other way, never pick a port. It also writes `migration/.work/cache-browser-config.json`
+(printed as `browserConfig`): the probe's playwright-cli config plus `network.allowedOrigins`
+set to the proxy alone. **Open browser sessions on the cache with
+`playwright-cli --config=<that file>`**: nothing then leaves the machine — no analytics
+beacon to the site's real tracking, no live CDN. `cache url` prints the address to open; it
 already starts the server. The proxy serves a copy of each body with same-host absolute
 URLs rewritten to relative, so scripts and styles resolve through the proxy too.
 
@@ -48,10 +52,10 @@ dashboard links to its `/__status` (hits, misses, stored count). `cache stop` en
 
 ## Limits
 
-- Only what the browser requested during the `cache` step is stored. A resource built by a
-  script at run time, or an absolute same-host URL in a `data-*` attribute or a `<meta>`
-  tag, is not rewritten and is not there: it fails offline. The `/__status` miss count and
-  the browser's network log show what a page tried to reach.
+- Only responses from the site's own host are stored. Images or scripts on another host —
+  a brand image CDN, a search or video service, fonts — are not in the cache: with the
+  browser config above they fail to load (a render shows the layout without them); without
+  it they are fetched live. The browser's `requests` log shows what a page tried to reach.
 - Hover- or click-only content (mega-menus, tabs) was not rendered during caching unless
   the page fetched it up front.
 - One selection at a time was verified; the inventory says which pages carry

@@ -44,15 +44,17 @@ assets on disk so later analysis works offline, in the background. Tier: low.
 - `migration/cache/.page-cache/`: the proxy's cache directory (gitignored).
 - `migration/cache/cache.md`: every visited URL across all selections with `cached` or
   `failed`, its `kind` and selection, the proxy status and the settings.
-- `migration/urls/urls.json`: the visited records augmented; rerun `status.mjs urls` for
-  `urls/urls.md` to list kinds, redirects and what is not to be migrated.
+- `migration/urls/urls.json`: the visited records augmented; `urls/urls.md` refreshed.
 - `REPORT.md` `## cache`: written by the worker after each job; add with
   `status.mjs section cache` only if the operator needs more.
 
 ## Done
 
-`node <skill>/scripts/status.mjs check cache`. It fails with the progress label while a job
-is open — not an error to fix. Once the queue is empty, a missing body or asset means the
-worker did not finish: rerun `warm.mjs`, read `warm.mjs status`; never edit `cache.md` by
-hand. From here on the site is read from the cache, never from the origin:
-`references/local-cache.md` (`status.mjs cache ls|get|url`).
+Fails with the progress label while a job is open — not an error to fix. Once the queue is
+empty, a missing body or asset means the worker did not finish: rerun `warm.mjs`, read
+`warm.mjs status`; never edit `cache.md` by hand. From here on the site is read from the
+cache, never from the origin: `references/local-cache.md` (`status.mjs cache ls|get|url`).
+
+```bash
+node <skill>/scripts/status.mjs check cache
+```
