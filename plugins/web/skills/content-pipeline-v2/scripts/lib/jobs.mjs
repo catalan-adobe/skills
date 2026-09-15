@@ -4,6 +4,7 @@
 import {
   link, mkdir, readdir, readFile, rename, rm, writeFile,
 } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 export const jobsDir = (project) => path.join(project.work, 'warm');
@@ -51,7 +52,7 @@ export const recordWorker = (project, pid, now = () => new Date()) => writeJson(
  */
 export async function claimWorker(project, now = () => new Date(), isAlive = alive) {
   await mkdir(jobsDir(project), { recursive: true });
-  const tmp = `${workerFile(project)}.${process.pid}.${now().getTime()}.claim`;
+  const tmp = `${workerFile(project)}.${randomUUID()}.claim`;
   await writeFile(tmp, JSON.stringify({ pid: null, claimed: now().toISOString() }));
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {

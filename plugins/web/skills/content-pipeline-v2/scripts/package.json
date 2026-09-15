@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test \"lib/**/*.test.mjs\"",
-    "check": "node check-lines.mjs && node check-residue.mjs"
+    "check": "node check-lines.mjs && node check-residue.mjs",
+    "test:integration": "node --test --test-concurrency=1 \"integration/*.test.mjs\""
   }
 }
