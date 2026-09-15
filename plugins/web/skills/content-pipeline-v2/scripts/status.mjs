@@ -49,7 +49,8 @@ const flag = (argv, name) => {
 function renderText(states) {
   const rows = states.map((s) => {
     const via = s.skill ? `via ${s.skill}` : 'runner';
-    const why = s.blockedBy.length ? ` (by ${s.blockedBy.join(', ')})` : '';
+    const why = s.running ? ` ${s.running}`
+      : s.blockedBy.length ? ` (by ${s.blockedBy.join(', ')})` : '';
     return `${s.id.padEnd(12)} ${s.state.padEnd(17)}${why.padEnd(20)} ${s.tier.padEnd(7)} ${via}`;
   });
   return ['step         state            blocked             tier    how', ...rows].join('\n');
@@ -60,13 +61,13 @@ export async function status(project) {
   if (!data) {
     throw new Error(`No project at ${project.projectFile}; run status.mjs init --origin <url>`);
   }
-  const done = await runAllChecks(project);
+  const { done, running } = await runAllChecks(project);
   const approved = data.approved ?? {};
   const result = {
     project: project.dir,
     origin: data.origin,
     generatedAt: new Date().toISOString(),
-    steps: stepStates(done, approved),
+    steps: stepStates(done, approved, running),
   };
   // The dashboard (tools/migration/) reads this instead of recomputing the checks.
   await writeFile(project.statusFile, `${JSON.stringify(result, null, 2)}\n`).catch(() => {});

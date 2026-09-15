@@ -17,6 +17,7 @@ td.url { font-family: ui-monospace, monospace; font-size: 12px; word-break: brea
   font-size: 12px; white-space: nowrap; }
 .chip.done { background: #dafbe1; } .chip.ready { background: #ddf4ff; }
 .chip.blocked { background: #fff8c5; } .chip.waiting-operator { background: #ffe8d1; }
+.chip.running { background: #fbefff; }
 .chip.page { background: #dafbe1; } .chip.redirect { background: #ddf4ff; }
 .chip.error { background: #ffebe9; } .chip.binary { background: #fbefff; }
 .chip.unclassified { background: var(--chip); }

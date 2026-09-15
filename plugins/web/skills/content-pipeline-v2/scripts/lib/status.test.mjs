@@ -655,3 +655,31 @@ test('free-port skips ports held on the IPv4 wildcard or on loopback only', asyn
     taken.close();
   }
 });
+
+test('a queued or running warm job holds the cache step as running and fails its check',
+  async () => {
+    const { enqueue, updateJob } = await import('./jobs.mjs');
+    const cwd = await fresh();
+    await cli(cwd, 'init', '--origin', 'https://example.com/');
+    const project = resolveProject(cwd);
+    const { job } = await enqueue(project, {
+      selection: 'blogs', urls: ['https://example.com/a'],
+    });
+    await enqueue(project, { selection: 'ja-jp', urls: ['https://example.com/ja'] });
+    await updateJob(project, job.id, { state: 'running', pid: process.pid, done: 0 });
+    const check = await cli(cwd, 'check', 'cache').catch((e) => e);
+    assert.match(check.stdout, /warm job 0\/1 \(blogs\) · queued: ja-jp/);
+    assert.equal(check.code, 1);
+    const out = await cli(cwd);
+    const cache = out.steps.find((s) => s.id === 'cache');
+    assert.equal(cache.state, 'running');
+    assert.equal(cache.running, '0/1 (blogs) · queued: ja-jp');
+    const text = await cli(cwd, '--text');
+    assert.match(String(text), /cache\s+running\s+0\/1 \(blogs\) · queued: ja-jp/);
+    await updateJob(project, job.id, { state: 'done' });
+    const after = await cli(cwd);
+    assert.equal(after.steps.find((s) => s.id === 'cache').state, 'running',
+      'a queued job with no worker still holds the step');
+    assert.equal(after.steps.find((s) => s.id === 'cache').running,
+      'worker not started · queued: ja-jp');
+  });

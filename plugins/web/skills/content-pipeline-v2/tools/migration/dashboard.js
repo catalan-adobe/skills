@@ -50,7 +50,9 @@ function renderProject(project, setup, status) {
 function renderSteps(status) {
   $('#steps .panel').innerHTML = status
     ? table(['step', 'state', 'tier', 'blocked by', 'via'], status.steps.map((s) => [
-      `<strong>${esc(s.id)}</strong>`, chip(s.state, s.state), esc(s.tier),
+      `<strong>${esc(s.id)}</strong>`,
+      chip(s.state, s.state) + (s.running ? ` ${esc(s.running)}` : ''),
+      esc(s.tier),
       esc(s.blockedBy.join(', ')), esc(s.skill ?? 'runner'),
     ]))
     : '<p class="muted">No <code>status.json</code> yet — run <code>status.mjs</code> once.</p>';

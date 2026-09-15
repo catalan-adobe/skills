@@ -103,3 +103,19 @@ export async function runWorker(project, run, {
   }
   return summary;
 }
+
+/**
+ * The jobs still holding the cache step, as one line for status displays:
+ * `12/50 (blogs) · queued: ja-jp`, or null when nothing is queued or running.
+ */
+export async function openWork(project, isAlive = alive) {
+  const jobs = await readJobs(project, isAlive);
+  const running = jobs.find((j) => j.state === 'running');
+  const queued = jobs.filter((j) => j.state === 'queued');
+  if (!running && !queued.length) return null;
+  const head = running
+    ? `${running.done + running.failed}/${running.total} (${running.selection})`
+    : 'worker not started';
+  const tail = queued.length ? ` · queued: ${queued.map((j) => j.selection).join(', ')}` : '';
+  return { label: `${head}${tail}`, running: running ?? null, queued };
+}

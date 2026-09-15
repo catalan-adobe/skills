@@ -72,22 +72,32 @@ export function stepById(id) {
  *
  * @param {Record<string, boolean>} done Step id → its done-check passed.
  * @param {Record<string, boolean>} [approved] Step id → operator approval recorded.
+ * @param {Record<string, string>} [running] Step id → a progress label while background
+ *   work holds the step (`12/50 (blogs) · queued: ja-jp`).
  * @returns {{id: string, tier: string, tierNote?: string, skill: string|null,
- *   state: 'done'|'ready'|'blocked'|'waiting-operator', blockedBy: string[],
- *   writes: string[]}[]}
+ *   state: 'done'|'ready'|'blocked'|'waiting-operator'|'running', blockedBy: string[],
+ *   writes: string[], running?: string}[]}
  */
-export function stepStates(done, approved = {}) {
+export function stepStates(done, approved = {}, running = {}) {
   return STEPS.map((step) => {
     const blockedBy = done[step.id] ? [] : step.dependsOn.filter((dep) => !done[dep]);
     let state = 'ready';
     if (done[step.id]) state = 'done';
+    else if (running[step.id]) state = 'running';
     else if (blockedBy.length) state = 'blocked';
     else if (step.operatorGate && !approved[step.id]) state = 'waiting-operator';
     const {
       id, tier, tierNote, skill, writes,
     } = step;
     return {
-      id, tier, ...(tierNote ? { tierNote } : {}), skill, state, blockedBy, writes,
+      id,
+      tier,
+      ...(tierNote ? { tierNote } : {}),
+      skill,
+      state,
+      blockedBy,
+      writes,
+      ...(state === 'running' ? { running: running[step.id] } : {}),
     };
   });
 }

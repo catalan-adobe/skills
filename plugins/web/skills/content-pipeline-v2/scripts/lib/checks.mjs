@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { openWork } from './jobs.mjs';
 import { STEPS } from './steps.mjs';
 import { detect, missingReasons } from './setup.mjs';
 import { relativeSegments, scopeOf } from './urls.mjs';
@@ -387,9 +388,18 @@ export const CHECKS = Object.fromEntries(
     const contentCheck = CONTENT_CHECKS[step.id];
     if (!contentCheck) throw new Error(`Step "${step.id}" has no done-check`);
     if (step.id === 'cache') {
-      return [step.id, async (project) => checkCache(
-        await loadFiles(project), await listCacheFiles(project),
-      )];
+      return [step.id, async (project) => {
+        const work = await openWork(project);
+        if (work) {
+          return {
+            pass: false,
+            running: work.label,
+            reasons: [`cache: warm job ${work.label} — nothing downstream may start on a `
+              + 'half-warmed cache; warm.mjs status shows progress'],
+          };
+        }
+        return checkCache(await loadFiles(project), await listCacheFiles(project));
+      }];
     }
     if (step.id === 'prep' || step.id === 'prep-verify') {
       return [step.id, async (project) => contentCheck(
@@ -409,8 +419,11 @@ export async function runCheck(id, project) {
 
 /** Every step's done-check, as `{ id: pass }`. */
 export async function runAllChecks(project) {
-  const entries = await Promise.all(
-    Object.keys(CHECKS).map(async (id) => [id, (await runCheck(id, project)).pass]),
+  const results = await Promise.all(
+    Object.keys(CHECKS).map(async (id) => [id, await runCheck(id, project)]),
   );
-  return Object.fromEntries(entries);
+  const done = Object.fromEntries(results.map(([id, r]) => [id, r.pass]));
+  const running = Object.fromEntries(results.filter(([, r]) => r.running)
+    .map(([id, r]) => [id, r.running]));
+  return { done, running };
 }
