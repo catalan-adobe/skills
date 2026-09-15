@@ -72,6 +72,7 @@ export function classify({ url, sidecar, finalUrl }) {
   return { kind: 'page', migrate: 'yes' };
 }
 
+const firstLine = (text) => String(text ?? '').split('\n').find((l) => l.trim()) ?? '';
 const failedUrls = (rows) => rows.filter((r) => r.status === 'failed').map((r) => r.url).join(', ');
 
 async function countAssets(dir) {
@@ -204,7 +205,12 @@ export async function warm(project, io, job = {}) {
   };
   const timings = new Map();
   const finals = new Map();
+  const navFailed = new Map();
   const visited = [];
+  // Whatever happens in the browser, every URL visited so far is verified and recorded
+  // below; a navigation that fails marks its URL and the loop goes on; anything else
+  // (the proxy dying, the browser gone) ends the visits and is rethrown after recording.
+  let loopError = null;
   try {
     let opened = false;
     for (const url of urls) {
@@ -212,22 +218,25 @@ export async function warm(project, io, job = {}) {
       await onProgress({ current: url });
       visited.push(url);
       const started = Date.now();
-      if (!opened) {
-        await browser.open(via(BINARY_EXT.test(new URL(url).pathname) ? urls[0] : url), {
-          config, persistent: probe.persistent === true,
-        });
-        opened = true;
-        if (BINARY_EXT.test(new URL(url).pathname)) await fetchFromPage(browser, via(url));
-        else await browser.eval(expression).catch(() => {});
-      } else if (BINARY_EXT.test(new URL(url).pathname)) {
-        await fetchFromPage(browser, via(url));
-      } else {
-        await browser.goto(via(url));
-        await browser.eval(expression).catch(() => {});
-      }
+      const binary = BINARY_EXT.test(new URL(url).pathname);
+      const navigated = await (async () => {
+        if (!opened) {
+          await browser.open(via(binary ? urls[0] : url), {
+            config, persistent: probe.persistent === true,
+          });
+          opened = true;
+          if (binary) await fetchFromPage(browser, via(url));
+          else await browser.eval(expression).catch(() => {});
+        } else if (binary) {
+          await fetchFromPage(browser, via(url));
+        } else {
+          await browser.goto(via(url));
+          await browser.eval(expression).catch(() => {});
+        }
+      })().then(() => true, (err) => { navFailed.set(url, err.message); return false; });
       timings.set(url, Date.now() - started);
       await sleep(pace);
-      if (!BINARY_EXT.test(new URL(url).pathname)) {
+      if (navigated && !binary) {
         const raw = await browser.eval('JSON.stringify(location.href)').catch(() => null);
         const landed = parseEval(raw);
         finals.set(url, typeof landed === 'string' ? siteUrl(landed, origin) : null);
@@ -235,6 +244,8 @@ export async function warm(project, io, job = {}) {
       }
       await onProgress({ done: visited.length, current: null });
     }
+  } catch (err) {
+    loopError = err;
   } finally {
     await browser.close().catch(() => {});
     await online.stop();
@@ -255,18 +266,23 @@ export async function warm(project, io, job = {}) {
       const finalUrl = finals.get(url) ?? null;
       const { kind, migrate } = classify({ url, sidecar: stored.sidecar, finalUrl });
       const ms = timings.get(url) ?? 0;
-      const note = kind === 'redirect' && stored.redirect
-        ? `${stored.redirect.status} → ${stored.redirect.target ?? '?'}`
-        : kind === 'redirect' ? `landed on ${finalUrl}`
-          : kind === 'error' ? `${stored.http.status}`
-            : kind === 'unreachable' ? (res ? `${res.status}` : 'no response') : '';
+      const note = navFailed.has(url) ? `navigation failed: ${firstLine(navFailed.get(url))}`
+        : kind === 'redirect' && stored.redirect
+          ? `${stored.redirect.status} → ${stored.redirect.target ?? '?'}`
+          : kind === 'redirect' ? `landed on ${finalUrl}`
+            : kind === 'error' ? `${stored.http.status}`
+              : kind === 'unreachable' ? (res ? `${res.status}` : 'no response') : '';
       rows.push({
         url, status: stored.sidecar && res ? 'cached' : 'failed', kind, ms, note,
       });
       facts.set(url, {
         http: stored.http, redirect: stored.redirect, finalUrl, kind, migrate,
         cache: {
-          at: now(), selection, path: stored.sidecar ? stored.path : null, durationMs: ms,
+          at: now(),
+          selection,
+          path: stored.sidecar ? stored.path : null,
+          durationMs: ms,
+          ...(navFailed.has(url) ? { note } : {}),
         },
       });
     }
@@ -301,6 +317,10 @@ export async function warm(project, io, job = {}) {
     + (failed ? `Failed: ${failedUrls(rows)}. ` : '')
     + 'Serve offline with the page-cache proxy `--offline` on the same cache directory.';
   await upsertSection(project, 'cache', body);
+  if (loopError) {
+    throw new Error(`${firstLine(loopError.message)} — after ${visited.length} of ${urls.length} `
+      + 'URLs; what was visited is recorded, a rerun resumes the rest');
+  }
   return {
     cached,
     failed,
@@ -333,11 +353,12 @@ export function pendingUrls(inventory, urls) {
 
 /** A cache.md row from an inventory record that was visited. */
 function rowOf(r) {
-  const note = r.kind === 'redirect' && r.redirect
+  const note = r.cache?.note ? r.cache.note
+    : r.kind === 'redirect' && r.redirect
     ? `${r.redirect.status} → ${r.redirect.target ?? '?'}`
-    : r.kind === 'redirect' ? `landed on ${r.finalUrl}`
-      : r.kind === 'error' ? `${r.http?.status ?? ''}`
-        : r.kind === 'unreachable' ? 'no response' : '';
+      : r.kind === 'redirect' ? `landed on ${r.finalUrl}`
+        : r.kind === 'error' ? `${r.http?.status ?? ''}`
+          : r.kind === 'unreachable' ? 'no response' : '';
   return {
     url: r.url,
     status: r.cache?.path ? 'cached' : 'failed',

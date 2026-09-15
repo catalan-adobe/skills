@@ -74,6 +74,13 @@ function evalResult(stdout) {
 function playwright(cli) {
   const run = (...args) => execFileP(cli, ['-s=cache', ...args], {
     maxBuffer: 16 * 1024 * 1024,
+  }).catch((err) => {
+    // execFile's message is "Command failed: …" plus stderr, where the CLI's update banner
+    // drowns the real error; the error itself is on stdout under a "### Error" heading.
+    const lines = `${err.stdout ?? ''}\n${err.stderr ?? ''}`.split('\n')
+      .map((l) => l.trim()).filter((l) => l && !/^(#|[║╔╚═])/.test(l));
+    const reason = lines.find((l) => /error|fail|timeout|net::|refused/i.test(l)) ?? lines[0];
+    throw new Error(`playwright-cli ${args[0]} ${args.at(-1)}: ${reason ?? err.message}`);
   });
   return {
     open: (url, { config, persistent }) => run('open', '--config', config,

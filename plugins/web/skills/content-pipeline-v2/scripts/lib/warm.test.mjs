@@ -92,10 +92,13 @@ async function project() {
 }
 
 /** A browser that, like a real one, fetches the page and one stylesheet through the proxy. */
-function fakeBrowser(log, { landsOn = new Map() } = {}) {
+function fakeBrowser(log, { landsOn = new Map(), failsOn = new Set() } = {}) {
   let current = null;
   const visit = async (url) => {
     log.push(['goto', url]);
+    if ([...failsOn].some((part) => url.includes(part))) {
+      throw new Error('Command failed: playwright-cli goto\nnet::ERR_TIMED_OUT');
+    }
     const res = await fetch(url, { redirect: 'follow' });
     if (res.ok) await fetch(new URL('/theme.css', url).href);
     const requested = new URL(url);
@@ -324,3 +327,71 @@ test('pendingUrls leaves out URLs with a stored body, whichever selection stored
   assert.deepEqual(pendingUrls(inventory, urls), ['https://x/b', 'https://x/d']);
   assert.deepEqual(pendingUrls([], urls), urls);
 });
+
+test('one failed navigation is recorded and the run goes on; the rest is cached', async () => {
+  const p = await project();
+  const cacheDir = path.join(p.dir, 'cache/.page-cache');
+  const proxy = fakeProxy(cacheDir);
+  const log = [];
+  const result = await warm(p, {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: fakeBrowser(log, { failsOn: new Set(['/a.html']) }),
+    pace: 0,
+  });
+  assert.equal(result.cached + result.failed, 3, 'every URL got a row');
+  assert.equal(result.failed, 1);
+  assert.equal(result.kinds.unreachable, 1);
+  const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
+  assert.match(md, /a\.html \| failed \| unreachable \| \d+ \| s \| navigation failed: Command/);
+  const inventory = JSON.parse(await readFile(path.join(p.dir, 'urls/urls.json'), 'utf8'));
+  assert.equal(inventory.filter((r) => r.cache).length, 3, 'all visited URLs recorded');
+  const failed = inventory.find((r) => r.url.endsWith('/a.html'));
+  assert.equal(failed.finalUrl, null, 'no browser read for a page that never loaded');
+  assert.equal(inventory.find((r) => r.url.endsWith('/missing.html')).kind, 'page',
+    'the URL after the failed one was visited and classified');
+});
+
+test('when the browser dies mid-run, what was visited is recorded before the job fails',
+  async () => {
+    const p = await project();
+    const cacheDir = path.join(p.dir, 'cache/.page-cache');
+    const proxy = fakeProxy(cacheDir);
+    const log = [];
+    const browser = fakeBrowser(log);
+    let visits = 0;
+    let thrown = false;
+    const flaky = {
+      ...browser,
+      goto: async (url) => {
+        visits += 1;
+        if (visits === 1) throw new Error('browser gone');
+        return browser.goto(url);
+      },
+      eval: async (expr) => {
+        if (visits >= 1 && expr.includes('location.href')) throw new Error('browser gone');
+        return browser.eval(expr);
+      },
+    };
+    await assert.rejects(warm(p, {
+      startProxy: async ({ offline }) => {
+        proxy.setOffline(offline);
+        const port = await proxy.listen();
+        return { port, stop: () => proxy.close() };
+      },
+      browser: flaky,
+      pace: 0,
+    }, {
+      selection: 's',
+      urls: [`${ORIGIN}/`, `${ORIGIN}/a.html`, `${ORIGIN}/missing.html`],
+      onProgress: async () => {
+        if (visits === 1 && !thrown) { thrown = true; throw new Error('disk full'); }
+      },
+    }), /disk full — after 2 of 3 URLs; what was visited is recorded/);
+    const inventory = JSON.parse(await readFile(path.join(p.dir, 'urls/urls.json'), 'utf8'));
+    assert.equal(inventory.filter((r) => r.cache).length, 2);
+    assert.match(await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8'), /Visited so far: 2/);
+  });
