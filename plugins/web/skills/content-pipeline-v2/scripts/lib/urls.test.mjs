@@ -432,3 +432,38 @@ test('pick returns exactly the requested count and rejects bad subset names', as
   await assert.rejects(writeSubset(dir, 'a/b', list), /must be/);
   await writeSubset(dir, 'ok_name-1', list);
 });
+
+test('writeSubsets replaces only the files it generated; picked subsets survive', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'cpv2-urls-'));
+  const urls = [];
+  for (let i = 0; i < 600; i += 1) urls.push({ url: `https://x.example/a/${i}` });
+  for (let i = 0; i < 300; i += 1) urls.push({ url: `https://x.example/b/${i}` });
+  const dist = distribution(urls);
+  await writeSubsets(urls, proposal(dist, { cacheAllUpTo: 500 }), dir);
+  await writeSubset(dir, 'representative-50', ['https://x.example/a/1']);
+  const { readdir } = await import('node:fs/promises');
+  const before = (await readdir(path.join(dir, 'subsets'))).sort();
+  assert.deepEqual(before, ['.generated.json', 'a.txt', 'b.txt', 'representative-50.txt']);
+  const fewer = urls.slice(0, 605);
+  await writeSubsets(fewer, proposal(distribution(fewer), { cacheAllUpTo: 500 }), dir);
+  const after = (await readdir(path.join(dir, 'subsets'))).sort();
+  assert.deepEqual(after, ['.generated.json', 'a.txt', 'representative-50.txt'],
+    'b.txt (generated, no longer proposed) removed; the picked subset kept');
+  assert.equal(await readFile(path.join(dir, 'subsets', 'representative-50.txt'), 'utf8'),
+    'https://x.example/a/1\n');
+  await writeSubsets(urls.slice(0, 10), proposal(distribution(urls.slice(0, 10))), dir);
+  assert.deepEqual((await readdir(path.join(dir, 'subsets'))).sort(), ['representative-50.txt'],
+    'under the threshold nothing is generated and the picked subset still survives');
+});
+
+test('pick leaves out URLs that already have a stored body', async () => {
+  const urls = [
+    { url: 'https://x.example/g0/a.html', cache: { path: 'x' } },
+    { url: 'https://x.example/g0/b.html' },
+    { url: 'https://x.example/g1/c.html', cache: { path: null } },
+  ];
+  const picks = await pick(urls, { count: 3, fill: true, reachable: async () => true });
+  assert.deepEqual(picks.map((p) => p.url).sort(),
+    ['https://x.example/g0/b.html', 'https://x.example/g1/c.html'],
+    'a failed visit (no path) is still a candidate');
+});

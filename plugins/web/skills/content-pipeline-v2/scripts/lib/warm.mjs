@@ -4,7 +4,8 @@ import {
 import path from 'node:path';
 import { cacheRelativePath, resolveSelection } from './checks.mjs';
 import { readInventory, recordVisits, writeInventory } from './inventory.mjs';
-import { upsertSection } from './project.mjs';
+import { readProject, upsertSection } from './project.mjs';
+import { refreshUrlsMd } from './urls.mjs';
 
 const ASSET = /\.(css|js|mjs|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|mp4|webm)$/i;
 const BINARY_EXT = new RegExp(
@@ -395,6 +396,8 @@ async function writeOutcome(run, {
     + (failed ? `Failed: ${failedUrls(rows)}. ` : '')
     + 'Serve offline with the page-cache proxy `--offline` on the same cache directory.';
   await upsertSection(project, 'cache', body);
+  const { cacheAllUpTo = 500 } = (await readProject(project)) ?? {};
+  await refreshUrlsMd(project.step('urls'), { cacheAllUpTo }).catch(() => {});
   return {
     cached,
     failed,

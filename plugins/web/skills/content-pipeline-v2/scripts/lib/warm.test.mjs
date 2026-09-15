@@ -617,3 +617,21 @@ test('when opening the session fails, the next URL opens it again', async () => 
   assert.deepEqual([result.cached, result.failed], [1, 1]);
   assert.ok(!log.some(([k, v]) => k === 'goto' && v.includes('/a.html') && opens < 2));
 });
+
+test('when a job ends, urls.md is refreshed with the cached count', async () => {
+  const p = await project();
+  const cacheDir = path.join(p.dir, 'cache/.page-cache');
+  const proxy = fakeProxy(cacheDir);
+  await warm(p, {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: fakeBrowser([]),
+    pace: 0,
+  }, { selection: 's', urls: [`${ORIGIN}/`, `${ORIGIN}/a.html`] });
+  const md = await readFile(path.join(p.dir, 'urls/urls.md'), 'utf8');
+  assert.match(md, /2 of \d+ URLs cached/);
+  assert.match(md, /\| page \| 2 \|/);
+});

@@ -158,7 +158,7 @@ test('the worker rewrites cache/progress.json after every URL, without the URL l
   assert.ok(final.updatedAt);
 });
 
-test('a job stopped after visiting 2 of 3, one of them failed, is stopped — not done', async () => {
+test('a job stopped after 2 of 3 visits, one of them failed, is stopped — not done', async () => {
   const p = await fresh();
   await enqueue(p, { selection: 'a', urls: ['u1', 'u2', 'u3'] }, { now: clock });
   let stop = false;

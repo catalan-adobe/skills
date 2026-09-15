@@ -60,6 +60,11 @@ approvals must be given again.
 
 ## urls/
 
+`urls/subsets/.generated.json`
+: Written by `status.mjs urls`: the subset files it generated from the proposal, the only
+  ones it replaces next time. Subsets from `pick --write` or by hand are never touched.
+
+
 `urls/scan.json`
 : Written by the scan snippet during `scan`: the crawler's raw `URLExtended[]`.
 : Read by `status.mjs urls`, which merges it into the inventory.

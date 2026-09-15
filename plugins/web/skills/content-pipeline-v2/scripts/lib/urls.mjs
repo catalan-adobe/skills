@@ -1,4 +1,6 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir, readFile, rm, writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 
 const COVER_THRESHOLD = 0.8;
@@ -244,9 +246,19 @@ function linesOf(list) {
  * @param {string} dir The `urls/` directory the subsets belong under.
  * @returns {Promise<string[]>} The paths written.
  */
+const GENERATED = '.generated.json';
+
+/**
+ * Writes one subset file per proposed group. Only the files this function wrote last time
+ * (listed in `subsets/.generated.json`) are replaced; subsets written by `pick --write` or
+ * by hand — often the approved selection — are left alone.
+ */
 export async function writeSubsets(urls, prop, dir) {
   const subsetsDir = path.join(dir, 'subsets');
-  await rm(subsetsDir, { recursive: true, force: true });
+  const manifest = path.join(subsetsDir, GENERATED);
+  const previous = await readFile(manifest, 'utf8').then(JSON.parse, () => []);
+  for (const name of previous) await rm(path.join(subsetsDir, name), { force: true });
+  await rm(manifest, { force: true });
   if (prop.all) return [];
   await mkdir(subsetsDir, { recursive: true });
   const files = [];
@@ -258,6 +270,7 @@ export async function writeSubsets(urls, prop, dir) {
     await writeFile(file, linesOf(matching));
     files.push(file);
   }
+  await writeFile(manifest, `${JSON.stringify(files.map((f) => path.basename(f)))}\n`);
   return files;
 }
 
@@ -291,7 +304,8 @@ export async function pick(urls, {
   const groupOf = (url) => relativeSegments(url, scope)[0] ?? '';
   const skip = new Set(exclude.map(groupOf));
   const byGroup = new Map();
-  for (const record of urls.filter(isCandidate)) {
+  // Already-cached URLs are not picked: a pick serves the next selection or a fresh look.
+  for (const record of urls.filter((r) => isCandidate(r) && !r.cache?.path)) {
     const { url } = record;
     const group = groupOf(url);
     if (skip.has(group) || (fill && !isPage(url))) continue;
@@ -352,4 +366,18 @@ export async function writeSubset(urlsDir, name, urls) {
   const file = path.join(dir, `${name}.txt`);
   await writeFile(file, linesOf(urls.map((url) => ({ url }))));
   return file;
+}
+
+/**
+ * Rewrites `urls/urls.md` from the inventory on disk, and the generated subsets when asked.
+ * The cache worker calls it (without subsets) when a job ends so the counts stay current.
+ */
+export async function refreshUrlsMd(urlsDir, { cacheAllUpTo = 500, subsets = false } = {}) {
+  const { readInventory } = await import('./inventory.mjs');
+  const entries = await readInventory(urlsDir);
+  const dist = distribution(entries);
+  const prop = proposal(dist, { cacheAllUpTo });
+  await writeFile(path.join(urlsDir, 'urls.md'), renderUrlsMd(dist, prop));
+  if (subsets) await writeSubsets(entries, prop, urlsDir);
+  return prop;
 }

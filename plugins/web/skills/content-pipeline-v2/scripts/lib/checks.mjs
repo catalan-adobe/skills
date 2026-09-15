@@ -315,6 +315,16 @@ export function checkReport(files) {
   if (next && !STEPS.some((s) => new RegExp(`\\b${escapeRegExp(s.id)}\\b`).test(next))) {
     reasons.push('migration/REPORT.md "## next" names no step; say what is pending or done');
   }
+  // Every "## " heading is a section the runner knows; a stray one is a body written by
+  // hand with headings, which the section command would have refused.
+  const known = new Set([...STEPS.map((s) => s.id), 'next']);
+  for (const heading of md.match(/^##\s+.*$/gm) ?? []) {
+    const title = heading.replace(/^##\s+/, '').trim();
+    if (!known.has(title)) {
+      reasons.push(`migration/REPORT.md has a "## ${title}" heading that is no section; `
+        + 'use "### " inside a section body');
+    }
+  }
   return { pass: reasons.length === 0, reasons };
 }
 

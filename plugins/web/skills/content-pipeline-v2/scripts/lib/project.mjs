@@ -64,6 +64,9 @@ export async function init({
     data.skills = { repo: skillsRepo ?? data.skills?.repo, ref: skillsRef ?? data.skills?.ref };
   }
   await writeProject(project, data);
+  for (const step of ['probe', 'prep', 'urls', 'cache']) {
+    await mkdir(project.step(step), { recursive: true });
+  }
   await writeFile(path.join(project.dir, '.gitignore'),
     '.work/\ncache/.page-cache/\ncache/progress.json\n');
   const dashboard = await installDashboard(project);

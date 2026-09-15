@@ -100,9 +100,10 @@ Runner commands:
 status.mjs [--text]          state of every step
 status.mjs check <step>      the step's done-check; exit 1 and reasons when it fails
 status.mjs urls              URL distribution and caching proposal → urls/urls.md, subsets/
+                             (regenerates only its own subset files; picked ones stay)
 status.mjs pick [--count n] [--exclude <url>]… [--write <subset>]
-                             one reachable page per largest group; --write fills to n pages
-                             and saves urls/subsets/<subset>.txt
+                             one reachable, not yet cached page per largest group; --write
+                             fills to n pages and saves urls/subsets/<subset>.txt
 status.mjs approve cache <subset>...|all   record the operator's yes and the selection
 status.mjs section <step|next> < body.md   write that REPORT.md section from a body without
                                            heading (the command adds it; replaces)

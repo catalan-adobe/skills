@@ -13,7 +13,7 @@ import {
 } from './lib/inventory.mjs';
 import { stepById, stepStates } from './lib/steps.mjs';
 import {
-  distribution, pick, proposal, renderUrlsMd, writeSubset, writeSubsets,
+  pick, refreshUrlsMd, writeSubset,
 } from './lib/urls.mjs';
 import {
   commandOnPath, defaultExec, detect, install, missingReasons, writeSetupJson,
@@ -133,11 +133,7 @@ export async function urls(project) {
   await mergeScanFile(urlsDir);
   const entries = normalise(await readUrls(project));
   await writeInventory(urlsDir, entries);
-  const dist = distribution(entries);
-  const prop = proposal(dist, { cacheAllUpTo: data.cacheAllUpTo });
-  await writeFile(path.join(urlsDir, 'urls.md'), renderUrlsMd(dist, prop));
-  await writeSubsets(entries, prop, urlsDir);
-  return prop;
+  return refreshUrlsMd(urlsDir, { cacheAllUpTo: data.cacheAllUpTo, subsets: true });
 }
 
 /** Merges `urls/scan.json` into the inventory when the crawler left one. */

@@ -491,3 +491,18 @@ test('probe.md must say whether the main content is in the initial HTML', () => 
   const said = checkProbe({ ...files, 'probe/probe.md': note });
   assert.equal(said.pass, true);
 });
+
+test('checkReport rejects a "## " heading that is no section', () => {
+  const files = {
+    'REPORT.md': '## probe\n\ndone\n\n## next\n\n## Struggles\n\ncache done\n',
+    'probe/browser-recipe.json': '{}',
+    'probe/probe.md': 'main content: yes',
+  };
+  const { pass, reasons } = checkReport(files);
+  assert.equal(pass, false);
+  assert.match(reasons.join('\n'), /"## Struggles" heading that is no section; use "### "/);
+  const ok = {
+    ...files, 'REPORT.md': '## probe\n\ndone\n\n## next\n\n### Struggles\n\ncache done\n',
+  };
+  assert.deepEqual(checkReport(ok), { pass: true, reasons: [] });
+});
