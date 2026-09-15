@@ -19,12 +19,16 @@ const ORIGIN = 'https://site.example';
  * requested with `?_origin=` in the proxy's file layout, and in offline mode answers only
  * from what it stored. `gone` URLs answer 404 online.
  */
-function fakeProxy(cacheDir, { gone = new Set(), moved = new Map() } = {}) {
+function fakeProxy(cacheDir, { gone = new Set(), moved = new Map(), hostile = true } = {}) {
   const stored = new Map();
   let offline = false;
+  let statusCalls = 0;
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/__status') {
+      // Hostile: the first status answer is not JSON yet, as a proxy still starting would do.
+      statusCalls += 1;
+      if (hostile && statusCalls === 1) { res.end('starting'); return; }
       res.end(JSON.stringify({ cached: stored.size, offline }));
       return;
     }
@@ -92,10 +96,18 @@ async function project() {
 }
 
 /** A browser that, like a real one, fetches the page and one stylesheet through the proxy. */
-function fakeBrowser(log, { landsOn = new Map(), failsOn = new Set() } = {}) {
+/**
+ * A stand-in for playwright-cli. Hostile by default, the way the real one is: the hide
+ * rules fail to apply on every other page (a page without the selectors, a CSP), a
+ * navigation takes time, `close` fails once the session is gone. `failsOn` marks URLs
+ * whose navigation fails. Production code must absorb all of it without a trace.
+ */
+function fakeBrowser(log, { landsOn = new Map(), failsOn = new Set(), hostile = true } = {}) {
   let current = null;
+  let hideCalls = 0;
   const visit = async (url) => {
     log.push(['goto', url]);
+    if (hostile) await new Promise((r) => { setTimeout(r, 3); });
     if ([...failsOn].some((part) => url.includes(part))) {
       throw new Error('Command failed: playwright-cli goto\nnet::ERR_TIMED_OUT');
     }
@@ -112,6 +124,10 @@ function fakeBrowser(log, { landsOn = new Map(), failsOn = new Set() } = {}) {
     goto: visit,
     eval: async (expr) => {
       log.push(['eval', expr]);
+      if (hostile && expr.includes('#cmp')) {
+        hideCalls += 1;
+        if (hideCalls % 2 === 0) throw new Error('### Error\nEvaluation failed: CSP');
+      }
       if (expr.includes('location.href')) return JSON.stringify(current);
       if (/fetch\(/.test(expr)) {
         const m = expr.match(/fetch\("([^"]+)"/);
@@ -121,7 +137,10 @@ function fakeBrowser(log, { landsOn = new Map(), failsOn = new Set() } = {}) {
       }
       return 'ok';
     },
-    close: async () => { log.push(['close']); },
+    close: async () => {
+      log.push(['close']);
+      if (hostile) throw new Error('### Error\nNo open session');
+    },
   };
 }
 
