@@ -346,9 +346,11 @@ test('pendingUrls leaves out URLs with a stored body, whichever selection stored
     { url: 'https://x/b', cache: { path: null, selection: 'blogs' } },
     { url: 'https://x/c', cache: { path: 'x/c', selection: 'other' } },
     { url: 'https://x/d' },
+    { url: 'https://x/e', cache: { path: 'x/e', selection: 'blogs', verified: false } },
   ];
-  const urls = ['https://x/a', 'https://x/b', 'https://x/c', 'https://x/d'];
-  assert.deepEqual(pendingUrls(inventory, urls), ['https://x/b', 'https://x/d']);
+  const urls = ['https://x/a', 'https://x/b', 'https://x/c', 'https://x/d', 'https://x/e'];
+  assert.deepEqual(pendingUrls(inventory, urls), ['https://x/b', 'https://x/d', 'https://x/e'],
+    'stored and verified (or from before the flag) are skipped; unverified is visited again');
   assert.deepEqual(pendingUrls([], urls), urls);
 });
 
@@ -472,4 +474,59 @@ test('a redirect chain is followed through the stored hops; validators are recor
   const ms = by[target].cache.durationMs;
   assert.ok(ms >= 0 && ms <= Date.now() - started + 1, `duration ${ms} is a real elapsed time`);
   assert.equal(log[0][1].persistent, true, 'the probe recipe asks for a persistent profile');
+});
+
+test('each visited URL is recorded at once, unverified, then verified after the run', async () => {
+  const p = await project();
+  const cacheDir = path.join(p.dir, 'cache/.page-cache');
+  const proxy = fakeProxy(cacheDir);
+  const seen = [];
+  const readRecords = async () => Object.fromEntries(JSON.parse(
+    await readFile(path.join(p.dir, 'urls/urls.json'), 'utf8'),
+  ).filter((r) => r.cache).map((r) => [r.url.replace(ORIGIN, ''), r.cache.verified]));
+  await warm(p, {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: fakeBrowser([]),
+    pace: 0,
+  }, {
+    selection: 's',
+    urls: [`${ORIGIN}/`, `${ORIGIN}/a.html`],
+    onProgress: async (x) => { if (x.done) seen.push(await readRecords()); },
+  });
+  assert.deepEqual(seen, [{ '/': false }, { '/': false, '/a.html': false }],
+    'after each visit the record exists, provisional');
+  assert.deepEqual(await readRecords(), { '/': true, '/a.html': true });
+});
+
+test('a concurrent write to urls.json during a job is kept, not clobbered', async () => {
+  const p = await project();
+  const cacheDir = path.join(p.dir, 'cache/.page-cache');
+  const proxy = fakeProxy(cacheDir);
+  const file = path.join(p.dir, 'urls/urls.json');
+  await warm(p, {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: fakeBrowser([]),
+    pace: 0,
+  }, {
+    selection: 's',
+    urls: [`${ORIGIN}/`, `${ORIGIN}/a.html`],
+    onProgress: async (x) => {
+      if (x.done === 1) {
+        const records = JSON.parse(await readFile(file, 'utf8'));
+        records.push({ url: `${ORIGIN}/new-from-rescan.html`, group: 'x' });
+        await writeFile(file, JSON.stringify(records));
+      }
+    },
+  });
+  const urls = JSON.parse(await readFile(file, 'utf8')).map((r) => r.url);
+  assert.ok(urls.includes(`${ORIGIN}/new-from-rescan.html`));
+  assert.ok(urls.includes(`${ORIGIN}/a.html`));
 });

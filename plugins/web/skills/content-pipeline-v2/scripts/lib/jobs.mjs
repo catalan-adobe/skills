@@ -10,6 +10,8 @@ import path from 'node:path';
 export const jobsDir = (project) => path.join(project.work, 'warm');
 const workerFile = (project) => path.join(jobsDir(project), 'worker.json');
 const jobFile = (project, id) => path.join(jobsDir(project), `${id}.json`);
+/** For the dashboard: the open jobs, rewritten after every URL, served by the EDS server. */
+export const progressFile = (project) => path.join(project.step('cache'), 'progress.json');
 
 export function alive(pid) {
   if (!pid) return false;
@@ -100,6 +102,18 @@ export async function updateJob(project, id, patch) {
   return job;
 }
 
+/** Writes cache/progress.json: every job's state without its URL list, newest last. */
+export async function writeProgress(project, now = () => new Date(), isAlive = alive) {
+  const jobs = (await readJobs(project, isAlive)).map(({ urls, result, ...job }) => job);
+  const running = jobs.find((j) => j.state === 'running') ?? null;
+  await writeJson(progressFile(project), {
+    updatedAt: now().toISOString(),
+    open: jobs.some((j) => j.state === 'running' || j.state === 'queued'),
+    running,
+    jobs,
+  });
+}
+
 export const clearJobs = (project) => rm(jobsDir(project), { recursive: true, force: true });
 
 /**
@@ -119,8 +133,12 @@ export async function runWorker(project, run, {
       const job = (await readJobs(project, isAlive)).find((j) => j.state === 'queued');
       if (!job) break;
       await updateJob(project, job.id, { state: 'running', pid, started: now().toISOString() });
+      await writeProgress(project, now, isAlive);
       const hooks = {
-        onProgress: (p) => updateJob(project, job.id, p),
+        onProgress: async (p) => {
+          await updateJob(project, job.id, p);
+          await writeProgress(project, now, isAlive);
+        },
         shouldStop: stopping,
       };
       const outcome = await run(job, hooks).then(
@@ -134,6 +152,7 @@ export async function runWorker(project, run, {
       await updateJob(project, job.id, {
         ...outcome, finished: now().toISOString(), current: null,
       });
+      await writeProgress(project, now, isAlive);
       summary.push({ id: job.id, state: outcome.state });
     }
   } finally {

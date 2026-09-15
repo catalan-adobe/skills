@@ -207,6 +207,51 @@ export async function warm(project, io, job = {}) {
   const finals = new Map();
   const navFailed = new Map();
   const visited = [];
+  const urlsDir = project.step('urls');
+  const inList = new Set((await readInventory(urlsDir)).map((r) => r.url));
+  // Our records, re-applied onto a fresh read at every write: another command (a re-scan
+  // merge) may write urls.json while a job runs, and must not be clobbered.
+  const recorded = new Map();
+  const persist = async () => {
+    let inventory = await readInventory(urlsDir);
+    for (const [url, facts] of recorded) inventory = recordVisit(inventory, url, facts);
+    await writeInventory(urlsDir, inventory);
+    return inventory;
+  };
+  /** The record of `url` from what is stored so far; `verified` once served offline. */
+  const factsFor = async (url, { res = null, verified }) => {
+    const stored = await storedFacts(cacheDir, url, origin, inList);
+    const finalUrl = finals.get(url) ?? null;
+    const { kind, migrate } = classify({ url, sidecar: stored.sidecar, finalUrl });
+    const ms = timings.get(url) ?? 0;
+    const note = navFailed.has(url) ? `navigation failed: ${firstLine(navFailed.get(url))}`
+      : kind === 'redirect' && stored.redirect
+        ? `${stored.redirect.status} → ${stored.redirect.target ?? '?'}`
+        : kind === 'redirect' ? `landed on ${finalUrl}`
+          : kind === 'error' ? `${stored.http.status}`
+            : kind === 'unreachable' ? (res ? `${res.status}` : 'no response') : '';
+    const cachedNow = verified ? Boolean(stored.sidecar && res) : Boolean(stored.sidecar);
+    return {
+      row: {
+        url, status: cachedNow ? 'cached' : 'failed', kind, ms, note,
+      },
+      facts: {
+        http: stored.http,
+        redirect: stored.redirect,
+        finalUrl,
+        kind,
+        migrate,
+        cache: {
+          at: now(),
+          selection,
+          path: stored.sidecar ? stored.path : null,
+          durationMs: ms,
+          verified,
+          ...(navFailed.has(url) ? { note } : {}),
+        },
+      },
+    };
+  };
   // Whatever happens in the browser, every URL visited so far is verified and recorded
   // below; a navigation that fails marks its URL and the loop goes on; anything else
   // (the proxy dying, the browser gone) ends the visits and is rethrown after recording.
@@ -242,6 +287,10 @@ export async function warm(project, io, job = {}) {
         finals.set(url, typeof landed === 'string' ? siteUrl(landed, origin) : null);
         await browser.eval('window.scrollTo(0, 0)').catch(() => {});
       }
+      // Recorded now, provisionally, so progress is visible per URL; verified after the loop.
+      const { facts: provisional } = await factsFor(url, { verified: false });
+      recorded.set(url, provisional);
+      await persist();
       await onProgress({ done: visited.length, current: null });
     }
   } catch (err) {
@@ -254,47 +303,22 @@ export async function warm(project, io, job = {}) {
   const offline = await startProxy({ offline: true });
   const rows = [];
   let status = null;
-  const inList = new Set((await readInventory(project.step('urls'))).map((r) => r.url));
-  const facts = new Map();
   try {
     for (const url of visited) {
       const u = new URL(url);
       const res = await fetchImpl(`http://127.0.0.1:${offline.port}${u.pathname}${u.search}`
         + `${u.search ? '&' : '?'}_origin=${encodeURIComponent(origin)}`).catch(() => null);
       if (res) await res.arrayBuffer().catch(() => {});
-      const stored = await storedFacts(cacheDir, url, origin, inList);
-      const finalUrl = finals.get(url) ?? null;
-      const { kind, migrate } = classify({ url, sidecar: stored.sidecar, finalUrl });
-      const ms = timings.get(url) ?? 0;
-      const note = navFailed.has(url) ? `navigation failed: ${firstLine(navFailed.get(url))}`
-        : kind === 'redirect' && stored.redirect
-          ? `${stored.redirect.status} → ${stored.redirect.target ?? '?'}`
-          : kind === 'redirect' ? `landed on ${finalUrl}`
-            : kind === 'error' ? `${stored.http.status}`
-              : kind === 'unreachable' ? (res ? `${res.status}` : 'no response') : '';
-      rows.push({
-        url, status: stored.sidecar && res ? 'cached' : 'failed', kind, ms, note,
-      });
-      facts.set(url, {
-        http: stored.http, redirect: stored.redirect, finalUrl, kind, migrate,
-        cache: {
-          at: now(),
-          selection,
-          path: stored.sidecar ? stored.path : null,
-          durationMs: ms,
-          ...(navFailed.has(url) ? { note } : {}),
-        },
-      });
+      const { row, facts } = await factsFor(url, { res, verified: true });
+      rows.push(row);
+      recorded.set(url, facts);
     }
     status = await fetchImpl(`http://127.0.0.1:${offline.port}/__status`)
       .then((r) => r.json()).catch(() => null);
   } finally {
     await offline.stop();
   }
-
-  let inventory = await readInventory(project.step('urls'));
-  for (const [url, f] of facts) inventory = recordVisit(inventory, url, f);
-  await writeInventory(project.step('urls'), inventory);
+  const inventory = await persist();
 
   const assets = await countAssets(cacheDir);
   const cached = rows.filter((r) => r.status === 'cached').length;
@@ -342,12 +366,14 @@ export async function approvedJob(project) {
 }
 
 /**
- * The URLs still to visit: those without a stored body, whichever selection stored it. A
- * rerun after an interruption or a stop resumes where it left off; overlapping selections
- * do not visit a page twice.
+ * The URLs still to visit: those without a stored, verified body, whichever selection stored
+ * it. A rerun after an interruption or a stop resumes where it left off (a record left
+ * unverified by a killed job is visited again, from disk); overlapping selections do not
+ * visit a page twice.
  */
 export function pendingUrls(inventory, urls) {
-  const stored = new Set(inventory.filter((r) => r.cache?.path).map((r) => r.url));
+  const stored = new Set(inventory
+    .filter((r) => r.cache?.path && r.cache.verified !== false).map((r) => r.url));
   return urls.filter((u) => !stored.has(u));
 }
 

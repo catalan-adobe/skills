@@ -25,7 +25,7 @@ assets on disk so later analysis works offline, in the background. Tier: low.
    detached worker unless one is running; a second selection queues behind the first. The
    worker visits every URL through the page-cache proxy in one browser session (hide rules,
    lazy-content scroll), verifies each from the cache, classifies and records it in
-   `urls/urls.json`, then writes `cache/cache.md` and the `## cache` report section.
+   `urls/urls.json` after every URL, then writes `cache/cache.md` and the report section.
 3. Do not wait for it, poll it in a loop, or run the worker yourself. Tell the operator the
    job is queued and stop, or continue with another `ready` step. `status.mjs` shows `cache`
    as `running` with `12/50 (blogs) · queued: ja-jp`; `warm.mjs status` lists the jobs;

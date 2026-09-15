@@ -47,9 +47,22 @@ function renderProject(project, setup, status) {
     : 'No <code>migration/project.json</code> — run <code>status.mjs init</code>.';
 }
 
-function renderSteps(status) {
+/** The cache step's live label from cache/progress.json, ahead of the next status.json. */
+function liveCache(progress) {
+  if (!progress?.open) return null;
+  const r = progress.running;
+  const queued = progress.jobs.filter((j) => j.state === 'queued').map((j) => j.selection);
+  const head = r ? `${r.done + r.failed}/${r.total} (${r.selection})` : 'worker not started';
+  const now = r?.current ? ` · now ${r.current}` : '';
+  return `${head}${queued.length ? ` · queued: ${queued.join(', ')}` : ''}${now}`;
+}
+
+function renderSteps(status, progress) {
+  const live = liveCache(progress);
+  const steps = (status?.steps ?? []).map((s) => (s.id === 'cache' && live
+    ? { ...s, state: 'running', running: live } : s));
   $('#steps .panel').innerHTML = status
-    ? table(['step', 'state', 'tier', 'blocked by', 'via'], status.steps.map((s) => [
+    ? table(['step', 'state', 'tier', 'blocked by', 'via'], steps.map((s) => [
       `<strong>${esc(s.id)}</strong>`,
       chip(s.state, s.state) + (s.running ? ` ${esc(s.running)}` : ''),
       esc(s.tier),
@@ -64,11 +77,13 @@ function renderInventory(records) {
     return;
   }
   const cached = records.filter((r) => r.cache).length;
+  const unverified = records.filter((r) => r.cache && r.cache.verified === false).length;
   const byKind = counts(records, (r) => r.kind ?? 'unclassified');
   const byGroup = counts(records, (r) => r.group || '(root)');
   const cards = [
     ['URLs', records.length],
-    ['cached', `${cached} <span class="muted">/ ${records.length}</span>`],
+    ['cached', `${cached} <span class="muted">/ ${records.length}</span>`
+      + (unverified ? `<div class="muted small">${unverified} not yet verified</div>` : '')],
     ...byKind,
   ].map(([label, n]) => `<div class="card"><div class="n">${n}</div>${chip(label, label)}</div>`);
   const groupRow = ([g, n]) => {
@@ -107,37 +122,51 @@ function renderNotToMigrate(records) {
     : '<p class="muted">None recorded yet.</p>';
 }
 
+let urlRecords = [];
+let urlsBound = false;
+
+/** Called on every refresh: options are rebuilt, the operator's filter values are kept. */
 function renderUrls(records) {
+  urlRecords = records;
   const form = $('#urls .filters');
   const fill = (name, values) => {
     const select = form.elements[name];
+    const kept = select.value;
+    while (select.options.length > 1) select.remove(1);
     for (const v of values) select.insertAdjacentHTML('beforeend', `<option>${esc(v)}</option>`);
+    if ([...select.options].some((o) => o.value === kept)) select.value = kept;
   };
   fill('kind', counts(records, (r) => r.kind ?? 'unclassified').map(([k]) => k));
   fill('group', counts(records, (r) => r.group || '(root)').map(([g]) => g));
-  const draw = () => {
-    const q = form.elements.q.value.trim().toLowerCase();
-    const { kind, group, cached } = Object.fromEntries(['kind', 'group', 'cached']
-      .map((n) => [n, form.elements[n].value]));
-    const rows = records.filter((r) => (!q || r.url.toLowerCase().includes(q))
-      && (!kind || (r.kind ?? 'unclassified') === kind)
-      && (!group || (r.group || '(root)') === group)
-      && (!cached || (cached === 'yes') === Boolean(r.cache)));
-    form.querySelector('[data-count]').textContent = `${rows.length} of ${records.length}`
-      + (rows.length > ROWS ? ` (first ${ROWS} shown)` : '');
-    $('#urls .panel').innerHTML = table(
-      ['url', 'kind', 'http', 'redirect → / final', 'migrate', 'cached', 'ms'],
-      rows.slice(0, ROWS).map((r) => [
-        link(r.url), chip(r.kind ?? 'unclassified', r.kind ?? 'unclassified'),
-        esc(r.http ? `${r.http.status} ${r.http.contentType ?? ''}` : ''),
-        esc(r.redirect?.target ?? (r.finalUrl && r.finalUrl !== r.url ? r.finalUrl : '')),
-        esc(r.migrate ?? ''), esc(r.cache?.at?.slice(0, 16).replace('T', ' ') ?? ''),
-        esc(r.cache?.durationMs ?? ''),
-      ]),
-    );
-  };
-  form.addEventListener('input', draw);
-  draw();
+  if (!urlsBound) {
+    form.addEventListener('input', drawUrls);
+    urlsBound = true;
+  }
+  drawUrls();
+}
+
+function drawUrls() {
+  const records = urlRecords;
+  const form = $('#urls .filters');
+  const q = form.elements.q.value.trim().toLowerCase();
+  const { kind, group, cached } = Object.fromEntries(['kind', 'group', 'cached']
+    .map((n) => [n, form.elements[n].value]));
+  const rows = records.filter((r) => (!q || r.url.toLowerCase().includes(q))
+    && (!kind || (r.kind ?? 'unclassified') === kind)
+    && (!group || (r.group || '(root)') === group)
+    && (!cached || (cached === 'yes') === Boolean(r.cache)));
+  form.querySelector('[data-count]').textContent = `${rows.length} of ${records.length}`
+    + (rows.length > ROWS ? ` (first ${ROWS} shown)` : '');
+  $('#urls .panel').innerHTML = table(
+    ['url', 'kind', 'http', 'redirect → / final', 'migrate', 'cached', 'ms'],
+    rows.slice(0, ROWS).map((r) => [
+      link(r.url), chip(r.kind ?? 'unclassified', r.kind ?? 'unclassified'),
+      esc(r.http ? `${r.http.status} ${r.http.contentType ?? ''}` : ''),
+      esc(r.redirect?.target ?? (r.finalUrl && r.finalUrl !== r.url ? r.finalUrl : '')),
+      esc(r.migrate ?? ''), esc(r.cache?.at?.slice(0, 16).replace('T', ' ') ?? ''),
+      esc(r.cache?.durationMs ?? ''),
+    ]),
+  );
 }
 
 function renderReport(md) {
@@ -146,14 +175,32 @@ function renderReport(md) {
     : '<p class="muted">No <code>REPORT.md</code> yet.</p>';
 }
 
-const [project, setup, status, records, report] = await Promise.all([
-  json('project.json'), json('setup.json'), json('status.json'), json('urls/urls.json'),
-  text('REPORT.md'),
+const POLL_MS = 5000;
+
+/** Everything that changes while a cache job runs; polled every 5 s while work is open. */
+async function refreshLive() {
+  const [status, progress, records] = await Promise.all([
+    json('status.json'), json('cache/progress.json'), json('urls/urls.json'),
+  ]);
+  renderSteps(status, progress);
+  renderInventory(records ?? []);
+  renderRedirects(records ?? []);
+  renderNotToMigrate(records ?? []);
+  renderUrls(records ?? []);
+  $('#live').textContent = progress?.open
+    ? `live · updated ${esc(String(progress.updatedAt ?? '').slice(11, 19))} UTC`
+    : '';
+  return Boolean(progress?.open);
+}
+
+const [project, setup, status, report] = await Promise.all([
+  json('project.json'), json('setup.json'), json('status.json'), text('REPORT.md'),
 ]);
 renderProject(project, setup, status);
-renderSteps(status);
-renderInventory(records ?? []);
-renderRedirects(records ?? []);
-renderNotToMigrate(records ?? []);
-renderUrls(records ?? []);
 renderReport(report);
+let open = await refreshLive();
+const tick = async () => {
+  open = await refreshLive();
+  if (open) setTimeout(tick, POLL_MS);
+};
+if (open) setTimeout(tick, POLL_MS);

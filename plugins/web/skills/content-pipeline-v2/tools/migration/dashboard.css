@@ -6,6 +6,7 @@ header { padding-top: 20px; }
 h1 { margin: 0 0 4px; font-size: 22px; }
 h2 { font-size: 16px; margin: 28px 0 8px; }
 .muted { color: var(--muted); }
+.small { font-size: 12px; }
 .panel { border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; }
 th, td {

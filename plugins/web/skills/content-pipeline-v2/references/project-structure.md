@@ -84,6 +84,11 @@ approvals must be given again.
 : Written by the page-cache proxy during `cache` (gitignored).
 : Read by later skills through the proxy in offline mode.
 
+`cache/progress.json`
+: Written by the cache worker after every URL: the jobs' states and the running job's
+  progress and current URL, without URL lists. Read by the dashboard, which polls it every
+  5 s while a job is open. Not read by any step.
+
 `cache/cache.md`
 : Written by the cache worker after every job: one row per visited URL across all
   selections with `cached` or `failed`, its `kind` and the selection it came with.

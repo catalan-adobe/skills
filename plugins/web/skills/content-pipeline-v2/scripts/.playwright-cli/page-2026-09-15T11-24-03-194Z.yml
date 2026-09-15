@@ -1,0 +1,36 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - heading "Migration dashboard" [level=1] [ref=e3]
+    - paragraph [ref=e4]:
+      - text: Loading
+      - code [ref=e5]: /migration/
+      - text: …
+    - paragraph
+  - main [ref=e6]:
+    - heading "Steps" [level=2] [ref=e8]
+    - heading "URL inventory" [level=2] [ref=e11]
+    - heading "Redirects" [level=2] [ref=e14]
+    - heading "Not to migrate" [level=2] [ref=e17]
+    - generic [ref=e19]:
+      - heading "URLs" [level=2] [ref=e20]
+      - generic [ref=e21]:
+        - searchbox "Search URL…" [ref=e22]
+        - combobox [ref=e23]:
+          - option "any kind" [selected]
+        - combobox [ref=e24]:
+          - option "any group" [selected]
+        - combobox [ref=e25]:
+          - option "cached or not" [selected]
+          - option "cached"
+          - option "not cached"
+    - heading "Report" [level=2] [ref=e28]
+  - contentinfo [ref=e30]:
+    - text: Read-only view of
+    - code [ref=e31]: migration/
+    - text: . Served locally by
+    - code [ref=e32]: aem up
+    - text: ;
+    - code [ref=e33]: migration/
+    - text: is excluded from deployment by
+    - code [ref=e34]: .hlxignore
+    - text: .

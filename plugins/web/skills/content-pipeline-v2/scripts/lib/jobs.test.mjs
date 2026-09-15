@@ -135,3 +135,25 @@ test('alive: this process is, a never-used pid and no pid are not', () => {
   assert.equal(alive(2 ** 22 - 1), false);
   assert.deepEqual([alive(null), alive(0), alive(undefined)], [false, false, false]);
 });
+
+test('the worker rewrites cache/progress.json after every URL, without the URL lists', async () => {
+  const p = await fresh();
+  await enqueue(p, { selection: 'blogs', urls: ['https://x/a', 'https://x/b'] }, { now: clock });
+  const { progressFile } = await import('./jobs.mjs');
+  const snapshots = [];
+  const run = async (job, hooks) => {
+    for (const [i, url] of job.urls.entries()) {
+      await hooks.onProgress({ current: url });
+      snapshots.push(JSON.parse(await readFile(progressFile(p), 'utf8')));
+      await hooks.onProgress({ done: i + 1, current: null });
+    }
+    return {};
+  };
+  await runWorker(p, run, { now: clock, isAlive: () => true });
+  assert.deepEqual(snapshots.map((s) => [s.open, s.running.current, s.running.done]),
+    [[true, 'https://x/a', 0], [true, 'https://x/b', 1]]);
+  assert.equal('urls' in snapshots[0].jobs[0], false, 'no URL lists in the progress file');
+  const final = JSON.parse(await readFile(progressFile(p), 'utf8'));
+  assert.deepEqual([final.open, final.running, final.jobs[0].state], [false, null, 'done']);
+  assert.ok(final.updatedAt);
+});

@@ -1,0 +1,327 @@
+- generic [active] [ref=f9e1]:
+  - banner [ref=f9e2]:
+    - heading "Migration dashboard" [level=1] [ref=f9e3]
+    - paragraph [ref=f9e4]:
+      - link "http://127.0.0.1:62107/" [ref=f9e5] [cursor=pointer]:
+        - /url: http://127.0.0.1:62107/
+      - text: · created 2026-09-15 11:24 · skills from
+      - code [ref=f9e6]: adobe/skills
+      - text: · status 2026-09-15 11:24 UTC
+    - paragraph
+  - main [ref=f9e7]:
+    - generic [ref=f9e8]:
+      - heading "Steps" [level=2] [ref=f9e9]
+      - table [ref=f9e11]:
+        - rowgroup [ref=f9e12]:
+          - row [ref=f9e13]:
+            - columnheader "step" [ref=f9e14]
+            - columnheader "state" [ref=f9e15]
+            - columnheader "tier" [ref=f9e16]
+            - columnheader "blocked by" [ref=f9e17]
+            - columnheader "via" [ref=f9e18]
+        - rowgroup [ref=f9e19]:
+          - row [ref=f9e20]:
+            - cell [ref=f9e21]:
+              - strong [ref=f9e22]: setup
+            - cell "ready" [ref=f9e23]
+            - cell "low" [ref=f9e25]
+            - cell [ref=f9e26]
+            - cell "runner" [ref=f9e27]
+          - row [ref=f9e28]:
+            - cell [ref=f9e29]:
+              - strong [ref=f9e30]: probe
+            - cell "blocked" [ref=f9e31]
+            - cell "low" [ref=f9e33]
+            - cell "setup" [ref=f9e34]
+            - cell "browser-probe" [ref=f9e35]
+          - row [ref=f9e36]:
+            - cell [ref=f9e37]:
+              - strong [ref=f9e38]: prep
+            - cell "blocked" [ref=f9e39]
+            - cell "medium" [ref=f9e41]
+            - cell "probe" [ref=f9e42]
+            - cell "page-prep" [ref=f9e43]
+          - row [ref=f9e44]:
+            - cell [ref=f9e45]:
+              - strong [ref=f9e46]: scan
+            - cell "blocked" [ref=f9e47]
+            - cell "low" [ref=f9e49]
+            - cell "setup" [ref=f9e50]
+            - cell "site-scan" [ref=f9e51]
+          - row [ref=f9e52]:
+            - cell [ref=f9e53]:
+              - strong [ref=f9e54]: prep-verify
+            - cell "blocked" [ref=f9e55]
+            - cell "medium" [ref=f9e57]
+            - cell "prep, scan" [ref=f9e58]
+            - cell "page-prep" [ref=f9e59]
+          - row [ref=f9e60]:
+            - cell [ref=f9e61]:
+              - strong [ref=f9e62]: cache
+            - cell "done" [ref=f9e63]
+            - cell "low" [ref=f9e65]
+            - cell [ref=f9e66]
+            - cell "page-cache" [ref=f9e67]
+          - row [ref=f9e68]:
+            - cell [ref=f9e69]:
+              - strong [ref=f9e70]: report
+            - cell "blocked" [ref=f9e71]
+            - cell "medium" [ref=f9e73]
+            - cell "probe, prep, scan" [ref=f9e74]
+            - cell "runner" [ref=f9e75]
+    - generic [ref=f9e76]:
+      - heading "URL inventory" [level=2] [ref=f9e77]
+      - generic [ref=f9e78]:
+        - generic [ref=f9e79]:
+          - generic [ref=f9e80]:
+            - generic [ref=f9e81]: "7"
+            - generic [ref=f9e82]: URLs
+          - generic [ref=f9e83]:
+            - generic [ref=f9e84]: 7 / 7
+            - generic [ref=f9e85]: cached
+          - generic [ref=f9e86]:
+            - generic [ref=f9e87]: "3"
+            - generic [ref=f9e88]: page
+          - generic [ref=f9e89]:
+            - generic [ref=f9e90]: "2"
+            - generic [ref=f9e91]: redirect
+          - generic [ref=f9e92]:
+            - generic [ref=f9e93]: "1"
+            - generic [ref=f9e94]: binary
+          - generic [ref=f9e95]:
+            - generic [ref=f9e96]: "1"
+            - generic [ref=f9e97]: error
+        - heading "By group" [level=3] [ref=f9e98]
+        - table [ref=f9e99]:
+          - rowgroup [ref=f9e100]:
+            - row [ref=f9e101]:
+              - columnheader "group" [ref=f9e102]
+              - columnheader "URLs" [ref=f9e103]
+              - columnheader "cached" [ref=f9e104]
+              - columnheader "pages" [ref=f9e105]
+              - columnheader "other kinds" [ref=f9e106]
+          - rowgroup [ref=f9e107]:
+            - row [ref=f9e108]:
+              - cell "(root)" [ref=f9e109]
+              - cell "1" [ref=f9e110]
+              - cell "1" [ref=f9e111]
+              - cell "1" [ref=f9e112]
+              - cell "0" [ref=f9e113]
+            - row [ref=f9e114]:
+              - cell "a" [ref=f9e115]
+              - cell "1" [ref=f9e116]
+              - cell "1" [ref=f9e117]
+              - cell "1" [ref=f9e118]
+              - cell "0" [ref=f9e119]
+            - row [ref=f9e120]:
+              - cell "b" [ref=f9e121]
+              - cell "1" [ref=f9e122]
+              - cell "1" [ref=f9e123]
+              - cell "1" [ref=f9e124]
+              - cell "0" [ref=f9e125]
+            - row [ref=f9e126]:
+              - cell "doc.pdf" [ref=f9e127]
+              - cell "1" [ref=f9e128]
+              - cell "1" [ref=f9e129]
+              - cell "0" [ref=f9e130]
+              - cell "1" [ref=f9e131]
+            - row [ref=f9e132]:
+              - cell "jump" [ref=f9e133]
+              - cell "1" [ref=f9e134]
+              - cell "1" [ref=f9e135]
+              - cell "0" [ref=f9e136]
+              - cell "1" [ref=f9e137]
+            - row [ref=f9e138]:
+              - cell "missing" [ref=f9e139]
+              - cell "1" [ref=f9e140]
+              - cell "1" [ref=f9e141]
+              - cell "0" [ref=f9e142]
+              - cell "1" [ref=f9e143]
+            - row [ref=f9e144]:
+              - cell "old" [ref=f9e145]
+              - cell "1" [ref=f9e146]
+              - cell "1" [ref=f9e147]
+              - cell "0" [ref=f9e148]
+              - cell "1" [ref=f9e149]
+    - generic [ref=f9e150]:
+      - heading "Redirects" [level=2] [ref=f9e151]
+      - table [ref=f9e153]:
+        - rowgroup [ref=f9e154]:
+          - row [ref=f9e155]:
+            - columnheader "from" [ref=f9e156]
+            - columnheader "status" [ref=f9e157]
+            - columnheader "to" [ref=f9e158]
+            - columnheader "in list" [ref=f9e159]
+        - rowgroup [ref=f9e160]:
+          - row [ref=f9e161]:
+            - cell [ref=f9e162]:
+              - link "http://127.0.0.1:62107/old.html" [ref=f9e163] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/old.html
+            - cell "301" [ref=f9e164]
+            - cell [ref=f9e165]:
+              - link "http://127.0.0.1:62107/a.html" [ref=f9e166] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/a.html
+            - cell "yes" [ref=f9e167]
+          - row [ref=f9e168]:
+            - cell [ref=f9e169]:
+              - link "http://127.0.0.1:62107/jump.html" [ref=f9e170] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/jump.html
+            - cell [ref=f9e171]
+            - cell "http://127.0.0.1:62107/b.html" [ref=f9e172]
+            - cell "no" [ref=f9e173]
+    - generic [ref=f9e174]:
+      - heading "Not to migrate" [level=2] [ref=f9e175]
+      - table [ref=f9e177]:
+        - rowgroup [ref=f9e178]:
+          - row [ref=f9e179]:
+            - columnheader "url" [ref=f9e180]
+            - columnheader "kind" [ref=f9e181]
+            - columnheader "why" [ref=f9e182]
+            - columnheader "migrate" [ref=f9e183]
+        - rowgroup [ref=f9e184]:
+          - row [ref=f9e185]:
+            - cell [ref=f9e186]:
+              - link "http://127.0.0.1:62107/old.html" [ref=f9e187] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/old.html
+            - cell "redirect" [ref=f9e188]
+            - cell "redirect — migrate the target" [ref=f9e190]
+            - cell "target" [ref=f9e191]
+          - row [ref=f9e192]:
+            - cell [ref=f9e193]:
+              - link "http://127.0.0.1:62107/missing.html" [ref=f9e194] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/missing.html
+            - cell "error" [ref=f9e195]
+            - cell "error 404" [ref=f9e197]
+            - cell "no" [ref=f9e198]
+          - row [ref=f9e199]:
+            - cell [ref=f9e200]:
+              - link "http://127.0.0.1:62107/doc.pdf" [ref=f9e201] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/doc.pdf
+            - cell "binary" [ref=f9e202]
+            - cell "binary application/pdf" [ref=f9e204]
+            - cell "asset" [ref=f9e205]
+          - row [ref=f9e206]:
+            - cell [ref=f9e207]:
+              - link "http://127.0.0.1:62107/jump.html" [ref=f9e208] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/jump.html
+            - cell "redirect" [ref=f9e209]
+            - cell "redirect — migrate the target" [ref=f9e211]
+            - cell "target" [ref=f9e212]
+    - generic [ref=f9e213]:
+      - heading "URLs" [level=2] [ref=f9e214]
+      - generic [ref=f9e215]:
+        - searchbox "Search URL…" [ref=f9e216]
+        - combobox [ref=f9e217]:
+          - option "any kind" [selected]
+          - option "page"
+          - option "redirect"
+          - option "binary"
+          - option "error"
+        - combobox [ref=f9e218]:
+          - option "any group" [selected]
+          - option "(root)"
+          - option "a"
+          - option "b"
+          - option "doc.pdf"
+          - option "jump"
+          - option "missing"
+          - option "old"
+        - combobox [ref=f9e219]:
+          - option "cached or not" [selected]
+          - option "cached"
+          - option "not cached"
+        - generic [ref=f9e220]: 7 of 7
+      - table [ref=f9e222]:
+        - rowgroup [ref=f9e223]:
+          - row [ref=f9e224]:
+            - columnheader "url" [ref=f9e225]
+            - columnheader "kind" [ref=f9e226]
+            - columnheader "http" [ref=f9e227]
+            - columnheader "redirect → / final" [ref=f9e228]
+            - columnheader "migrate" [ref=f9e229]
+            - columnheader "cached" [ref=f9e230]
+            - columnheader "ms" [ref=f9e231]
+        - rowgroup [ref=f9e232]:
+          - row [ref=f9e233]:
+            - cell [ref=f9e234]:
+              - link "http://127.0.0.1:62107/" [ref=f9e235] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/
+            - cell "page" [ref=f9e236]
+            - cell "200 text/html" [ref=f9e238]
+            - cell [ref=f9e239]
+            - cell "yes" [ref=f9e240]
+            - cell "2026-09-15 11:24" [ref=f9e241]
+            - cell "1962" [ref=f9e242]
+          - row [ref=f9e243]:
+            - cell [ref=f9e244]:
+              - link "http://127.0.0.1:62107/a.html" [ref=f9e245] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/a.html
+            - cell "page" [ref=f9e246]
+            - cell "200 text/html" [ref=f9e248]
+            - cell [ref=f9e249]
+            - cell "yes" [ref=f9e250]
+            - cell "2026-09-15 11:24" [ref=f9e251]
+            - cell "1555" [ref=f9e252]
+          - row [ref=f9e253]:
+            - cell [ref=f9e254]:
+              - link "http://127.0.0.1:62107/b.html" [ref=f9e255] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/b.html
+            - cell "page" [ref=f9e256]
+            - cell "200 text/html" [ref=f9e258]
+            - cell [ref=f9e259]
+            - cell "yes" [ref=f9e260]
+            - cell "2026-09-15 11:24" [ref=f9e261]
+            - cell "1597" [ref=f9e262]
+          - row [ref=f9e263]:
+            - cell [ref=f9e264]:
+              - link "http://127.0.0.1:62107/old.html" [ref=f9e265] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/old.html
+            - cell "redirect" [ref=f9e266]
+            - cell "301" [ref=f9e268]
+            - cell "http://127.0.0.1:62107/a.html" [ref=f9e269]
+            - cell "target" [ref=f9e270]
+            - cell "2026-09-15 11:24" [ref=f9e271]
+            - cell "1553" [ref=f9e272]
+          - row [ref=f9e273]:
+            - cell [ref=f9e274]:
+              - link "http://127.0.0.1:62107/missing.html" [ref=f9e275] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/missing.html
+            - cell "error" [ref=f9e276]
+            - cell "404 text/html" [ref=f9e278]
+            - cell [ref=f9e279]
+            - cell "no" [ref=f9e280]
+            - cell "2026-09-15 11:24" [ref=f9e281]
+            - cell "1507" [ref=f9e282]
+          - row [ref=f9e283]:
+            - cell [ref=f9e284]:
+              - link "http://127.0.0.1:62107/doc.pdf" [ref=f9e285] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/doc.pdf
+            - cell "binary" [ref=f9e286]
+            - cell "200 application/pdf" [ref=f9e288]
+            - cell [ref=f9e289]
+            - cell "asset" [ref=f9e290]
+            - cell "2026-09-15 11:24" [ref=f9e291]
+            - cell "1468" [ref=f9e292]
+          - row [ref=f9e293]:
+            - cell [ref=f9e294]:
+              - link "http://127.0.0.1:62107/jump.html" [ref=f9e295] [cursor=pointer]:
+                - /url: http://127.0.0.1:62107/jump.html
+            - cell "redirect" [ref=f9e296]
+            - cell "200 text/html" [ref=f9e298]
+            - cell "http://127.0.0.1:62107/b.html" [ref=f9e299]
+            - cell "target" [ref=f9e300]
+            - cell "2026-09-15 11:24" [ref=f9e301]
+            - cell "1667" [ref=f9e302]
+    - generic [ref=f9e303]:
+      - heading "Report" [level=2] [ref=f9e304]
+      - generic [ref=f9e305]: "# Migration report ## cache Selection all: 7 cached, 0 failed, 0 skipped; 3 page, 2 redirect, 1 error, 1 binary. In total 7 of 7 visited URLs cached; 1 asset file(s) stored through the proxy (port 3003, 1200 ms pace). Each visited URL's record in urls/urls.json carries http, redirect, finalUrl, kind, migrate and cache. Serve offline with the page-cache proxy `--offline` on the same cache directory."
+  - contentinfo [ref=f9e307]:
+    - text: Read-only view of
+    - code [ref=f9e308]: migration/
+    - text: . Served locally by
+    - code [ref=f9e309]: aem up
+    - text: ;
+    - code [ref=f9e310]: migration/
+    - text: is excluded from deployment by
+    - code [ref=f9e311]: .hlxignore
+    - text: .
