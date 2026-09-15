@@ -143,12 +143,13 @@ test('warm drives the browser through the proxy, verifies offline, writes cache.
   assert.equal(result.pass, true);
   const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
   assert.match(md, new RegExp(`\\| ${ORIGIN}/a.html \\| cached \\| page \\|`));
-  assert.match(md, new RegExp(`\\| ${ORIGIN}/missing.html \\| cached \\| error \\| \\d+ \\| 404`));
+  const errorRow = `\\| ${ORIGIN}/missing.html \\| cached \\| error \\| \\d+ \\| s \\| 404`;
+  assert.match(md, new RegExp(errorRow));
   assert.ok(log.some(([k, v]) => k === 'eval' && v.includes('#cmp')), 'hide rules injected');
   assert.ok(log[0][0] === 'open' && log[0][1].config.endsWith('playwright-config.json'));
   assert.ok(log.at(-1)[0] === 'close');
   const report = await readFile(p.report, 'utf8');
-  assert.match(report, /## cache\n\n.*3 cached, 0 failed.*By kind: 2 page, 1 error/s);
+  assert.match(report, /## cache\n\n.*3 cached, 0 failed, 0 skipped; 2 page, 1 error/s);
 });
 
 test('warm refuses without the recorded approval and when the selection is empty', async () => {
@@ -181,7 +182,7 @@ test('cache.md carries the time each page took in the browser', async () => {
     pace: 0,
   });
   const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
-  assert.match(md, /\| url \| status \| kind \| ms \| note \|/);
+  assert.match(md, /\| url \| status \| kind \| ms \| selection \| note \|/);
   assert.match(md, new RegExp(`\\| ${ORIGIN}/a.html \\| cached \\| page \\| \\d+ \\|`));
 });
 
@@ -261,10 +262,12 @@ test('warm records http facts, redirects and finalUrl into the inventory', async
   assert.equal(result.kinds.error, 1);
   assert.equal(result.kinds.binary, 1);
   const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
-  assert.match(md, /\| url \| status \| kind \| ms \| note \|/);
-  const movedRow = `\\| ${ORIGIN}/old.html \\| cached \\| redirect \\| \\d+ \\| 301 → ${target}`;
+  assert.match(md, /\| url \| status \| kind \| ms \| selection \| note \|/);
+  const movedRow = `\\| ${ORIGIN}/old.html \\| cached \\| redirect \\| \\d+ \\| s \\| 301 → `
+    + target;
   assert.match(md, new RegExp(movedRow));
-  assert.match(md, new RegExp(`\\| ${ORIGIN}/missing.html \\| cached \\| error \\| \\d+ \\| 404`));
+  const errorRow = `\\| ${ORIGIN}/missing.html \\| cached \\| error \\| \\d+ \\| s \\| 404`;
+  assert.match(md, new RegExp(errorRow));
 });
 
 test('parseEval unwraps the CLI encoding and our own JSON.stringify once each', () => {
@@ -273,4 +276,39 @@ test('parseEval unwraps the CLI encoding and our own JSON.stringify once each', 
   assert.deepEqual(parseEval('"{\\"status\\":200}"'), { status: 200 });
   assert.equal(parseEval('ok'), 'ok');
   assert.equal(parseEval(''), null);
+});
+
+test('warm runs a queued job: progress per URL, stop between URLs, phases accumulate', async () => {
+  const p = await project();
+  const cacheDir = path.join(p.dir, 'cache/.page-cache');
+  const proxy = fakeProxy(cacheDir);
+  const io = {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: fakeBrowser([]),
+    pace: 0,
+  };
+  const progress = [];
+  let stop = false;
+  const first = await warm(p, io, {
+    selection: 'blogs',
+    urls: [`${ORIGIN}/`, `${ORIGIN}/a.html`, `${ORIGIN}/b.html`],
+    onProgress: (x) => { progress.push(x); if (x.done === 2) stop = true; },
+    shouldStop: () => stop,
+  });
+  assert.deepEqual([first.cached, first.skipped], [2, 1], 'stopped after two of three');
+  assert.deepEqual(progress.filter((x) => x.current).map((x) => x.current),
+    [`${ORIGIN}/`, `${ORIGIN}/a.html`]);
+  assert.deepEqual(progress.at(-1), { failed: 0 });
+  const second = await warm(p, io, { selection: 'ja-jp', urls: [`${ORIGIN}/b.html`] });
+  assert.deepEqual([second.cached, second.skipped], [1, 0]);
+  const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
+  assert.match(md, /Visited so far: 3 URLs over 2 selection\(s\) \(blogs; ja-jp\)/);
+  assert.match(md, new RegExp(`\\| ${ORIGIN}/a.html \\| cached \\| page \\| \\d+ \\| blogs \\|`));
+  assert.match(md, new RegExp(`\\| ${ORIGIN}/b.html \\| cached \\| page \\| \\d+ \\| ja-jp \\|`));
+  const report = await readFile(p.report, 'utf8');
+  assert.match(report, /Selection ja-jp: 1 cached, 0 failed, 0 skipped; 1 page\. In total 3 of 3/);
 });

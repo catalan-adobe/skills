@@ -1,13 +1,18 @@
 #!/usr/bin/env node
-// The cache step as one process: proxy + browser + offline verification + cache.md.
-// Usage: node warm.mjs [--pace <ms>]   (from the project root, after status.mjs approve cache)
+// The cache step, always in the background: `warm.mjs` queues the approved selection as a
+// job and makes sure one detached worker is running, then returns at once. The worker
+// (`--worker`) takes jobs in order: proxy + browser + offline verification + cache.md.
+// Usage: node warm.mjs [--pace <ms>] | status | stop   (from the project root)
 import { execFile, spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdir, open as openFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import {
+  enqueue, jobsDir, readJobs, readWorker, runWorker,
+} from './lib/jobs.mjs';
 import { resolveProject } from './lib/project.mjs';
-import { warm } from './lib/warm.mjs';
+import { approvedJob, warm } from './lib/warm.mjs';
 import { freePort } from './status.mjs';
 
 const execFileP = promisify(execFile);
@@ -72,17 +77,62 @@ function playwright(cli) {
   };
 }
 
-async function main(argv) {
-  const project = resolveProject();
+/**
+ * Starts `warm.mjs --worker` detached unless one is alive. Its output goes to a log file,
+ * never to our stdio: an inherited pipe would keep the caller's shell waiting.
+ */
+export async function ensureWorker(project, spawnImpl = spawn) {
+  const running = await readWorker(project);
+  if (running) return { ...running, started: false };
+  await mkdir(jobsDir(project), { recursive: true });
+  const log = await openFile(path.join(jobsDir(project), 'worker.log'), 'a');
+  const child = spawnImpl(process.execPath, [fileURLToPath(import.meta.url), '--worker'], {
+    cwd: project.root, detached: true, stdio: ['ignore', log.fd, log.fd],
+  });
+  child.unref();
+  await log.close();
+  return { pid: child.pid, started: true };
+}
+
+async function workerMain(project) {
   const { proxyScript, cli } = await setupPaths(project);
   const cacheDir = path.join(project.step('cache'), '.page-cache');
-  const result = await warm(project, {
+  let stopping = false;
+  const stop = () => { stopping = true; };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
+  return runWorker(project, (job, hooks) => warm(project, {
     startProxy: proxyStarter(proxyScript, cacheDir),
     browser: playwright(cli),
-    pace: Number(flag(argv, '--pace') ?? 1500),
+    pace: job.pace ?? 1500,
+  }, { ...job, ...hooks }), { stopping: () => stopping });
+}
+
+async function main(argv) {
+  const project = resolveProject();
+  if (argv[0] === '--worker') return workerMain(project);
+  if (argv[0] === 'status') {
+    return { worker: await readWorker(project), jobs: await readJobs(project) };
+  }
+  if (argv[0] === 'stop') {
+    const worker = await readWorker(project);
+    if (!worker) return { stopped: false, reason: 'no worker is running' };
+    process.kill(worker.pid, 'SIGTERM');
+    return { stopped: true, pid: worker.pid, note: 'the worker finishes its current URL first' };
+  }
+  await setupPaths(project);
+  const job = await approvedJob(project);
+  const pace = flag(argv, '--pace');
+  const { job: queued, added } = await enqueue(project, {
+    ...job, ...(pace ? { pace: Number(pace) } : {}),
   });
-  if (!result.pass) process.exitCode = 1;
-  return result;
+  const worker = await ensureWorker(project);
+  return {
+    job: { id: queued.id, selection: queued.selection, total: queued.total, state: queued.state },
+    added,
+    worker,
+    next: 'status.mjs shows the cache step as running; warm.mjs status lists the jobs',
+  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

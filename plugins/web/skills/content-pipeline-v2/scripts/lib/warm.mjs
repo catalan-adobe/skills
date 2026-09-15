@@ -126,11 +126,15 @@ function renderCacheMd({
 }) {
   const counts = ['cached', 'failed', 'skipped']
     .map((s) => `${rows.filter((r) => r.status === s).length} ${s}`).join(', ');
+  const selections = [...new Set(rows.map((r) => r.selection).filter(Boolean))];
   return [
     '# cache', '',
-    `Selection: ${selection} (${rows.length} URLs). ${counts}; ${assets} asset file(s) stored.`, '',
-    '| url | status | kind | ms | note |', '| --- | --- | --- | --- | --- |',
-    ...rows.map((r) => `| ${r.url} | ${r.status} | ${r.kind} | ${r.ms} | ${r.note ?? ''} |`), '',
+    `Last selection: ${selection}. Visited so far: ${rows.length} URLs over `
+      + `${selections.length || 1} selection(s) (${selections.join('; ') || selection}). `
+      + `${counts}; ${assets} asset file(s) stored.`, '',
+    '| url | status | kind | ms | selection | note |', '| --- | --- | --- | --- | --- | --- |',
+    ...rows.map((r) => `| ${r.url} | ${r.status} | ${r.kind} | ${r.ms} | ${r.selection} | `
+      + `${r.note ?? ''} |`), '',
     `Proxy \`/__status\` after the offline check: \`${JSON.stringify(status)}\`.`, '',
     `Settings: port ${port}, one browser session, ${pace} ms between pages, hide rules and `
       + 'scroll on every page; kind and note from the stored responses and where the browser '
@@ -170,16 +174,16 @@ export function parseEval(raw) {
  *   `{ port, stop }`; `browser` with `open(url, { config, persistent })`, `goto`, `eval`
  *   (returns the evaluated value as text), `close`; `pace` in ms between pages (default
  *   1500); `fetchImpl` (default `fetch`); `now` (default the clock).
+ * @param {object} [job] A queued job: `{ selection, urls }` replaces the approved selection;
+ *   `onProgress({ done, failed, current })` is called around every URL; `shouldStop()` ends
+ *   the visits early (the URLs visited so far are still verified and recorded).
  * @returns {Promise<{cached: number, failed: number, skipped: number, assets: number,
  *   kinds: Record<string, number>, pass: boolean, file: string}>}
  */
-export async function warm(project, io) {
-  const { urls, reasons } = await resolveSelection(project);
-  if (reasons.length) throw new Error(reasons.join('; '));
-  if (!urls.length) throw new Error('the cache selection resolves to no URLs');
-  const data = await readJson(project.projectFile, {});
-  const picked = data.cacheSelection;
-  const selection = picked === 'all' ? 'all' : (picked ?? []).join(', ');
+export async function warm(project, io, job = {}) {
+  const { selection, urls } = job.urls ? job : await approvedJob(project);
+  const onProgress = job.onProgress ?? (() => {});
+  const shouldStop = job.shouldStop ?? (() => false);
   const {
     startProxy, browser, pace = 1500, fetchImpl = fetch, now = () => new Date().toISOString(),
   } = io;
@@ -199,9 +203,13 @@ export async function warm(project, io) {
   };
   const timings = new Map();
   const finals = new Map();
+  const visited = [];
   try {
     let opened = false;
     for (const url of urls) {
+      if (shouldStop()) break;
+      await onProgress({ current: url });
+      visited.push(url);
       const started = Date.now();
       if (!opened) {
         await browser.open(via(BINARY_EXT.test(new URL(url).pathname) ? urls[0] : url), {
@@ -224,6 +232,7 @@ export async function warm(project, io) {
         finals.set(url, typeof landed === 'string' ? siteUrl(landed, origin) : null);
         await browser.eval('window.scrollTo(0, 0)').catch(() => {});
       }
+      await onProgress({ done: visited.length, current: null });
     }
   } finally {
     await browser.close().catch(() => {});
@@ -236,7 +245,7 @@ export async function warm(project, io) {
   const inList = new Set((await readInventory(project.step('urls'))).map((r) => r.url));
   const facts = new Map();
   try {
-    for (const url of urls) {
+    for (const url of visited) {
       const u = new URL(url);
       const res = await fetchImpl(`http://127.0.0.1:${offline.port}${u.pathname}${u.search}`
         + `${u.search ? '&' : '?'}_origin=${encodeURIComponent(origin)}`).catch(() => null);
@@ -273,22 +282,59 @@ export async function warm(project, io) {
   const assets = await countAssets(cacheDir);
   const cached = rows.filter((r) => r.status === 'cached').length;
   const failed = rows.length - cached;
+  await onProgress({ failed });
   const kinds = {};
   for (const r of rows) kinds[r.kind] = (kinds[r.kind] ?? 0) + 1;
+  const all = inventory.filter((r) => r.cache).map(rowOf);
   const file = path.join(project.step('cache'), 'cache.md');
   await writeFile(file, renderCacheMd({
-    selection, rows, port: online.port, pace, status, assets,
+    selection, rows: all, port: online.port, pace, status, assets,
   }));
   const kindText = Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(', ');
-  const body = `Selection ${selection}: ${cached} cached, ${failed} failed, 0 skipped; `
-    + `${assets} asset file(s) stored through the proxy (port ${online.port}, ${pace} ms pace). `
-    + `By kind: ${kindText}. Each URL's record in urls/urls.json now carries http, redirect, `
-    + 'finalUrl, kind and migrate. '
+  const allCached = all.filter((r) => r.status === 'cached').length;
+  const body = `Selection ${selection}: ${cached} cached, ${failed} failed, `
+    + `${urls.length - visited.length} skipped; ${kindText || 'nothing visited'}. `
+    + `In total ${allCached} of ${all.length} visited URLs cached; ${assets} asset file(s) `
+    + `stored through the proxy (port ${online.port}, ${pace} ms pace). Each visited URL's `
+    + 'record in urls/urls.json carries http, redirect, finalUrl, kind, migrate and cache. '
     + (failed ? `Failed: ${failedUrls(rows)}. ` : '')
     + 'Serve offline with the page-cache proxy `--offline` on the same cache directory.';
   await upsertSection(project, 'cache', body);
   return {
-    cached, failed, skipped: 0, assets, kinds, pass: failed === 0 && assets > 0, file,
+    cached,
+    failed,
+    skipped: urls.length - visited.length,
+    assets,
+    kinds,
+    pass: failed === 0 && assets > 0,
+    file,
+  };
+}
+
+/** The approved selection from project.json, as a job `{ selection, urls }`. */
+export async function approvedJob(project) {
+  const { urls, reasons } = await resolveSelection(project);
+  if (reasons.length) throw new Error(reasons.join('; '));
+  if (!urls.length) throw new Error('the cache selection resolves to no URLs');
+  const picked = (await readJson(project.projectFile, {})).cacheSelection;
+  return { selection: picked === 'all' ? 'all' : (picked ?? []).join(', '), urls };
+}
+
+/** A cache.md row from an inventory record that was visited. */
+function rowOf(r) {
+  const note = r.kind === 'redirect' && r.redirect
+    ? `${r.redirect.status} → ${r.redirect.target ?? '?'}`
+    : r.kind === 'redirect' ? `landed on ${r.finalUrl}`
+      : r.kind === 'error' ? `${r.http?.status ?? ''}`
+        : r.kind === 'unreachable' ? 'no response' : '';
+  return {
+    url: r.url,
+    status: r.cache?.path ? 'cached' : 'failed',
+    kind: r.kind,
+    ms: r.cache?.durationMs ?? 0,
+    note,
+    selection: r.cache?.selection ?? '',
+    at: r.cache?.at ?? '',
   };
 }
 
