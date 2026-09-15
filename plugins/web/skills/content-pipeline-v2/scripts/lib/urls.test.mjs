@@ -348,3 +348,87 @@ test('proposal and pick leave known non-pages out', async () => {
     'https://x.example/a/1.html', 'https://x.example/a/2.html', 'https://x.example/b/3.html',
   ]);
 });
+
+// Added after a mutation run: each of these pins a behaviour a surviving mutant had changed.
+
+test('a first segment counts as a language only when it is exactly two letters', () => {
+  const dist = distribution([
+    { url: 'https://x.example/fr/a' }, { url: 'https://x.example/blogs/a' },
+    { url: 'https://x.example/f/a' }, { url: 'https://x.example/en-us/a' },
+    { url: 'https://x.example/zz/b', lang: 'de' },
+  ]);
+  assert.deepEqual(dist.byLanguage, { fr: 1, unknown: 3, de: 1 });
+});
+
+test('the proposal sentence states the coverage percentage of the chosen groups', () => {
+  const urls = [];
+  for (let i = 0; i < 400; i += 1) urls.push({ url: `https://x.example/a/${i}` });
+  for (let i = 0; i < 100; i += 1) urls.push({ url: `https://x.example/b/${i}` });
+  for (let i = 0; i < 20; i += 1) urls.push({ url: `https://x.example/c${i}/x` });
+  const dist = distribution(urls);
+  const md = renderUrlsMd(dist, proposal(dist, { cacheAllUpTo: 500 }));
+  assert.match(md, /520 URLs exceed the caching threshold, so cache the 2 largest groups /);
+  assert.match(md, /covering 96% of URLs: "a" \(400\), "b" \(100\)\./);
+});
+
+test('not-to-migrate gives the status or type as reason; unclassified URLs stay out', () => {
+  const dist = distribution([
+    { url: 'https://x.example/a', kind: 'error', http: { status: 410 } },
+    { url: 'https://x.example/b.pdf', kind: 'binary', http: { contentType: 'application/pdf' } },
+    { url: 'https://x.example/c' },
+    { url: 'https://x.example/d', kind: 'page' },
+  ]);
+  const md = renderUrlsMd(dist, proposal(dist));
+  assert.match(md, /- https:\/\/x\.example\/a — error 410\n/);
+  assert.match(md, /- https:\/\/x\.example\/b\.pdf — binary application\/pdf\n/);
+  const section = md.slice(md.indexOf('## Not to migrate'));
+  assert.doesNotMatch(section, /x\.example\/c\b/);
+  assert.doesNotMatch(section, /x\.example\/d\b/);
+  assert.equal(dist.notToMigrate.length, 2);
+});
+
+test('long redirect and not-to-migrate lists stop at 25 rows and count the rest', () => {
+  const urls = [];
+  for (let i = 0; i < 27; i += 1) {
+    urls.push({
+      url: `https://x.example/r${i}`, kind: 'redirect',
+      redirect: { status: 301, target: `https://x.example/t${i}`, targetInList: false },
+    });
+  }
+  const dist = distribution(urls);
+  const md = renderUrlsMd(dist, proposal(dist));
+  assert.match(md, /\| … and 2 more \| \| \| \|/);
+  assert.match(md, /- … and 2 more\n/);
+  assert.equal((md.match(/\| https:\/\/x\.example\/r\d+ \| 301 \|/g) ?? []).length, 25);
+  const exact = distribution(urls.slice(0, 25));
+  assert.doesNotMatch(renderUrlsMd(exact, proposal(exact)), /and \d+ more/);
+});
+
+test('subset files hold only entries with a non-empty url string', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'cpv2-urls-'));
+  const urls = [];
+  for (let i = 0; i < 600; i += 1) urls.push({ url: `https://x.example/a/${i}` });
+  urls.push({ url: '' }, { url: 42 }, null, { url: 'https://x.example/a/last' });
+  const dist = distribution(urls.filter(Boolean));
+  const prop = proposal(dist, { cacheAllUpTo: 500 });
+  await writeSubsets(urls, prop, dir);
+  const text = await readFile(path.join(dir, 'subsets', 'a.txt'), 'utf8');
+  assert.equal(text.split('\n').filter(Boolean).length, 601);
+  assert.ok(text.endsWith('/a/last\n'));
+});
+
+test('pick returns exactly the requested count and rejects bad subset names', async () => {
+  const urls = [];
+  for (let i = 0; i < 9; i += 1) urls.push({ url: `https://x.example/g${i % 3}/p${i}.html` });
+  const onePass = await pick(urls, { count: 4, reachable: async () => true });
+  assert.equal(onePass.length, 3, 'without fill: one URL per group, one pass');
+  const picks = await pick(urls, { count: 4, fill: true, reachable: async () => true });
+  assert.equal(picks.length, 4);
+  assert.equal(new Set(picks.map((p) => p.url)).size, 4);
+  assert.deepEqual(picks.map((p) => p.group).sort(), ['g0', 'g0', 'g1', 'g2']);
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'cpv2-urls-'));
+  const list = picks.map((p) => p.url);
+  await assert.rejects(writeSubset(dir, 'bad name', list), /must be \[A-Za-z0-9_-\]/);
+  await assert.rejects(writeSubset(dir, 'a/b', list), /must be/);
+  await writeSubset(dir, 'ok_name-1', list);
+});

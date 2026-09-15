@@ -61,7 +61,7 @@ function languageOf(url, segments) {
  *   bySecondSegment: Record<string, number>, byLanguage: Record<string, number>}}
  */
 /** A URL still worth a browser visit: a page, or one nothing is known about yet. */
-export const isCandidate = (record) => !record.kind || record.kind === 'page';
+export const isCandidate = (record) => !!record && (!record.kind || record.kind === 'page');
 
 export function distribution(urls) {
   const scope = scopeOf(urls);
