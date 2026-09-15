@@ -76,7 +76,9 @@ test('init creates the project once; a second init keeps it', async () => {
   const data = JSON.parse(await readFile(path.join(cwd, 'migration/project.json'), 'utf8'));
   assert.equal(data.origin, 'https://example.com/');
   assert.equal(data.cacheAllUpTo, 500);
-  assert.match(await readFile(path.join(cwd, 'migration/.gitignore'), 'utf8'), /\.work\//);
+  const ignore = await readFile(path.join(cwd, 'migration/.gitignore'), 'utf8');
+  assert.deepEqual(ignore.split('\n').filter(Boolean),
+    ['.work/', 'cache/.page-cache/', 'cache/progress.json']);
   const second = await cli(cwd, 'init', '--origin', 'https://other.example/');
   assert.equal(second.created, false);
   assert.equal(second.data.origin, 'https://example.com/');

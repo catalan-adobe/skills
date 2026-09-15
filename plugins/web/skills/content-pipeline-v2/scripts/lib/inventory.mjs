@@ -126,12 +126,26 @@ export function fromList(text) {
  * @returns {object[]}
  */
 export function recordVisit(records, url, facts) {
-  const index = records.findIndex((r) => r.url === url);
-  if (index >= 0) {
-    return records.map((r, i) => (i === index ? { ...r, ...facts } : r));
+  return recordVisits(records, new Map([[url, facts]]));
+}
+
+/**
+ * `recordVisit` for many URLs at once: one pass over the inventory, one regrouping if any
+ * URL was new. Used by the cache worker, which re-applies its records on every write.
+ */
+export function recordVisits(records, visits) {
+  const pending = new Map(visits);
+  const merged = records.map((r) => {
+    const facts = pending.get(r.url);
+    if (!facts) return r;
+    pending.delete(r.url);
+    return { ...r, ...facts };
+  });
+  if (!pending.size) return merged;
+  for (const [url, facts] of pending) {
+    merged.push({
+      url, inLastScan: false, discovered: 'cache', firstSeen: facts.cache?.at ?? null, ...facts,
+    });
   }
-  const added = [...records, {
-    url, inLastScan: false, discovered: 'cache', firstSeen: facts.cache?.at ?? null, ...facts,
-  }];
-  return withGroups(added);
+  return withGroups(merged);
 }

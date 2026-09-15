@@ -25,7 +25,8 @@ function table(headers, rows) {
   const body = rows.map((r) => `<tr>${r.map(cell).join('')}</tr>`);
   return `<table><thead><tr>${head}</tr></thead><tbody>${body.join('')}</tbody></table>`;
 }
-const link = (url) => `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`;
+const link = (url) => (/^https?:\/\//i.test(String(url))
+  ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>` : esc(url));
 const counts = (records, key) => {
   const map = new Map();
   for (const r of records) {
@@ -52,7 +53,7 @@ function liveCache(progress) {
   if (!progress?.open) return null;
   const r = progress.running;
   const queued = progress.jobs.filter((j) => j.state === 'queued').map((j) => j.selection);
-  const head = r ? `${r.done + r.failed}/${r.total} (${r.selection})` : 'worker not started';
+  const head = r ? `${r.done}/${r.total} (${r.selection})` : 'worker not started';
   const now = r?.current ? ` · now ${r.current}` : '';
   return `${head}${queued.length ? ` · queued: ${queued.join(', ')}` : ''}${now}`;
 }
@@ -188,7 +189,7 @@ async function refreshLive() {
   renderNotToMigrate(records ?? []);
   renderUrls(records ?? []);
   $('#live').textContent = progress?.open
-    ? `live · updated ${esc(String(progress.updatedAt ?? '').slice(11, 19))} UTC`
+    ? `live · updated ${String(progress.updatedAt ?? '').slice(11, 19)} UTC`
     : '';
   return Boolean(progress?.open);
 }

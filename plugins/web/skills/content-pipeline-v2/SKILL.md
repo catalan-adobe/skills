@@ -69,9 +69,10 @@ their state, the inventory by kind and group, redirects, what is not to be migra
 filterable URL table and the report — all read from `migration/` (`status.json`,
 `project.json`, `urls/urls.json`, `REPORT.md`). While a cache job runs it refreshes itself
 every 5 s from `cache/progress.json` and the inventory, which the worker updates after every
-URL (records are `verified` once served from the cache at the end of the job). It writes
-nothing. `init` adds `migration/`
-to an existing `.hlxignore` so none of it is deployed; the local server still serves it.
+URL (records are `verified` once served from the cache at the end of the job); a job queued
+after the page stopped refreshing shows up on reload. It writes nothing. `init` adds
+`migration/` to an existing `.hlxignore` so none of it is deployed; the local server still
+serves it.
 
 ## Steps
 

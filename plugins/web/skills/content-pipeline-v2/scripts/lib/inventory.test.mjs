@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  fromList, mergeScan, normalise, readInventory, recordVisit, writeInventory,
+  fromList, mergeScan, normalise, readInventory, recordVisit, recordVisits, writeInventory,
 } from './inventory.mjs';
 
 const scanned = (...urls) => urls.map((url) => ({
@@ -83,4 +83,19 @@ test('normalise upgrades a bare crawl result once and leaves an inventory alone'
   assert.deepEqual(upgraded.map((r) => [r.group, r.inLastScan, r.firstSeen]),
     [['a', true, now()], ['b', true, now()]]);
   assert.strictEqual(normalise(upgraded), upgraded);
+});
+
+test('recordVisits applies many visits in one pass and equals repeated recordVisit', () => {
+  const base = [{ url: 'https://x/a', group: 'a' }, { url: 'https://x/b', group: 'b' }];
+  const visits = new Map([
+    ['https://x/a', { kind: 'page', cache: { at: 't1' } }],
+    ['https://x/new', { kind: 'error', cache: { at: 't2' } }],
+  ]);
+  const batch = recordVisits(base, visits);
+  let oneByOne = base;
+  for (const [url, facts] of visits) oneByOne = recordVisit(oneByOne, url, facts);
+  assert.deepEqual(batch, oneByOne);
+  assert.equal(batch.find((r) => r.url === 'https://x/new').discovered, 'cache');
+  assert.equal(batch.find((r) => r.url === 'https://x/b').kind, undefined, 'untouched');
+  assert.deepEqual(recordVisits(base, new Map()), base, 'nothing to apply, nothing changed');
 });

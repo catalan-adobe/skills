@@ -9,7 +9,7 @@ import { cacheRelativePath } from './checks.mjs';
 import { resolveProject, writeProject } from './project.mjs';
 import { mergeScan, readInventory, writeInventory } from './inventory.mjs';
 import {
-  classify, parseEval, pendingUrls, siteUrl, warm,
+  MAX_CONSECUTIVE_FAILURES, classify, parseEval, pendingUrls, siteUrl, warm,
 } from './warm.mjs';
 
 const ORIGIN = 'https://site.example';
@@ -105,16 +105,26 @@ async function project() {
  * A stand-in for playwright-cli. Hostile by default, the way the real one is: the hide
  * rules fail to apply on every other page (a page without the selectors, a CSP), a
  * navigation takes time, `close` fails once the session is gone. `failsOn` marks URLs
- * whose navigation fails. Production code must absorb all of it without a trace.
+ * whose navigation fails; after `diesAfter` navigations every call fails (the browser is
+ * gone). Production code must absorb all of it without a trace.
  */
-function fakeBrowser(log, { landsOn = new Map(), failsOn = new Set(), hostile = true } = {}) {
+function fakeBrowser(log, {
+  landsOn = new Map(), failsOn = new Set(), diesAfter = Infinity, hostile = true,
+} = {}) {
   let current = null;
   let hideCalls = 0;
+  let navigations = 0;
+  const gone = (url) => {
+    throw new Error(`playwright-cli goto ${url}: Error: browserContext.newPage: Target closed`);
+  };
   const visit = async (url) => {
     log.push(['goto', url]);
     if (hostile) await new Promise((r) => { setTimeout(r, 3); });
+    navigations += 1;
+    if (navigations > diesAfter) gone(url);
     if ([...failsOn].some((part) => url.includes(part))) {
-      throw new Error('Command failed: playwright-cli goto\nnet::ERR_TIMED_OUT');
+      // The shape lib/warm-cli.mjs's adapter produces from a failed CLI call.
+      throw new Error(`playwright-cli goto ${url}: Error: net::ERR_TIMED_OUT at ${url}`);
     }
     const res = await fetch(url, { redirect: 'follow' });
     if (res.ok) await fetch(new URL('/theme.css', url).href);
@@ -129,6 +139,7 @@ function fakeBrowser(log, { landsOn = new Map(), failsOn = new Set(), hostile = 
     goto: visit,
     eval: async (expr) => {
       log.push(['eval', expr]);
+      if (navigations > diesAfter) gone('(eval)');
       if (hostile && expr.includes('#cmp')) {
         hideCalls += 1;
         if (hideCalls % 2 === 0) throw new Error('### Error\nEvaluation failed: CSP');
@@ -372,7 +383,7 @@ test('one failed navigation is recorded and the run goes on; the rest is cached'
   assert.equal(result.failed, 1);
   assert.equal(result.kinds.unreachable, 1);
   const md = await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8');
-  assert.match(md, /a\.html \| failed \| unreachable \| \d+ \| s \| navigation failed: Command/);
+  assert.match(md, /a\.html \| failed \| unreachable \| \d+ \| s \| navigation failed: playwright/);
   const inventory = JSON.parse(await readFile(path.join(p.dir, 'urls/urls.json'), 'utf8'));
   assert.equal(inventory.filter((r) => r.cache).length, 3, 'all visited URLs recorded');
   const failed = inventory.find((r) => r.url.endsWith('/a.html'));
@@ -381,7 +392,7 @@ test('one failed navigation is recorded and the run goes on; the rest is cached'
     'the URL after the failed one was visited and classified');
 });
 
-test('when the browser dies mid-run, what was visited is recorded before the job fails',
+test('when progress cannot be written mid-run, what was visited is recorded, then it fails',
   async () => {
     const p = await project();
     const cacheDir = path.join(p.dir, 'cache/.page-cache');
@@ -529,4 +540,80 @@ test('a concurrent write to urls.json during a job is kept, not clobbered', asyn
   const urls = JSON.parse(await readFile(file, 'utf8')).map((r) => r.url);
   assert.ok(urls.includes(`${ORIGIN}/new-from-rescan.html`));
   assert.ok(urls.includes(`${ORIGIN}/a.html`));
+});
+
+test('navigations failing in a row end the run: the proxy or browser is gone', async () => {
+  const p = await project();
+  const cacheDir = path.join(p.dir, 'cache/.page-cache');
+  const proxy = fakeProxy(cacheDir);
+  const urls = [];
+  for (let i = 0; i < MAX_CONSECUTIVE_FAILURES + 5; i += 1) urls.push(`${ORIGIN}/p${i}.html`);
+  const progress = [];
+  const dead = MAX_CONSECUTIVE_FAILURES + 2;
+  await assert.rejects(warm(p, {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: fakeBrowser([], { diesAfter: 2 }),
+    pace: 0,
+  }, {
+    selection: 's', urls, onProgress: (x) => { if (x.done) progress.push(x.done); },
+  }), new RegExp(`${MAX_CONSECUTIVE_FAILURES} navigations failed in a row .*Target closed.* — `
+    + `after ${dead} of ${urls.length} URLs; what was visited is recorded`));
+  assert.equal(progress.length, dead - 1, 'the run stopped at the ceiling');
+  const inventory = JSON.parse(await readFile(path.join(p.dir, 'urls/urls.json'), 'utf8'));
+  const visited = inventory.filter((r) => r.cache);
+  assert.equal(visited.length, dead);
+  assert.deepEqual(visited.map((r) => r.kind).sort(),
+    ['page', 'page', ...Array(MAX_CONSECUTIVE_FAILURES).fill('unreachable')].sort());
+  assert.match(await readFile(p.report, 'utf8'), /2 cached, 5 failed/);
+});
+
+test('failures that do not run in a row do not end the run', async () => {
+  const p = await project();
+  const cacheDir = path.join(p.dir, 'cache/.page-cache');
+  const proxy = fakeProxy(cacheDir);
+  const urls = [];
+  for (let i = 0; i < 12; i += 1) urls.push(`${ORIGIN}/${i % 3 === 0 ? 'bad' : 'ok'}${i}.html`);
+  const result = await warm(p, {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: fakeBrowser([], { failsOn: new Set(['/bad']) }),
+    pace: 0,
+  }, { selection: 's', urls });
+  assert.deepEqual([result.cached, result.failed, result.skipped], [8, 4, 0]);
+});
+
+test('when opening the session fails, the next URL opens it again', async () => {
+  const p = await project();
+  const cacheDir = path.join(p.dir, 'cache/.page-cache');
+  const proxy = fakeProxy(cacheDir);
+  const log = [];
+  const browser = fakeBrowser(log);
+  let opens = 0;
+  const flaky = {
+    ...browser,
+    open: async (url, opts) => {
+      opens += 1;
+      if (opens === 1) throw new Error('playwright-cli open: Error: browser launch failed');
+      return browser.open(url, opts);
+    },
+  };
+  const result = await warm(p, {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: flaky,
+    pace: 0,
+  }, { selection: 's', urls: [`${ORIGIN}/`, `${ORIGIN}/a.html`] });
+  assert.equal(opens, 2, 'open was retried on the second URL');
+  assert.deepEqual([result.cached, result.failed], [1, 1]);
+  assert.ok(!log.some(([k, v]) => k === 'goto' && v.includes('/a.html') && opens < 2));
 });

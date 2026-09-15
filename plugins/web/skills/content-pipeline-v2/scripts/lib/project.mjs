@@ -64,7 +64,8 @@ export async function init({
     data.skills = { repo: skillsRepo ?? data.skills?.repo, ref: skillsRef ?? data.skills?.ref };
   }
   await writeProject(project, data);
-  await writeFile(path.join(project.dir, '.gitignore'), '.work/\ncache/.page-cache/\n');
+  await writeFile(path.join(project.dir, '.gitignore'),
+    '.work/\ncache/.page-cache/\ncache/progress.json\n');
   const dashboard = await installDashboard(project);
   return {
     project: project.dir, created: !existing, data, dashboard,

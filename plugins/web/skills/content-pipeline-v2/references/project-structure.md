@@ -15,7 +15,8 @@ approvals must be given again.
   `check cache` for the selection.
 
 `.gitignore`
-: Written by `status.mjs init` (`.work/`, `cache/.page-cache/`). Read by git.
+: Written by `status.mjs init` (`.work/`, `cache/.page-cache/`, `cache/progress.json`); a
+  rerun of `init` refreshes it. Read by git.
 
 `setup.json`
 : Written by `status.mjs setup [--install]`: the resolved `playwrightCli.path`, package

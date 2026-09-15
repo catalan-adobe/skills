@@ -25,18 +25,22 @@ const execFailure = (rec) => Object.assign(
 
 test('playwright: every call runs in the cache session; eval reads recorded output', async () => {
   const calls = [];
+  const cwds = new Set();
   const io = {
-    execFile: async (cli, args) => {
+    execFile: async (cli, args, opts) => {
       calls.push([cli, ...args]);
+      cwds.add(opts.cwd);
       return { stdout: joined(fixture.evalOk.stdout), stderr: joined(fixture.evalOk.stderr) };
     },
   };
-  const browser = playwright('/bin/pw', io);
+  const browser = playwright('/bin/pw', io, '/project/migration/.work');
   await browser.open('http://127.0.0.1:1/', { config: 'c.json', persistent: true });
   await browser.goto('http://127.0.0.1:1/a');
   const value = await browser.eval('JSON.stringify(location.href)');
   await browser.close();
   assert.ok(calls.every((c) => c[0] === '/bin/pw' && c[1] === '-s=cache'), 'named session');
+  assert.deepEqual([...cwds], ['/project/migration/.work'],
+    'the CLI writes its logs into cwd, which must be the gitignored .work/');
   assert.deepEqual(calls[0].slice(2),
     ['open', '--config', 'c.json', '--persistent', 'http://127.0.0.1:1/']);
   assert.equal(value, '"\\"about:blank\\""', 'the CLI JSON-encodes the value once more');
@@ -89,7 +93,18 @@ test('proxyStarter: waits for /__status, passes --offline, reports an exiting ch
   const stopped = proxy.stop();
   child.emit('exit');
   await stopped;
-  assert.deepEqual(child.killed, ['SIGTERM']);
+  assert.deepEqual(child.killed, ['SIGTERM'], 'a child that exits on SIGTERM is not killed');
+
+  const stubborn = fakeChild();
+  const slow = { ...io, spawn: () => stubborn, killDelayMs: 1, fetch: async () => ({ ok: true }) };
+  await (await proxyStarter('/p.js', '/c', slow)({ offline: false })).stop();
+  assert.deepEqual(stubborn.killed, ['SIGTERM', 'SIGKILL'], 'escalates when it does not exit');
+
+  const mute = fakeChild();
+  const silent = { ...io, spawn: () => mute, killDelayMs: 1, fetch: async () => ({ ok: false }) };
+  await assert.rejects(proxyStarter('/p.js', '/c', silent)({ offline: false }),
+    /proxy did not answer on port 3456 within 5 s/);
+  assert.deepEqual(mute.killed, ['SIGTERM', 'SIGKILL'], 'a proxy that never answers is stopped');
 
   const dead = fakeChild();
   const dying = {

@@ -2,7 +2,7 @@
 // playwright-cli as the browser (its own named session), the detached worker, and the
 // command itself. Every external call comes through `io` so tests can stand in for it.
 import { execFile, spawn } from 'node:child_process';
-import { open as openFile, readFile } from 'node:fs/promises';
+import { mkdir, open as openFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -22,6 +22,7 @@ export const defaultIo = {
   fetch: (...args) => fetch(...args),
   freePort,
   sleep: (ms) => new Promise((r) => { setTimeout(r, ms); }),
+  killDelayMs: 3000,
   now: () => new Date(),
   kill: (pid, signal) => process.kill(pid, signal),
   onSignal: (handler) => { process.on('SIGTERM', handler); process.on('SIGINT', handler); },
@@ -59,20 +60,27 @@ export function proxyStarter(script, cacheDir, io = defaultIo) {
     const child = io.spawn(io.execPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (d) => { stderr += d; });
-    for (let i = 0; i < 50; i += 1) {
+    const stop = () => new Promise((resolve) => {
+      let finished = false;
+      const finish = () => { if (!finished) { finished = true; resolve(); } };
+      child.once('exit', finish);
+      child.kill('SIGTERM');
+      io.sleep(io.killDelayMs ?? 3000).then(() => {
+        if (!finished) child.kill('SIGKILL');
+        finish();
+      });
+    });
+    let up = false;
+    for (let i = 0; i < 50 && !up; i += 1) {
       if (child.exitCode !== null) throw new Error(`proxy exited: ${stderr.trim()}`);
-      const ok = await io.fetch(`http://127.0.0.1:${port}/__status`).then((r) => r.ok, () => false);
-      if (ok) break;
-      await io.sleep(100);
+      up = await io.fetch(`http://127.0.0.1:${port}/__status`).then((r) => r.ok, () => false);
+      if (!up) await io.sleep(100);
     }
-    return {
-      port,
-      stop: () => new Promise((resolve) => {
-        child.once('exit', () => resolve());
-        child.kill('SIGTERM');
-        setTimeout(() => { child.kill('SIGKILL'); resolve(); }, 3000).unref();
-      }),
-    };
+    if (!up) {
+      await stop();
+      throw new Error(`proxy did not answer on port ${port} within 5 s`);
+    }
+    return { port, stop };
   };
 }
 
@@ -97,11 +105,12 @@ export function cliError(err, command) {
 
 /**
  * playwright-cli as the browser: one named session of its own (`-s=cache`), so the default
- * session stays free for whatever else runs meanwhile; one process per command.
+ * session stays free for whatever else runs meanwhile; one process per command, run from
+ * `cwd` (the project's `.work/`): the CLI writes its logs and snapshots into its cwd.
  */
-export function playwright(cli, io = defaultIo) {
+export function playwright(cli, io = defaultIo, cwd = process.cwd()) {
   const run = (...args) => io.execFile(cli, [`-s=${SESSION}`, ...args], {
-    maxBuffer: 16 * 1024 * 1024,
+    maxBuffer: 16 * 1024 * 1024, cwd,
   }).catch((err) => { throw cliError(err, `${args[0]} ${args.at(-1)}`); });
   return {
     open: (url, { config, persistent }) => run('open', '--config', config,
@@ -140,11 +149,12 @@ export async function ensureWorker(project, io = defaultIo) {
 export async function workerMain(project, io = defaultIo) {
   const { proxyScript, cli } = await setupPaths(project);
   const cacheDir = path.join(project.step('cache'), '.page-cache');
+  await mkdir(project.work, { recursive: true });
   let stopping = false;
   io.onSignal(() => { stopping = true; });
   return runWorker(project, (job, hooks) => warm(project, {
     startProxy: proxyStarter(proxyScript, cacheDir, io),
-    browser: playwright(cli, io),
+    browser: playwright(cli, io, project.work),
     pace: job.pace ?? 1500,
   }, { ...job, ...hooks }), { stopping: () => stopping, now: io.now });
 }

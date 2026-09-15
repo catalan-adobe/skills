@@ -9,6 +9,15 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 export const execFileP = promisify(execFile);
+
+/** A scratch directory for playwright-cli's own logs and snapshots (it writes into cwd). */
+export const scratch = await (await import('node:fs/promises')).mkdtemp(
+  path.join(os.tmpdir(), 'cpv2-pw-'),
+);
+/** playwright-cli in `session`, run from the scratch directory. */
+export const pw = (cli, session, ...args) => execFileP(cli, [`-s=${session}`, ...args], {
+  cwd: scratch,
+});
 const skillDir = fileURLToPath(new URL('../..', import.meta.url));
 const exists = (p) => access(p).then(() => true, () => false);
 

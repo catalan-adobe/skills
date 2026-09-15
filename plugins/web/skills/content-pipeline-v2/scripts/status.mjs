@@ -224,7 +224,6 @@ function setupSection(detection, installs, reasons, env) {
   return lines.join('\n');
 }
 
-
 /**
  * Where the sibling skills are installed from: `--skills-repo`/`--skills-ref` when given
  * (and recorded in `project.json.skills` for later runs), else what was recorded, else the

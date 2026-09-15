@@ -4,12 +4,12 @@ import assert from 'node:assert/strict';
 import { parseEval } from '../lib/warm.mjs';
 import { cliError, evalResult } from '../lib/warm-cli.mjs';
 import {
-  execFileP, need, onPath, startSite,
+  need, onPath, pw, startSite,
 } from './helpers.mjs';
 
 const A = 'cpv2-test-a';
 const B = 'cpv2-test-b';
-const run = (cli, session, ...args) => execFileP(cli, [`-s=${session}`, ...args]);
+const run = pw;
 
 test('playwright-cli: eval is JSON-encoded once more, goto failures report on stdout',
   async (t) => {

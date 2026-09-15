@@ -15,7 +15,7 @@ import { evalResult, main, workerMain } from '../lib/warm-cli.mjs';
 import { runCheck } from '../lib/checks.mjs';
 import { approve, importList, status } from '../status.mjs';
 import {
-  execFileP, need, onPath, pageCacheScript, startSite,
+  execFileP, need, onPath, pageCacheScript, pw, startSite,
 } from './helpers.mjs';
 
 const git = (cwd, ...args) => execFileP('git', args, { cwd });
@@ -63,63 +63,63 @@ test('fixture site → import → approve → cache → check → dashboard', as
   });
   assert.deepEqual([queued.added, queued.job.total], [true, paths.length]);
   const served = await dashboard(project, freePort);
-  const readDash = async () => {
-    const { stdout } = await execFileP(cli, [`-s=${S}`, 'eval', `JSON.stringify({
-      cache: [...document.querySelectorAll('#steps tbody tr')]
-        .find((r) => r.textContent.includes('cache')).textContent.replace(/\\s+/g, ' ').trim(),
-      cards: [...document.querySelectorAll('.card')]
-        .map((c) => c.textContent.replace(/\\s+/g, ' ').trim()),
-      live: document.querySelector('#live').textContent,
-      redirects: document.querySelectorAll('#redirects tbody tr').length,
-      notToMigrate: document.querySelectorAll('#not-to-migrate tbody tr').length,
-    })`]);
-    return parseEval(evalResult(stdout));
-  };
-  await execFileP(cli, [`-s=${S}`, 'open', served.url]);
-  const working = workerMain(project, defaultIo);
-  const samples = [];
-  for (let i = 0; i < 6; i += 1) {
-    await new Promise((r) => { setTimeout(r, 2500); });
-    samples.push(await readDash());
-  }
-  const summary = await working;
-  assert.deepEqual(summary.map((s) => s.state), ['done']);
-  const mid = samples.filter((s) => /running/.test(s.cache));
-  assert.ok(mid.length >= 1, `the dashboard showed the job running: ${JSON.stringify(samples)}`);
-  assert.ok(mid.some((s) => /\d\/7 \(all\)/.test(s.cache)), 'with its progress');
-  assert.ok(mid.some((s) => /live · updated/.test(s.live)), 'and said it was live');
-  const growth = samples.map((s) => Number((s.cards[1] ?? '').split(' ')[0]));
-  assert.ok(growth.some((n, i) => i && n > growth[i - 1]),
-    `the cached count grew during the job: ${growth}`);
-  const job = (await readJobs(project)).at(-1);
-  assert.deepEqual([job.state, job.done, job.failed], ['done', paths.length, 0]);
-
-  const by = Object.fromEntries((await readInventory(project.step('urls'))).map((r) => [
-    r.url.replace(site.origin, ''), r,
-  ]));
-  assert.equal(by['/'].kind, 'page');
-  assert.equal(by['/a.html'].kind, 'page');
-  assert.equal(by['/old.html'].kind, 'redirect');
-  assert.deepEqual([by['/old.html'].redirect.status, by['/old.html'].redirect.targetInList],
-    [301, true]);
-  assert.equal(by['/old.html'].redirect.target, `${site.origin}/a.html`);
-  assert.equal(by['/missing.html'].kind, 'error');
-  assert.equal(by['/missing.html'].http.status, 404);
-  assert.deepEqual([by['/doc.pdf'].kind, by['/doc.pdf'].migrate], ['binary', 'asset']);
-  assert.equal(by['/jump.html'].kind, 'redirect', 'a client-side redirect is seen by the browser');
-  assert.equal(by['/jump.html'].finalUrl, `${site.origin}/b.html`);
-  assert.ok(Object.values(by).every((r) => r.cache?.at && r.http), 'every URL documented');
-
-  const check = await runCheck('cache', project);
-  assert.deepEqual(check, { step: 'cache', pass: true, reasons: [] });
-  const md = await readFile(path.join(project.step('cache'), 'cache.md'), 'utf8');
-  assert.match(md, /Visited so far: 7 URLs/);
-  assert.match(md, /doc\.pdf \| cached \| binary/);
-  const st = await status(project);
-  assert.equal(st.steps.find((s) => s.id === 'cache').state, 'done');
-
   try {
-    await execFileP(cli, [`-s=${S}`, 'goto', served.url]);
+    const readDash = async () => {
+      const { stdout } = await pw(cli, S, 'eval', `JSON.stringify({
+        cache: [...document.querySelectorAll('#steps tbody tr')]
+          .find((r) => r.textContent.includes('cache')).textContent.replace(/\\s+/g, ' ').trim(),
+        cards: [...document.querySelectorAll('.card')]
+          .map((c) => c.textContent.replace(/\\s+/g, ' ').trim()),
+        live: document.querySelector('#live').textContent,
+        redirects: document.querySelectorAll('#redirects tbody tr').length,
+        notToMigrate: document.querySelectorAll('#not-to-migrate tbody tr').length,
+      })`);
+      return parseEval(evalResult(stdout));
+    };
+    await pw(cli, S, 'open', served.url);
+    const working = workerMain(project, defaultIo);
+    const samples = [];
+    for (let i = 0; i < 6; i += 1) {
+      await new Promise((r) => { setTimeout(r, 2500); });
+      samples.push(await readDash());
+    }
+    const summary = await working;
+    assert.deepEqual(summary.map((s) => s.state), ['done']);
+    const mid = samples.filter((s) => /running/.test(s.cache));
+    assert.ok(mid.length >= 1, `the dashboard showed the job running: ${JSON.stringify(samples)}`);
+    assert.ok(mid.some((s) => /\d\/7 \(all\)/.test(s.cache)), 'with its progress');
+    assert.ok(mid.some((s) => /live · updated/.test(s.live)), 'and said it was live');
+    const growth = samples.map((s) => Number((s.cards[1] ?? '').split(' ')[0]));
+    assert.ok(growth.some((n, i) => i && n > growth[i - 1]),
+      `the cached count grew during the job: ${growth}`);
+    const job = (await readJobs(project)).at(-1);
+    assert.deepEqual([job.state, job.done, job.failed], ['done', paths.length, 0]);
+
+    const by = Object.fromEntries((await readInventory(project.step('urls'))).map((r) => [
+      r.url.replace(site.origin, ''), r,
+    ]));
+    assert.equal(by['/'].kind, 'page');
+    assert.equal(by['/a.html'].kind, 'page');
+    assert.equal(by['/old.html'].kind, 'redirect');
+    assert.deepEqual([by['/old.html'].redirect.status, by['/old.html'].redirect.targetInList],
+      [301, true]);
+    assert.equal(by['/old.html'].redirect.target, `${site.origin}/a.html`);
+    assert.equal(by['/missing.html'].kind, 'error');
+    assert.equal(by['/missing.html'].http.status, 404);
+    assert.deepEqual([by['/doc.pdf'].kind, by['/doc.pdf'].migrate], ['binary', 'asset']);
+    assert.equal(by['/jump.html'].kind, 'redirect', 'a client-side redirect, seen by the browser');
+    assert.equal(by['/jump.html'].finalUrl, `${site.origin}/b.html`);
+    assert.ok(Object.values(by).every((r) => r.cache?.at && r.http), 'every URL documented');
+
+    const check = await runCheck('cache', project);
+    assert.deepEqual(check, { step: 'cache', pass: true, reasons: [] });
+    const md = await readFile(path.join(project.step('cache'), 'cache.md'), 'utf8');
+    assert.match(md, /Visited so far: 7 URLs/);
+    assert.match(md, /doc\.pdf \| cached \| binary/);
+    const st = await status(project);
+    assert.equal(st.steps.find((s) => s.id === 'cache').state, 'done');
+
+    await pw(cli, S, 'goto', served.url);
     await new Promise((r) => { setTimeout(r, 1500); });
     const seen = await readDash();
     assert.match(seen.cache, /^cache\s*done/);
@@ -128,7 +128,7 @@ test('fixture site → import → approve → cache → check → dashboard', as
     assert.ok(seen.cards.includes('3page') && seen.cards.includes('2redirect'), seen.cards);
     assert.deepEqual([seen.redirects, seen.notToMigrate], [2, 4]);
   } finally {
-    await execFileP(cli, [`-s=${S}`, 'close']).catch(() => {});
+    await pw(cli, S, 'close').catch(() => {});
     await stopDashboard(project);
     await site.close();
   }

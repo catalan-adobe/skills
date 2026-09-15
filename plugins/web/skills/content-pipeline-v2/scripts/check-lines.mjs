@@ -8,12 +8,16 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SKIP = new Set(['node_modules', '.git']);
 
+const ALLOWED = /\.(mjs|md|json|yaml|html|js|css|txt)$|^\.gitignore$/;
+const unexpected = [];
+
 async function* files(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     if (SKIP.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) yield* files(full);
-    else if (/\.(mjs|md|json|yaml)$/.test(entry.name)) yield full;
+    else if (/\.(mjs|md|json|yaml|js|css|html)$/.test(entry.name)) yield full;
+    else if (!ALLOWED.test(entry.name)) unexpected.push(path.relative(root, full));
   }
 }
 
@@ -34,6 +38,11 @@ for await (const file of files(root)) {
 }
 if (offenders.length) {
   console.error(`Lines over 100 characters:\n${offenders.join('\n')}`);
+  process.exit(1);
+}
+if (unexpected.length) {
+  console.error(`Files of a kind this skill does not ship (test artefacts?):\n${
+    unexpected.slice(0, 10).join('\n')}${unexpected.length > 10 ? '\n…' : ''}`);
   process.exit(1);
 }
 console.log('check-lines: ok');

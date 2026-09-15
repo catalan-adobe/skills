@@ -1,7 +1,0 @@
-- generic [active] [ref=e1]:
-  - main [ref=e2]:
-    - heading "Home" [level=1] [ref=e3]
-    - paragraph [ref=e4]: Body of Home.
-  - generic [ref=e5]:
-    - text: We use cookies
-    - button "Accept" [ref=e6]

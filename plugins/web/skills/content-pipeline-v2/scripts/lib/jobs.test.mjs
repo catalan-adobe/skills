@@ -157,3 +157,21 @@ test('the worker rewrites cache/progress.json after every URL, without the URL l
   assert.deepEqual([final.open, final.running, final.jobs[0].state], [false, null, 'done']);
   assert.ok(final.updatedAt);
 });
+
+test('a job stopped after visiting 2 of 3, one of them failed, is stopped — not done', async () => {
+  const p = await fresh();
+  await enqueue(p, { selection: 'a', urls: ['u1', 'u2', 'u3'] }, { now: clock });
+  let stop = false;
+  await runWorker(p, async (job, hooks) => {
+    await hooks.onProgress({ done: 2 });
+    stop = true;
+    await hooks.onProgress({ failed: 1 });
+    return {};
+  }, { stopping: () => stop, now: clock, isAlive: () => true });
+  const [job] = await readJobs(p);
+  assert.deepEqual([job.state, job.done, job.failed], ['stopped', 2, 1]);
+  assert.deepEqual((await unfinished(p)).map((j) => j.selection), ['a']);
+  await updateJob(p, job.id, { state: 'running', pid: process.pid });
+  const { openWork } = await import('./jobs.mjs');
+  assert.equal((await openWork(p, () => true)).label, '2/3 (a)', 'done counts visits');
+});

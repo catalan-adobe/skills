@@ -144,7 +144,8 @@ export async function runWorker(project, run, {
       const outcome = await run(job, hooks).then(
         async (result) => {
           const progress = await readJson(jobFile(project, job.id));
-          const cut = stopping() && progress.done + progress.failed < job.total;
+          // `done` counts visits, failed ones included; `failed` is a subset of it.
+          const cut = stopping() && progress.done < job.total;
           return { state: cut ? 'stopped' : 'done', result };
         },
         (err) => ({ state: 'failed', error: err.message }),
@@ -171,7 +172,7 @@ export async function openWork(project, isAlive = alive) {
   const queued = jobs.filter((j) => j.state === 'queued');
   if (!running && !queued.length) return null;
   const head = running
-    ? `${running.done + running.failed}/${running.total} (${running.selection})`
+    ? `${running.done}/${running.total} (${running.selection})`
     : 'worker not started';
   const tail = queued.length ? ` · queued: ${queued.map((j) => j.selection).join(', ')}` : '';
   return { label: `${head}${tail}`, running: running ?? null, queued };

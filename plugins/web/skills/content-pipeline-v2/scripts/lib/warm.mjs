@@ -1,7 +1,9 @@
-import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir, readFile, readdir, stat, writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { cacheRelativePath, resolveSelection } from './checks.mjs';
-import { readInventory, recordVisit, writeInventory } from './inventory.mjs';
+import { readInventory, recordVisits, writeInventory } from './inventory.mjs';
 import { upsertSection } from './project.mjs';
 
 const ASSET = /\.(css|js|mjs|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|mp4|webm)$/i;
@@ -9,6 +11,8 @@ const BINARY_EXT = new RegExp(
   '\\.(pdf|zip|docx?|xlsx?|pptx?|csv|xml|txt|json|png|jpe?g|gif|webp|svg|mp4|mp3)$', 'i',
 );
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+/** This many navigations failing in a row means the browser or the proxy is gone. */
+export const MAX_CONSECUTIVE_FAILURES = 5;
 
 async function readJson(file, fallback) {
   try {
@@ -125,7 +129,7 @@ async function storedFacts(cacheDir, url, origin, inList) {
 function renderCacheMd({
   selection, rows, port, pace, status, assets,
 }) {
-  const counts = ['cached', 'failed', 'skipped']
+  const counts = ['cached', 'unverified', 'failed', 'skipped']
     .map((s) => `${rows.filter((r) => r.status === s).length} ${s}`).join(', ');
   const selections = [...new Set(rows.map((r) => r.selection).filter(Boolean))];
   return [
@@ -184,142 +188,191 @@ export function parseEval(raw) {
 export async function warm(project, io, job = {}) {
   const { selection, urls } = job.urls ? job : await approvedJob(project);
   if (!urls.length) throw new Error(`the selection ${selection} resolves to no URLs`);
-  const onProgress = job.onProgress ?? (() => {});
-  const shouldStop = job.shouldStop ?? (() => false);
   const {
     startProxy, browser, pace = 1500, fetchImpl = fetch, now = () => new Date().toISOString(),
   } = io;
-  const prepFile = path.join(project.step('prep'), 'page-prep.json');
-  const recipe = await readJson(prepFile, { overlays: [] });
+  const recipe = await readJson(path.join(project.step('prep'), 'page-prep.json'), {
+    overlays: [],
+  });
   const probe = await readJson(path.join(project.step('probe'), 'browser-recipe.json'), {});
-  const config = path.join(project.step('probe'), 'playwright-config.json');
-  const cacheDir = path.join(project.step('cache'), '.page-cache');
-  const origin = new URL(urls[0]).origin;
-  const expression = pageExpression(recipe);
-
-  const online = await startProxy({ offline: false });
-  const via = (url) => {
-    const u = new URL(url);
-    return `http://127.0.0.1:${online.port}${u.pathname}${u.search}`
-      + `${u.search ? '&' : '?'}_origin=${encodeURIComponent(origin)}`;
-  };
-  const timings = new Map();
-  const finals = new Map();
-  const navFailed = new Map();
-  const visited = [];
   const urlsDir = project.step('urls');
-  const inList = new Set((await readInventory(urlsDir)).map((r) => r.url));
-  // Our records, re-applied onto a fresh read at every write: another command (a re-scan
-  // merge) may write urls.json while a job runs, and must not be clobbered.
-  const recorded = new Map();
-  const persist = async () => {
-    let inventory = await readInventory(urlsDir);
-    for (const [url, facts] of recorded) inventory = recordVisit(inventory, url, facts);
-    await writeInventory(urlsDir, inventory);
-    return inventory;
+  const run = {
+    project,
+    selection,
+    urls,
+    browser,
+    pace,
+    fetchImpl,
+    now,
+    onProgress: job.onProgress ?? (() => {}),
+    shouldStop: job.shouldStop ?? (() => false),
+    config: path.join(project.step('probe'), 'playwright-config.json'),
+    persistent: probe.persistent === true,
+    cacheDir: path.join(project.step('cache'), '.page-cache'),
+    origin: new URL(urls[0]).origin,
+    expression: pageExpression(recipe),
+    inList: new Set((await readInventory(urlsDir)).map((r) => r.url)),
+    timings: new Map(),
+    finals: new Map(),
+    navFailed: new Map(),
+    visited: [],
+    // Our records, re-applied onto a fresh read at every write: another command (a re-scan
+    // merge) may write urls.json while a job runs, and must not be clobbered.
+    recorded: new Map(),
+    persist: async () => {
+      const inventory = recordVisits(await readInventory(urlsDir), run.recorded);
+      await writeInventory(urlsDir, inventory);
+      return inventory;
+    },
   };
-  /** The record of `url` from what is stored so far; `verified` once served offline. */
-  const factsFor = async (url, { res = null, verified }) => {
-    const stored = await storedFacts(cacheDir, url, origin, inList);
-    const finalUrl = finals.get(url) ?? null;
-    const { kind, migrate } = classify({ url, sidecar: stored.sidecar, finalUrl });
-    const ms = timings.get(url) ?? 0;
-    const note = navFailed.has(url) ? `navigation failed: ${firstLine(navFailed.get(url))}`
-      : kind === 'redirect' && stored.redirect
-        ? `${stored.redirect.status} → ${stored.redirect.target ?? '?'}`
-        : kind === 'redirect' ? `landed on ${finalUrl}`
-          : kind === 'error' ? `${stored.http.status}`
-            : kind === 'unreachable' ? (res ? `${res.status}` : 'no response') : '';
-    const cachedNow = verified ? Boolean(stored.sidecar && res) : Boolean(stored.sidecar);
-    return {
-      row: {
-        url, status: cachedNow ? 'cached' : 'failed', kind, ms, note,
+  const online = await startProxy({ offline: false });
+  run.port = online.port;
+  const loopError = await visitAll(run).finally(async () => {
+    await browser.close().catch(() => {});
+    await online.stop();
+  });
+  const offline = await startProxy({ offline: true });
+  run.port = offline.port;
+  const { rows, status } = await verifyVisited(run).finally(() => offline.stop());
+  const inventory = await run.persist();
+  const outcome = await writeOutcome(run, { rows, status, inventory, port: online.port });
+  if (loopError) {
+    throw new Error(`${firstLine(loopError.message)} — after ${run.visited.length} of `
+      + `${urls.length} URLs; what was visited is recorded, a rerun resumes the rest`);
+  }
+  return outcome;
+}
+
+/** The proxy URL that fetches `url` from the origin (or serves it, offline). */
+const via = (run, url) => {
+  const u = new URL(url);
+  return `http://127.0.0.1:${run.port}${u.pathname}${u.search}`
+    + `${u.search ? '&' : '?'}_origin=${encodeURIComponent(run.origin)}`;
+};
+
+/** The record of `url` from what is stored so far; `verified` once served offline. */
+async function factsFor(run, url, { res = null, verified }) {
+  const {
+    cacheDir, origin, inList, finals, timings, navFailed, selection, now,
+  } = run;
+  const stored = await storedFacts(cacheDir, url, origin, inList);
+  const finalUrl = finals.get(url) ?? null;
+  const { kind, migrate } = classify({ url, sidecar: stored.sidecar, finalUrl });
+  const ms = timings.get(url) ?? 0;
+  const note = navFailed.has(url) ? `navigation failed: ${firstLine(navFailed.get(url))}`
+    : kind === 'redirect' && stored.redirect
+      ? `${stored.redirect.status} → ${stored.redirect.target ?? '?'}`
+      : kind === 'redirect' ? `landed on ${finalUrl}`
+        : kind === 'error' ? `${stored.http.status}`
+          : kind === 'unreachable' ? (res ? `${res.status}` : 'no response') : '';
+  const cachedNow = verified ? Boolean(stored.sidecar && res) : Boolean(stored.sidecar);
+  return {
+    row: {
+      url, status: cachedNow ? 'cached' : 'failed', kind, ms, note,
+    },
+    facts: {
+      http: stored.http,
+      redirect: stored.redirect,
+      finalUrl,
+      kind,
+      migrate,
+      cache: {
+        at: now(),
+        selection,
+        path: stored.sidecar ? stored.path : null,
+        durationMs: ms,
+        verified: verified && !navFailed.has(url),
+        ...(navFailed.has(url) ? { note } : {}),
       },
-      facts: {
-        http: stored.http,
-        redirect: stored.redirect,
-        finalUrl,
-        kind,
-        migrate,
-        cache: {
-          at: now(),
-          selection,
-          path: stored.sidecar ? stored.path : null,
-          durationMs: ms,
-          verified,
-          ...(navFailed.has(url) ? { note } : {}),
-        },
-      },
-    };
+    },
   };
-  // Whatever happens in the browser, every URL visited so far is verified and recorded
-  // below; a navigation that fails marks its URL and the loop goes on; anything else
-  // (the proxy dying, the browser gone) ends the visits and is rethrown after recording.
-  let loopError = null;
+}
+
+/** One navigation: open the session on the first URL, then goto; binaries via fetch. */
+async function navigate(run, url) {
+  const { browser, expression } = run;
+  const binary = BINARY_EXT.test(new URL(url).pathname);
+  if (!run.opened) {
+    await browser.open(via(run, binary ? run.urls[0] : url), {
+      config: run.config, persistent: run.persistent,
+    });
+    run.opened = true;
+    if (binary) await fetchFromPage(browser, via(run, url));
+    else await browser.eval(expression).catch(() => {});
+  } else if (binary) {
+    await fetchFromPage(browser, via(run, url));
+  } else {
+    await browser.goto(via(run, url));
+    await browser.eval(expression).catch(() => {});
+  }
+}
+
+/**
+ * Visits every URL through the online proxy, recording each one provisionally as it goes.
+ * A navigation that fails marks its URL and the loop goes on; too many in a row, or anything
+ * else going wrong, ends the visits — the error is returned so the caller records what was
+ * visited before rethrowing it.
+ */
+async function visitAll(run) {
+  const {
+    urls, browser, pace, onProgress, shouldStop, timings, finals, navFailed, visited, recorded,
+  } = run;
+  let streak = 0;
   try {
-    let opened = false;
     for (const url of urls) {
       if (shouldStop()) break;
       await onProgress({ current: url });
       visited.push(url);
       const started = Date.now();
       const binary = BINARY_EXT.test(new URL(url).pathname);
-      const navigated = await (async () => {
-        if (!opened) {
-          await browser.open(via(binary ? urls[0] : url), {
-            config, persistent: probe.persistent === true,
-          });
-          opened = true;
-          if (binary) await fetchFromPage(browser, via(url));
-          else await browser.eval(expression).catch(() => {});
-        } else if (binary) {
-          await fetchFromPage(browser, via(url));
-        } else {
-          await browser.goto(via(url));
-          await browser.eval(expression).catch(() => {});
-        }
-      })().then(() => true, (err) => { navFailed.set(url, err.message); return false; });
+      const navigated = await navigate(run, url)
+        .then(() => true, (err) => { navFailed.set(url, err.message); return false; });
+      streak = navigated ? 0 : streak + 1;
+      if (streak >= MAX_CONSECUTIVE_FAILURES) {
+        throw new Error(`${streak} navigations failed in a row (last: `
+          + `${firstLine(navFailed.get(url))}) — the browser or the proxy is gone`);
+      }
       timings.set(url, Date.now() - started);
       await sleep(pace);
       if (navigated && !binary) {
         const raw = await browser.eval('JSON.stringify(location.href)').catch(() => null);
         const landed = parseEval(raw);
-        finals.set(url, typeof landed === 'string' ? siteUrl(landed, origin) : null);
+        finals.set(url, typeof landed === 'string' ? siteUrl(landed, run.origin) : null);
         await browser.eval('window.scrollTo(0, 0)').catch(() => {});
       }
       // Recorded now, provisionally, so progress is visible per URL; verified after the loop.
-      const { facts: provisional } = await factsFor(url, { verified: false });
-      recorded.set(url, provisional);
-      await persist();
+      recorded.set(url, (await factsFor(run, url, { verified: false })).facts);
+      await run.persist();
       await onProgress({ done: visited.length, current: null });
     }
+    return null;
   } catch (err) {
-    loopError = err;
-  } finally {
-    await browser.close().catch(() => {});
-    await online.stop();
+    return err;
   }
+}
 
-  const offline = await startProxy({ offline: true });
+/** Requests every visited URL from the offline proxy and records the verified facts. */
+async function verifyVisited(run) {
   const rows = [];
-  let status = null;
-  try {
-    for (const url of visited) {
-      const u = new URL(url);
-      const res = await fetchImpl(`http://127.0.0.1:${offline.port}${u.pathname}${u.search}`
-        + `${u.search ? '&' : '?'}_origin=${encodeURIComponent(origin)}`).catch(() => null);
-      if (res) await res.arrayBuffer().catch(() => {});
-      const { row, facts } = await factsFor(url, { res, verified: true });
-      rows.push(row);
-      recorded.set(url, facts);
-    }
-    status = await fetchImpl(`http://127.0.0.1:${offline.port}/__status`)
-      .then((r) => r.json()).catch(() => null);
-  } finally {
-    await offline.stop();
+  for (const url of run.visited) {
+    const res = await run.fetchImpl(via(run, url)).catch(() => null);
+    if (res) await res.arrayBuffer().catch(() => {});
+    const { row, facts } = await factsFor(run, url, { res, verified: true });
+    rows.push(row);
+    run.recorded.set(url, facts);
   }
-  const inventory = await persist();
+  const status = await run.fetchImpl(`http://127.0.0.1:${run.port}/__status`)
+    .then((r) => r.json()).catch(() => null);
+  return { rows, status };
+}
 
+/** cache.md, the report section, and the result of the run. */
+async function writeOutcome(run, {
+  rows, status, inventory, port,
+}) {
+  const {
+    project, selection, urls, visited, pace, cacheDir, onProgress,
+  } = run;
   const assets = await countAssets(cacheDir);
   const cached = rows.filter((r) => r.status === 'cached').length;
   const failed = rows.length - cached;
@@ -328,23 +381,20 @@ export async function warm(project, io, job = {}) {
   for (const r of rows) kinds[r.kind] = (kinds[r.kind] ?? 0) + 1;
   const all = inventory.filter((r) => r.cache).map(rowOf);
   const file = path.join(project.step('cache'), 'cache.md');
+  await mkdir(project.step('cache'), { recursive: true });
   await writeFile(file, renderCacheMd({
-    selection, rows: all, port: online.port, pace, status, assets,
+    selection, rows: all, port, pace, status, assets,
   }));
   const kindText = Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(', ');
   const allCached = all.filter((r) => r.status === 'cached').length;
   const body = `Selection ${selection}: ${cached} cached, ${failed} failed, `
     + `${urls.length - visited.length} skipped; ${kindText || 'nothing visited'}. `
     + `In total ${allCached} of ${all.length} visited URLs cached; ${assets} asset file(s) `
-    + `stored through the proxy (port ${online.port}, ${pace} ms pace). Each visited URL's `
+    + `stored through the proxy (port ${port}, ${pace} ms pace). Each visited URL's `
     + 'record in urls/urls.json carries http, redirect, finalUrl, kind, migrate and cache. '
     + (failed ? `Failed: ${failedUrls(rows)}. ` : '')
     + 'Serve offline with the page-cache proxy `--offline` on the same cache directory.';
   await upsertSection(project, 'cache', body);
-  if (loopError) {
-    throw new Error(`${firstLine(loopError.message)} — after ${visited.length} of ${urls.length} `
-      + 'URLs; what was visited is recorded, a rerun resumes the rest');
-  }
   return {
     cached,
     failed,
@@ -387,7 +437,7 @@ function rowOf(r) {
           : r.kind === 'unreachable' ? 'no response' : '';
   return {
     url: r.url,
-    status: r.cache?.path ? 'cached' : 'failed',
+    status: !r.cache?.path ? 'failed' : r.cache.verified === false ? 'unverified' : 'cached',
     kind: r.kind,
     ms: r.cache?.durationMs ?? 0,
     note,
