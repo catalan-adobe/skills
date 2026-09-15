@@ -3,7 +3,8 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runAllChecks, runCheck } from './lib/checks.mjs';
-import { createServer } from 'node:net';
+import { dashboard, stopDashboard } from './lib/dashboard.mjs';
+import { connect } from 'node:net';
 import {
   init, readProject, resolveProject, upsertSection, writeProject,
 } from './lib/project.mjs';
@@ -32,6 +33,7 @@ status.mjs section <step|next> [--file body.md] (else stdin)
                                  write that "## <step>" in REPORT.md from a body without
                                  heading (the command adds it; replaces a previous one)
 status.mjs free-port [--from 3001]
+status.mjs dashboard [stop]                 serve tools/migration/ with aem up on a free port
                                  a loopback port nothing listens on (for the cache proxy)
 status.mjs pick [--count 2] [--exclude <url>]... [--write <subset>]
                                  one reachable page per largest group; with --write, fill
@@ -221,14 +223,21 @@ function setupSection(detection, installs, reasons, env) {
   return lines.join('\n');
 }
 
-/** The first TCP port at or above `from` on which nothing listens (loopback). */
-export function freePort(from = 3001) {
-  const tryPort = (port) => new Promise((resolve) => {
-    const srv = createServer();
-    srv.once('error', () => resolve(tryPort(port + 1)));
-    srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(port)));
+/**
+ * The first TCP port at or above `from` on which nothing answers on loopback. Tested by
+ * connecting, not binding: listen sockets use SO_REUSEADDR, so a bind can succeed on a
+ * port another process is serving.
+ */
+export async function freePort(from = 3001) {
+  const answers = (port, host) => new Promise((resolve) => {
+    const socket = connect({ port, host, timeout: 300 });
+    socket.once('connect', () => { socket.destroy(); resolve(true); });
+    socket.once('timeout', () => { socket.destroy(); resolve(false); });
+    socket.once('error', () => resolve(false));
   });
-  return tryPort(from);
+  for (let port = from; ; port += 1) {
+    if (!(await answers(port, '127.0.0.1')) && !(await answers(port, '::1'))) return port;
+  }
 }
 
 /**
@@ -272,6 +281,7 @@ const FLAGS = {
   urls: [],
   setup: ['--install', '--skills-repo', '--skills-ref'],
   'free-port': ['--from'],
+  dashboard: [],
   section: ['--file'],
 };
 
@@ -320,6 +330,8 @@ const COMMANDS = {
     ? importList(project, argv[1] ?? (() => { throw new Error(USAGE); })())
     : urls(project)),
   'free-port': async (argv) => ({ port: await freePort(Number(flag(argv, '--from') ?? 3001)) }),
+  dashboard: (argv, project) => (argv[0] === 'stop'
+    ? stopDashboard(project) : dashboard(project, freePort)),
   async section(argv, project) {
     const id = argv[0] === 'next' ? 'next' : stepById(argv[0] ?? '').id;
     const file = flag(argv, '--file');

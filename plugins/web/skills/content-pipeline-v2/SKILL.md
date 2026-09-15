@@ -58,8 +58,12 @@ migration/
 
 ## Dashboard
 
-`init` copies a read-only dashboard to `tools/migration/` in the repository. With the EDS
-local server running (`aem up`), open `http://localhost:3000/tools/migration/`: steps and
+`init` copies a read-only dashboard to `tools/migration/` in the repository. Serve it with
+`status.mjs dashboard` — it starts the EDS local server (`aem up`) on a free port, waits
+until the page answers and prints the URL; never pick a port yourself. `status.mjs dashboard
+stop` ends it. Never start `aem up` any other way: that server is the EDS local server for
+the whole repository, so anything else you need served (a page, a block) is at the same
+origin; `migration/.work/dashboard.json` holds its port. The page shows steps and
 their state, the inventory by kind and group, redirects, what is not to be migrated, a
 filterable URL table and the report — all read from `migration/` (`status.json`,
 `project.json`, `urls/urls.json`, `REPORT.md`). It writes nothing. `init` adds `migration/`
@@ -96,6 +100,7 @@ status.mjs approve cache <subset>...|all   record the operator's yes and the sel
 status.mjs section <step|next> < body.md   write that REPORT.md section from a body without
                                            heading (the command adds it; replaces)
 status.mjs free-port [--from n]            a loopback port nothing listens on
+status.mjs dashboard [stop]                serve tools/migration/ on a free port; print URL
 status.mjs setup [--install] detect preconditions; install the missing ones in project scope
 warm.mjs [--pace ms]         the cache step: proxy + browser + offline check → cache.md
 ```

@@ -643,3 +643,15 @@ test('init installs the dashboard under tools/migration and excludes migration/ 
     const created = await access(path.join(noHlx, '.hlxignore')).then(() => true, () => false);
     assert.equal(created, false, 'no .hlxignore is created where none exists (not an EDS repo)');
   });
+
+test('free-port skips ports held on the IPv4 wildcard or on loopback only', async () => {
+  const { createServer } = await import('node:net');
+  const { freePort } = await import('../status.mjs');
+  for (const host of ['0.0.0.0', '127.0.0.1']) {
+    const taken = createServer();
+    await new Promise((r) => taken.listen(0, host, r));
+    const { port } = taken.address();
+    assert.notEqual(await freePort(port), port, `held on ${host}`);
+    taken.close();
+  }
+});
