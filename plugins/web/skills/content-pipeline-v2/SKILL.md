@@ -35,7 +35,8 @@ node $SKILL/scripts/status.mjs --text
 `.agents/skills/`) and stops only on Node < 22. The skills come from `adobe/skills` unless
 the operator names another source — `--skills-repo <owner/repo> --skills-ref <branch>` —
 which `project.json` then remembers. `status.mjs --text` shows each step as `done`,
-`ready`, `blocked (by …)` or `waiting-operator`. Then follow the loop below. An operator who
+`ready`, `blocked (by …)`, `waiting-operator` or `running` (background work holds it; the
+label is its progress). Then follow the loop below. An operator who
 wants the steps fanned out to agents at their tiers says so in the prompt ("run the
 migration analysis as a workflow"); the skill does not opt in for them.
 
@@ -84,8 +85,10 @@ Each step has a brief in `steps/<id>.md`: hand that one file to whoever runs the
 | `report` | medium | — | `REPORT.md` |
 
 \* medium when the site has no usable sitemap. `cache` also needs the operator's yes
-(`status.mjs approve cache <subset>...|all`) and runs as one process, `scripts/warm.mjs`,
-which drives the proxy and the browser and writes its own artefacts.
+(`status.mjs approve cache <subset>...|all`) and runs in the background: `scripts/warm.mjs`
+queues the approved selection as a job and returns; one detached worker drives the proxy
+and the browser and writes the artefacts. Caching happens in phases — approve a subset, run
+`warm.mjs`, keep working; approve the next, run `warm.mjs` again, it queues behind.
 
 Runner commands:
 
@@ -102,7 +105,8 @@ status.mjs section <step|next> < body.md   write that REPORT.md section from a b
 status.mjs free-port [--from n]            a loopback port nothing listens on
 status.mjs dashboard [stop]                serve tools/migration/ on a free port; print URL
 status.mjs setup [--install] detect preconditions; install the missing ones in project scope
-warm.mjs [--pace ms]         the cache step: proxy + browser + offline check → cache.md
+warm.mjs [--pace ms] [--force]  queue the approved selection; a rerun resumes what is left
+warm.mjs status | stop       the jobs and the worker; stop ends it after its current URL
 ```
 
 ## Harness ladder
@@ -113,7 +117,8 @@ record it in `REPORT.md ## setup`. A workflow tool usually needs the operator's 
 gave that, never on the skill's say-so. Otherwise dispatch subagents when the harness has
 them; otherwise a todo list. In every mode the loop is the same: run `status.mjs` → run
 every `ready` step from its brief → `status.mjs check <step>` → repeat until every step is
-`done` or `waiting-operator`. The agent never marks a step done; only a passing check does.
+`done`, `waiting-operator` or `running`. The agent never marks a step done; only a passing
+check does. A `running` step is not waited for: report it and stop, or do another step.
 
 The tier column is an instruction, not a comment: `low` steps run a script and read JSON,
 `medium` steps judge. Run each step on a model of its tier — a subagent or workflow agent
@@ -141,6 +146,8 @@ After `scan`, put the proposal sentence from `urls/urls.md` to the operator and 
   prompt that pre-authorises "cache N pages" names a size, not a selection: build it with
   `pick --count N --write <name>`, approve that name, record the operator's words.
 - Never delete anything under `migration/cache/`; the driver is idempotent.
+- Never wait for, poll in a loop, or run the cache worker yourself; `warm.mjs` returns at
+  once and `status.mjs` shows the progress whenever it is asked.
 - Never warm the cache with `curl` or any plain HTTP client; `check cache` rejects a cache
   without assets, and only a browser requests them.
 - Every deliverable goes under `migration/`; a step writes only its own directory and its

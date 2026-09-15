@@ -85,7 +85,8 @@ approvals must be given again.
 : Read by later skills through the proxy in offline mode.
 
 `cache/cache.md`
-: Written by `cache`: one row per selected URL with `cached`, `failed` or `skipped`.
+: Written by the cache worker after every job: one row per visited URL across all
+  selections with `cached` or `failed`, its `kind` and the selection it came with.
 : Read by `check cache` and `report`.
 
 ## .work/
@@ -97,6 +98,16 @@ approvals must be given again.
 
 `.work/scan.mjs`
 : Written and run by `scan`.
+
+`.work/warm/<id>.json`, `.work/warm/worker.json`, `.work/warm/worker.log`
+: Written by `warm.mjs`: one file per cache job (`queued`, `running`, `done`, `stopped`,
+  `failed`; a running job whose worker died reads as `interrupted`), the live worker, and
+  its log. Read by `check cache` (an open job holds the step as `running`) and
+  `warm.mjs status`.
+
+`.work/dashboard.json`
+: Written by `status.mjs dashboard`: the pid, port and URL of the EDS local server it
+  started. Read by `dashboard` (reuse) and `dashboard stop`.
 
 `.work/` (anything else)
 : Browser profiles and scratch from any step; read only by the step that wrote it.

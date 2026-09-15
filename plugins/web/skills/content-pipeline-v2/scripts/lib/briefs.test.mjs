@@ -114,6 +114,10 @@ test('the cache brief runs the driver and forbids plain HTTP warming and deletio
   assert.match(text, /Never fetch pages with `curl`/);
   assert.match(text, /Never delete anything under `migration\/cache\/`/);
   assert.match(text, /pick --count <n> --write <name>/);
+  assert.match(text, /returns at once/);
+  assert.match(text, /Do not wait for it, poll it in a loop, or run the worker yourself/);
+  assert.match(text, /warm\.mjs status/);
+  assert.match(text, /--force/);
   const skill = await readFile(path.join(skillRoot, 'SKILL.md'), 'utf8');
   assert.match(skill, /warm\.mjs/);
   assert.match(skill, /Never warm the cache with `curl`/);
