@@ -16,6 +16,8 @@ import { pickUrls, setup } from '../status.mjs';
 const execFileP = promisify(execFile);
 const cliPath = fileURLToPath(new URL('../status.mjs', import.meta.url));
 
+const SKILL_NAMES = ['browser-probe', 'page-prep', 'site-scan', 'page-cache', 'page-tree'];
+
 async function cli(cwd, ...args) {
   let options = { cwd };
   if (args.length && typeof args[args.length - 1] === 'object') {
@@ -55,7 +57,7 @@ async function fakeSetupOk(cwd) {
   await writeFile(path.join(work, '.bin', 'playwright-cli'), '#!/bin/sh\n');
   await mkdir(path.join(work, 'franklin-bulk-shared'), { recursive: true });
   await writeFile(path.join(work, 'franklin-bulk-shared', 'package.json'), '{}');
-  for (const name of ['browser-probe', 'page-prep', 'site-scan', 'page-cache']) {
+  for (const name of SKILL_NAMES) {
     const dir = path.join(cwd, '.agents', 'skills', name);
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, 'SKILL.md'), '# stub\n');
@@ -78,7 +80,7 @@ test('init creates the project once; a second init keeps it', async () => {
   assert.equal(data.cacheAllUpTo, 500);
   const ignore = await readFile(path.join(cwd, 'migration/.gitignore'), 'utf8');
   assert.deepEqual(ignore.split('\n').filter(Boolean),
-    ['.work/', 'cache/.page-cache/', 'cache/progress.json']);
+    ['.work/', 'cache/.page-cache/', 'cache/progress.json', 'chrome/.captures/']);
   const second = await cli(cwd, 'init', '--origin', 'https://other.example/');
   assert.equal(second.created, false);
   assert.equal(second.data.origin, 'https://example.com/');
@@ -239,7 +241,6 @@ async function stubInstallerBin(cwd) {
   return bin;
 }
 
-const SKILL_NAMES = ['browser-probe', 'page-prep', 'site-scan', 'page-cache'];
 
 test('setup on a fresh project reports every missing precondition; writes setup.json', async () => {
   const cwd = await fresh();

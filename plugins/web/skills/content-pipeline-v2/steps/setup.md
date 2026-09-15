@@ -15,8 +15,9 @@ None. The runner does the detection and the installs.
 
 1. Run `node <skill>/scripts/status.mjs setup --install` from the project root.
    It looks for Node >= 22, `playwright-cli`, the `franklin-bulk-shared` package and the
-   skills `browser-probe`, `page-prep`, `site-scan`, `page-cache`. Missing pieces go to
-   `migration/.work/` (npm `--prefix`) and `.agents/skills/` (`upskill`); never `-g`.
+   skills `browser-probe`, `page-prep`, `site-scan`, `page-cache`, `page-tree`. Missing
+   pieces go to `migration/.work/` (npm `--prefix`) and `.agents/skills/` (`upskill`);
+   never `-g`.
 2. Read the output. `reasons` empty means every precondition is met.
 3. If `reasons` says `install Node >= 22`, stop: the runner cannot install Node. Tell the
    operator and do not run any other step.

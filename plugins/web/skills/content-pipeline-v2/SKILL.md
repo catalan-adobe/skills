@@ -8,7 +8,7 @@ description: >-
   more pages and cache the selected pages, with a runner that tracks each step on disk and
   decides when it is done. Owns the project structure under migration/, the step graph, the
   done-checks and the model-tier hints; delegates the work to browser-probe, page-prep,
-  site-scan and page-cache. Triggers on: migration analysis, early migration analysis,
+  site-scan, page-cache and page-tree. Triggers on: migration analysis, early migration analysis,
   start a migration, analyse a site for migration, collect URLs, list site URLs, probe a
   site, browser recipe, overlay recipe, cookie recipe, cache a site, cache the site,
   migration project, migration status, content pipeline.

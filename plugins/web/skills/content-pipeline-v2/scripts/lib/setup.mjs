@@ -7,7 +7,7 @@ import path from 'node:path';
 const execFileP = promisify(execFile);
 
 /** The sibling skills `setup` installs into the project when they are missing. */
-export const SKILL_NAMES = ['browser-probe', 'page-prep', 'site-scan', 'page-cache'];
+export const SKILL_NAMES = ['browser-probe', 'page-prep', 'site-scan', 'page-cache', 'page-tree'];
 
 /** Real `exec`: runs a file with args, resolving on success and rejecting on a bad exit. */
 export const defaultExec = (file, args, options) => execFileP(file, args, options);

@@ -108,8 +108,8 @@ export function cliError(err, command) {
  * session stays free for whatever else runs meanwhile; one process per command, run from
  * `cwd` (the project's `.work/`): the CLI writes its logs and snapshots into its cwd.
  */
-export function playwright(cli, io = defaultIo, cwd = process.cwd()) {
-  const run = (...args) => io.execFile(cli, [`-s=${SESSION}`, ...args], {
+export function playwright(cli, io = defaultIo, cwd = process.cwd(), session = SESSION) {
+  const run = (...args) => io.execFile(cli, [`-s=${session}`, ...args], {
     maxBuffer: 16 * 1024 * 1024, cwd,
   }).catch((err) => { throw cliError(err, `${args[0]} ${args.at(-1)}`); });
   return {
