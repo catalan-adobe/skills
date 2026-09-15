@@ -45,7 +45,16 @@ function renderProject(project, setup, status) {
       + ` · skills from <code>${esc(skills)}</code>`
       + (setup?.node ? ` · Node ${esc(setup.node.version)}` : '')
       + (status?.generatedAt ? ` · status ${when(status.generatedAt)} UTC` : '')
+      + cacheServerLine(status?.cacheServer)
     : 'No <code>migration/project.json</code> — run <code>status.mjs init</code>.';
+}
+
+function cacheServerLine(server) {
+  if (!server) return '';
+  return server.running
+    ? ` · cache server <a href="${esc(server.url)}/__status">${esc(server.url)}</a>`
+      + ` (offline, ${Number(server.cached)} stored)`
+    : ' · cache server not running (<code>status.mjs cache serve</code>)';
 }
 
 /** The cache step's live label from cache/progress.json, ahead of the next status.json. */

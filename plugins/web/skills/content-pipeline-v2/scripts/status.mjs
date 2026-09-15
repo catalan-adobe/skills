@@ -89,6 +89,12 @@ function renderText(states) {
   return ['step         state            blocked             tier    how', ...rows].join('\n');
 }
 
+function renderCacheServer(server) {
+  return server.running
+    ? `cache server: running on ${server.url} (offline, ${server.cached} stored responses)`
+    : 'cache server: not running — status.mjs cache serve starts it';
+}
+
 export async function status(project) {
   const data = await readProject(project);
   if (!data) {
@@ -96,10 +102,14 @@ export async function status(project) {
   }
   const { done, running } = await runAllChecks(project);
   const approved = data.approved ?? {};
+  const server = await cacheServerStatus(project);
   const result = {
     project: project.dir,
     origin: data.origin,
     generatedAt: new Date().toISOString(),
+    cacheServer: server
+      ? { running: true, port: server.port, url: server.url, cached: server.cached }
+      : { running: false },
     steps: stepStates(done, approved, running),
   };
   // The dashboard (tools/migration/) reads this instead of recomputing the checks.
@@ -351,7 +361,8 @@ function rejectUnknownFlags(name, argv) {
 const COMMANDS = {
   async status(argv, project) {
     const result = await status(project);
-    return argv.includes('--text') ? renderText(result.steps) : result;
+    return argv.includes('--text')
+      ? `${renderText(result.steps)}\n\n${renderCacheServer(result.cacheServer)}` : result;
   },
   async check(argv, project) {
     const [id] = argv;

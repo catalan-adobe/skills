@@ -616,6 +616,9 @@ test('status writes migration/status.json for the dashboard on status and check'
   assert.equal(first.origin, 'https://example.com/');
   assert.equal(first.steps.find((s) => s.id === 'setup').state, 'ready');
   assert.ok(first.generatedAt);
+  assert.deepEqual(first.cacheServer, { running: false });
+  const text = await cli(cwd, '--text');
+  assert.match(text, /cache server: not running — status\.mjs cache serve starts it/);
   await cli(cwd, 'check', 'probe').catch(() => {});
   const second = JSON.parse(await readFile(file, 'utf8'));
   assert.ok(second.generatedAt >= first.generatedAt);
