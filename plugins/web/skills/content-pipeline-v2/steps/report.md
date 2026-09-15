@@ -9,6 +9,7 @@ follow (and the operator) get one document with what was found. Tier: medium.
 - Every artefact under `migration/`: `setup.json`, `probe/probe.md`,
   `prep/prep.md`, `urls/urls.md`, `cache/cache.md` when present.
 - `node <skill>/scripts/status.mjs` for the state of every step.
+- Anything about a page comes from the cache (`references/local-cache.md`), not the site.
 
 ## Sibling skill
 

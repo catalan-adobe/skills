@@ -51,10 +51,8 @@ assets on disk so later analysis works offline, in the background. Tier: low.
 
 ## Done
 
-```bash
-node <skill>/scripts/status.mjs check cache
-```
-
-It fails with the progress label while a job is open — not an error to fix. Once the queue
-is empty, a missing body or asset means the worker did not finish: rerun `warm.mjs`, read
-`warm.mjs status`; never edit `cache.md` by hand.
+`node <skill>/scripts/status.mjs check cache`. It fails with the progress label while a job
+is open — not an error to fix. Once the queue is empty, a missing body or asset means the
+worker did not finish: rerun `warm.mjs`, read `warm.mjs status`; never edit `cache.md` by
+hand. From here on the site is read from the cache, never from the origin:
+`references/local-cache.md` (`status.mjs cache ls|get|url`).

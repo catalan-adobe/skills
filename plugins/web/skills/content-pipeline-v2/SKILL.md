@@ -55,7 +55,8 @@ migration/
   REPORT.md       one ## <step> section per step that ran
 ```
 
-`references/project-structure.md` lists every file, who writes it and who reads it.
+`references/project-structure.md` lists every file, who writes it and who reads it;
+`references/local-cache.md` how every step after `cache` reads and renders the cached site.
 
 ## Dashboard
 
@@ -140,6 +141,9 @@ After `scan`, put the proposal sentence from `urls/urls.md` to the operator and 
   once and `status.mjs` shows the progress whenever it is asked.
 - Never warm the cache with `curl` or any plain HTTP client; `check cache` rejects a cache
   without assets, and only a browser requests them.
+- After the `cache` step, no step touches the origin: every read goes through
+  `status.mjs cache …` (`ls`, `get`, `url`), see `references/local-cache.md`. An offline
+  504 means "not cached", never "fetch it live".
 - Every deliverable goes under `migration/`; a step writes only its own directory and its
   `REPORT.md` section — one `## <step>` per step, replaced on a re-run, never appended
   twice (`check report` rejects duplicates). Bare URLs in tables are fine; `<url>` too.

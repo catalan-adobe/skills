@@ -120,6 +120,11 @@ approvals must be given again.
 : Written by `status.mjs dashboard`: the pid, port and URL of the EDS local server it
   started. Read by `dashboard` (reuse) and `dashboard stop`.
 
+`.work/cache-server.json`, `.work/cache-server.log`
+: Written by `status.mjs cache serve`: pid, port and directory of the offline cache server
+  (see `local-cache.md`). Read by every `cache` verb that needs the server, by `status`
+  (the cache server line) and by `cache stop`.
+
 `.work/` (anything else)
 : Browser profiles and scratch from any step; read only by the step that wrote it.
 
