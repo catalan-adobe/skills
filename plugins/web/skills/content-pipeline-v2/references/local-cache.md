@@ -36,11 +36,18 @@ node <skill>/scripts/status.mjs cache url <url>...   the address to open for eac
 `migration/.work/cache-server.json` and reuses it on every later call — never start it any
 other way, never pick a port. It also writes `migration/.work/cache-browser-config.json`
 (printed as `browserConfig`): the probe's playwright-cli config plus `network.allowedOrigins`
-set to the proxy alone. **Open browser sessions on the cache with
-`playwright-cli --config=<that file>`**: nothing then leaves the machine — no analytics
-beacon to the site's real tracking, no live CDN. `cache url` prints the address to open; it
-already starts the server. The proxy serves a copy of each body with same-host absolute
-URLs rewritten to relative, so scripts and styles resolve through the proxy too.
+set to the proxy alone. Open every browser session on the cache with it — nothing then
+leaves the machine, no analytics beacon to the site's real tracking, no live CDN:
+
+```bash
+ADDRESS=$(node <skill>/scripts/status.mjs cache url <url>)
+playwright-cli --config=migration/.work/cache-browser-config.json open "$ADDRESS"
+```
+
+`--config` is given once, on `open`; later commands in the session (`goto`, `eval`,
+`screenshot`, `close`) take none. `cache url` already starts the server. The proxy serves a
+copy of each body with same-host absolute URLs rewritten to relative, so scripts and styles
+resolve through the proxy too.
 
 Every page the browser loads through the server comes from disk. A URL that is not cached
 gets a **504** and no request leaves the machine: that means "not cached", never "go and
