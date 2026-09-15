@@ -54,15 +54,20 @@ function fakeProxy(cacheDir, { gone = new Set(), moved = new Map(), hostile = tr
     }
     if (moved.has(target)) {
       // Like the real proxy: a same-origin Location is rewritten to route through the proxy.
-      const to = new URL(moved.get(target));
-      const viaProxy = `http://${req.headers.host}${to.pathname}${to.search}`;
-      await store(target, 301, { 'content-type': 'text/html', location: viaProxy }, '');
-      res.statusCode = 301; res.setHeader('location', viaProxy); res.end(); return;
+      const spec = moved.get(target);
+      const { to, status } = typeof spec === 'string' ? { to: spec, status: 301 } : spec;
+      const dest = new URL(to);
+      const viaProxy = `http://${req.headers.host}${dest.pathname}${dest.search}`;
+      await store(target, status, { 'content-type': 'text/html', location: viaProxy }, '');
+      res.statusCode = status; res.setHeader('location', viaProxy); res.end(); return;
     }
     const type = target.endsWith('.css') ? 'text/css'
       : target.endsWith('.pdf') ? 'application/pdf' : 'text/html; charset=utf-8';
     const body = target.endsWith('.css') ? 'body{}' : `<html>${target}</html>`;
-    await store(target, 200, { 'content-type': type }, body);
+    const validators = {
+      etag: `"${body.length}"`, 'last-modified': 'Mon, 01 Sep 2026 00:00:00 GMT',
+    };
+    await store(target, 200, { 'content-type': type, ...validators }, body);
     res.setHeader('content-type', type);
     res.end(body);
   });
@@ -414,3 +419,57 @@ test('when the browser dies mid-run, what was visited is recorded before the job
     assert.equal(inventory.filter((r) => r.cache).length, 2);
     assert.match(await readFile(path.join(p.dir, 'cache/cache.md'), 'utf8'), /Visited so far: 2/);
   });
+
+test('classify: the status boundaries between redirect, error and page', () => {
+  const url = `${ORIGIN}/x.html`;
+  const html = { 'content-type': 'text/html' };
+  const at = (status) => classify({ url, sidecar: { status, headers: html }, finalUrl: url }).kind;
+  assert.deepEqual([at(200), at(299)], ['page', 'page']);
+  assert.deepEqual([at(300), at(399)], ['redirect', 'redirect']);
+  assert.deepEqual([at(400), at(404), at(499), at(500), at(503)],
+    ['error', 'error', 'error', 'error', 'error']);
+  assert.equal(classify({ url, sidecar: { status: 200, headers: {} }, finalUrl: url }).kind,
+    'page', 'no content-type: still a page');
+});
+
+test('a redirect chain is followed through the stored hops; validators are recorded', async () => {
+  const p = await project();
+  const cacheDir = path.join(p.dir, 'cache/.page-cache');
+  const target = `${ORIGIN}/a.html`;
+  const proxy = fakeProxy(cacheDir, {
+    moved: new Map([
+      [`${ORIGIN}/hop.html`, { to: `${ORIGIN}/old.html`, status: 302 }],
+      [`${ORIGIN}/old.html`, target],
+    ]),
+  });
+  await writeFile(path.join(p.dir, 'urls/urls.json'), JSON.stringify([
+    { url: `${ORIGIN}/hop.html` }, { url: `${ORIGIN}/old.html` }, { url: target },
+  ]));
+  await writeFile(path.join(p.dir, 'probe/browser-recipe.json'), JSON.stringify({
+    persistent: true,
+  }));
+  const log = [];
+  const started = Date.now();
+  await warm(p, {
+    startProxy: async ({ offline }) => {
+      proxy.setOffline(offline);
+      const port = await proxy.listen();
+      return { port, stop: () => proxy.close() };
+    },
+    browser: fakeBrowser(log),
+    pace: 0,
+  }, { selection: 's', urls: [`${ORIGIN}/hop.html`, target] });
+  const by = Object.fromEntries(
+    JSON.parse(await readFile(path.join(p.dir, 'urls/urls.json'), 'utf8')).map((r) => [r.url, r]),
+  );
+  const hop = by[`${ORIGIN}/hop.html`];
+  assert.equal(hop.kind, 'redirect');
+  assert.deepEqual([hop.redirect.status, hop.redirect.target, hop.redirect.targetInList],
+    [302, target, true]);
+  assert.deepEqual(hop.redirect.chain, [`${ORIGIN}/old.html`], 'the intermediate hop');
+  assert.equal(by[target].http.etag, `"${`<html>${target}</html>`.length}"`);
+  assert.equal(by[target].http.lastModified, 'Mon, 01 Sep 2026 00:00:00 GMT');
+  const ms = by[target].cache.durationMs;
+  assert.ok(ms >= 0 && ms <= Date.now() - started + 1, `duration ${ms} is a real elapsed time`);
+  assert.equal(log[0][1].persistent, true, 'the probe recipe asks for a persistent profile');
+});

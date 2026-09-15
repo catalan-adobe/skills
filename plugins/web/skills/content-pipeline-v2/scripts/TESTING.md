@@ -18,3 +18,22 @@ proxy and browser, `check cache`, and the dashboard rendered by `aem up` — in 
 
 `lib/fixtures/playwright-cli-output.json` is playwright-cli output recorded from the real
 CLI; re-record it when the CLI's format changes and the contract test tells you so.
+
+## Mutation testing, when you want to know what the tests do not pin
+
+Not a gate; run it on one module at a time, from a throwaway copy of the skill (Stryker's
+in-place mode rewrites the working tree while it runs), with only that module's test files:
+
+```bash
+cp -R . /tmp/skill-copy && cd /tmp/skill-copy/scripts
+cat > /tmp/stryker.json <<'JSON'
+{ "mutate": ["lib/urls.mjs"], "testRunner": "command",
+  "commandRunner": { "command": "node --test lib/urls.test.mjs" },
+  "reporters": ["clear-text"], "concurrency": 1, "inPlace": true, "timeoutMS": 20000,
+  "ignorePatterns": ["node_modules", "integration", ".stryker-tmp"] }
+JSON
+npx -y @stryker-mutator/core@9 run /tmp/stryker.json
+```
+
+Ten minutes per module. Read the survivors; the ones that change what an operator would see
+or what a step does get a test, string literals in prose do not.

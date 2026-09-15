@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolveProject } from './project.mjs';
 import {
-  enqueue, readJobs, readWorker, recordWorker, runWorker, unfinished, updateJob,
+  alive, enqueue, readJobs, readWorker, recordWorker, runWorker, unfinished, updateJob,
 } from './jobs.mjs';
 
 const fresh = async () => resolveProject(await mkdtemp(path.join(os.tmpdir(), 'cpv2-jobs-')));
@@ -129,3 +129,9 @@ test('claimWorker hands the start to exactly one concurrent caller and replaces 
     const stale = await claimWorker(p, () => new Date(Date.UTC(2027, 0, 1)));
     assert.equal(stale.claimed, true, 'an unfulfilled claim older than 10 s is replaced');
   });
+
+test('alive: this process is, a never-used pid and no pid are not', () => {
+  assert.equal(alive(process.pid), true);
+  assert.equal(alive(2 ** 22 - 1), false);
+  assert.deepEqual([alive(null), alive(0), alive(undefined)], [false, false, false]);
+});
