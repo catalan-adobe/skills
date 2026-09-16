@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { openWork, unfinished } from './jobs.mjs';
+import { captureFile, readRun } from './chrome-capture.mjs';
 import { STEPS } from './steps.mjs';
 import { detect, missingReasons } from './setup.mjs';
 import { relativeSegments, scopeOf } from './urls.mjs';
@@ -328,12 +329,67 @@ export function checkReport(files) {
   return { pass: reasons.length === 0, reasons };
 }
 
+/**
+ * `chrome`: chrome.json parses, at least one header and one footer variant, every member
+ * selector resolves in its representative's capture (`selectors` = per representative URL the
+ * selectors its capture knows), every screenshot exists, no screenshot defects.
+ *
+ * @param {Record<string, string>} files
+ * @param {{screenshots: string[], selectors: Record<string, Set<string>>}} disk
+ */
+export function checkChrome(files, { screenshots = [], selectors = {} } = {}) {
+  const text = files['chrome/chrome.json'];
+  if (text === undefined) return { pass: false, reasons: ['missing migration/chrome/chrome.json'] };
+  let r;
+  try {
+    r = JSON.parse(text);
+  } catch (err) {
+    return {
+      pass: false, reasons: [`migration/chrome/chrome.json is not valid JSON: ${err.message}`],
+    };
+  }
+  const reasons = [];
+  if (files['chrome/chrome.md'] === undefined) reasons.push('missing migration/chrome/chrome.md');
+  if (!(r.capturedPages > 0)) reasons.push('chrome.json: no page was captured');
+  for (const role of ['header', 'footer']) {
+    const variants = r[role] ?? [];
+    if (!variants.length) {
+      reasons.push(`no ${role} recurs on enough pages; chrome.md lists what was rejected — `
+        + 'if the site truly has none, say so in the report section');
+    }
+    for (const v of variants) {
+      const known = selectors[v.representative];
+      for (const m of v.members) {
+        const sel = m.selectorOnRepresentative ?? m.selector;
+        if (known && !known.has(sel)) {
+          reasons.push(`${role} ${v.id}: ${sel} is not in the capture of ${v.representative}`);
+        }
+      }
+      if (!v.screenshots?.full || !screenshots.includes(v.screenshots.full)) {
+        reasons.push(`${role} ${v.id}: no full-page screenshot`);
+      }
+      const crops = v.screenshots?.members ?? [];
+      if (crops.length !== v.members.length) {
+        reasons.push(
+          `${role} ${v.id}: ${crops.length} member crops for ${v.members.length} members`,
+        );
+      }
+      for (const c of crops) {
+        if (!screenshots.includes(c.file)) reasons.push(`${role} ${v.id}: missing ${c.file}`);
+      }
+      for (const e of v.screenshotError ?? []) reasons.push(`${role} ${v.id}: ${e}`);
+    }
+  }
+  return { pass: reasons.length === 0, reasons };
+}
+
 const CONTENT_CHECKS = {
   probe: checkProbe,
   prep: checkPrep,
   scan: checkScan,
   'prep-verify': checkPrepVerify,
   cache: checkCache,
+  chrome: checkChrome,
   report: checkReport,
 };
 
@@ -415,6 +471,7 @@ export const CHECKS = Object.fromEntries(
         return { pass: result.pass && !partial.length, reasons: [...result.reasons, ...partial] };
       }];
     }
+    if (step.id === 'chrome') return [step.id, checkChromeOnDisk];
     if (step.id === 'prep' || step.id === 'prep-verify') {
       return [step.id, async (project) => contentCheck(
         await loadFiles(project), await listDir(project.step('prep'), 'prep'),
@@ -423,6 +480,32 @@ export const CHECKS = Object.fromEntries(
     return [step.id, async (project) => contentCheck(await loadFiles(project))];
   }),
 );
+
+/** `chrome` on disk: the run's phase while it is open, else the content check. */
+async function checkChromeOnDisk(project) {
+  const run = await readRun(project);
+  if (run && ['queued', 'running', 'analysing'].includes(run.state)) {
+    const label = run.state === 'analysing'
+      ? 'analysing captures' : `${run.done ?? 0}/${run.total ?? '?'} pages captured`;
+    return { pass: false, running: label, reasons: [`chrome: ${label}; chrome.mjs status`] };
+  }
+  const files = await loadFiles(project);
+  const shots = (await listDir(path.join(project.step('chrome'), 'screenshots'), 'screenshots'));
+  const selectors = {};
+  let r = null;
+  try { r = JSON.parse(files['chrome/chrome.json'] ?? 'null'); } catch { /* reported below */ }
+  for (const v of [...(r?.header ?? []), ...(r?.footer ?? [])]) {
+    const capture = await readFile(captureFile(project, v.representative), 'utf8')
+      .then(JSON.parse, () => null);
+    if (capture) {
+      selectors[v.representative] = new Set(Object.values(capture.nodeMap ?? {})
+        .map((n) => n.selector));
+    }
+  }
+  const result = checkChrome(files, { screenshots: shots, selectors });
+  if (run?.state === 'failed') result.reasons.push(`chrome: the last run failed — ${run.error}`);
+  return { ...result, pass: result.pass && run?.state !== 'failed' };
+}
 
 export async function runCheck(id, project) {
   const check = CHECKS[id];

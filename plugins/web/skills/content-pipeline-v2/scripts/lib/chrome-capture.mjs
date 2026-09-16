@@ -106,14 +106,15 @@ export async function writeCaptureConfig(project, browserConfig, bundle) {
   return file;
 }
 
-/** Starts the detached worker unless a run is alive; its output goes to worker.log. */
+/**
+ * Starts the detached worker unless a run is alive; its output goes to worker.log. With
+ * nothing left to capture the worker goes straight to the analysis, so a rerun refreshes
+ * chrome.json from the captures on disk.
+ */
 export async function startCapture(project, workerScript, { force = false } = {}, io = {}) {
   const current = await readRun(project, io.alive ?? alive);
   if (current?.state === 'running') return { started: false, run: current };
   const urls = await pagesToCapture(project, { force });
-  if (!urls.length) {
-    return { started: false, note: 'every verified page has a capture; --force recaptures' };
-  }
   await mkdir(runDir(project), { recursive: true });
   await writeJson(runFile(project), {
     state: 'queued', total: urls.length, done: 0, failed: [], force,

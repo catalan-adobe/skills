@@ -32,3 +32,14 @@ td.url { font-family: ui-monospace, monospace; font-size: 12px; word-break: brea
 .filters input { min-width: 260px; }
 pre.report { white-space: pre-wrap; margin: 0; font-size: 12.5px; }
 footer { padding: 30px 20px; font-size: 12px; }
+
+.variants {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem;
+}
+.variant { border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem; }
+.variant h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+.variant ul { margin: 0.25rem 0 0.5rem; padding-left: 1.2rem; }
+.variant .shot { width: 100%; max-height: 240px; object-fit: cover; object-position: top;
+  border: 1px solid #ccc; }
+.variant .shot.footer { object-position: bottom; }
+.bad { color: #b00020; }

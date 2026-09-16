@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  cacheRelativePath, checkCache, checkPrep, checkPrepVerify, checkProbe, checkReport, checkScan,
+  cacheRelativePath, checkCache, checkChrome, checkPrep, checkPrepVerify, checkProbe, checkReport,
+  checkScan,
 } from './checks.mjs';
 
 test('checkProbe passes when the recipe parses and probe.md is non-empty', () => {
@@ -505,4 +506,49 @@ test('checkReport rejects a "## " heading that is no section', () => {
     ...files, 'REPORT.md': '## probe\n\ndone\n\n## next\n\n### Struggles\n\ncache done\n',
   };
   assert.deepEqual(checkReport(ok), { pass: true, reasons: [] });
+});
+
+test('checkChrome: variants, selectors against captures, screenshots, defects', () => {
+  const variant = (id, members, rep = 'https://x.example/') => ({
+    id, representative: rep, members: members.map((s) => ({ selector: s })),
+    screenshots: {
+      full: `screenshots/header-${id}.png`,
+      members: members.map((s, i) => (
+        { selector: s, file: `screenshots/header-${id}-m${i + 1}.png` })),
+    },
+  });
+  const chrome = {
+    capturedPages: 9, header: [variant('1', ['#u', 'div.nav'])], footer: [variant('1', ['div.f'])],
+  };
+  const files = { 'chrome/chrome.json': JSON.stringify(chrome), 'chrome/chrome.md': '# Chrome' };
+  const shots = [
+    'screenshots/header-1.png', 'screenshots/header-1-m1.png', 'screenshots/header-1-m2.png',
+  ];
+  const selectors = { 'https://x.example/': new Set(['#u', 'div.nav', 'div.f']) };
+  assert.deepEqual(checkChrome(files, { screenshots: shots, selectors }),
+    { pass: true, reasons: [] });
+
+  const noFooter = checkChrome(
+    { ...files, 'chrome/chrome.json': JSON.stringify({ ...chrome, footer: [] }) },
+    { screenshots: shots, selectors },
+  );
+  assert.match(noFooter.reasons.join('\n'), /no footer recurs on enough pages/);
+
+  const badSel = checkChrome(files,
+    { screenshots: shots, selectors: { 'https://x.example/': new Set(['#u']) } });
+  assert.match(badSel.reasons.join('\n'),
+    /header 1: div\.nav is not in the capture of https:\/\/x\.example\//);
+
+  const missingShot = checkChrome(files, { screenshots: shots.slice(0, 2), selectors });
+  assert.match(missingShot.reasons.join('\n'), /header 1: missing screenshots\/header-1-m2\.png/);
+
+  const defect = {
+    ...chrome, header: [{ ...chrome.header[0], screenshotError: ['x resolves to nothing'] }],
+  };
+  const withDefect = checkChrome({ ...files, 'chrome/chrome.json': JSON.stringify(defect) },
+    { screenshots: shots, selectors });
+  assert.match(withDefect.reasons.join('\n'), /header 1: x resolves to nothing/);
+
+  assert.match(checkChrome({}).reasons[0], /missing migration\/chrome\/chrome\.json/);
+  assert.match(checkChrome({ 'chrome/chrome.json': '{' }).reasons[0], /not valid JSON/);
 });

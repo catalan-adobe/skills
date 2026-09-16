@@ -51,6 +51,14 @@ export const STEPS = [
     writes: ['cache/cache.md', 'cache/.page-cache/'],
   },
   {
+    id: 'chrome',
+    tier: 'medium',
+    tierNote: 'the detection is a script; the model only looks at one screenshot per variant',
+    skill: 'page-tree',
+    dependsOn: ['cache'],
+    writes: ['chrome/chrome.json', 'chrome/chrome.md'],
+  },
+  {
     id: 'report',
     tier: 'medium',
     skill: null,

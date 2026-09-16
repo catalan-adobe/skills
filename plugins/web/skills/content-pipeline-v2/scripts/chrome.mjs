@@ -4,20 +4,24 @@
 // under migration/chrome/.captures/, then returns at once.
 // Usage: node chrome.mjs [--force] | status | stop   (from the project root)
 // A rerun captures only the pages without a capture; --force recaptures all.
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { projectOrigin, proxiedUrl, serveCache } from './lib/cache-server.mjs';
 import {
-  captureAll, capturesDir, pagesToCapture, readRun, startCapture, writeCaptureConfig,
+  captureAll, pagesToCapture, readRun, runFile, startCapture, writeCaptureConfig,
 } from './lib/chrome-capture.mjs';
 import { candidates, chromeCandidates } from './lib/chrome.mjs';
+import { analyse, readCaptures } from './lib/chrome-report.mjs';
+import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
 import { resolveProject } from './lib/project.mjs';
 import { defaultIo, playwright, setupPaths } from './lib/warm-cli.mjs';
+import { pageExpression } from './lib/warm.mjs';
 
 export const HELP = `chrome.mjs [--force]
-    capture every verified cached page's visual tree in the background; a rerun does the rest
+    in the background: render every verified cached page, detect header and footer, take
+    the screenshots, write chrome/chrome.json, chrome.md and the report section
 chrome.mjs status
     the capture run: state, done/total, failures
 chrome.mjs stop
@@ -37,7 +41,20 @@ export async function bundlePath(project) {
   return path.join(path.dirname(skill), 'scripts', 'page-tree-bundle.js');
 }
 
-/** The worker: the offline server, one browser session with the bundle, every page. */
+/** The prep step's recipe: hide rules and scroll fix, applied before every capture. */
+async function prepExpression(project) {
+  const recipe = await readFile(path.join(project.step('prep'), 'page-prep.json'), 'utf8')
+    .then(JSON.parse, () => null);
+  return {
+    prepare: recipe ? pageExpression(recipe) : null,
+    consentSelectors: (recipe?.overlays ?? []).map((o) => o.selector).filter(Boolean),
+  };
+}
+
+/**
+ * The worker: the offline server, one browser session with the bundle, every page; then
+ * detection, screenshots and the outputs. run.json says which phase it is in.
+ */
 export async function workerMain(project, argv, io = defaultIo) {
   const { proxyScript, cli } = await setupPaths(project);
   const bundle = await bundlePath(project);
@@ -45,24 +62,31 @@ export async function workerMain(project, argv, io = defaultIo) {
   const server = await serveCache(project, proxyScript, freePort);
   const config = await writeCaptureConfig(project, server.browserConfig, bundle);
   const urls = await pagesToCapture(project, { force: argv.includes('--force') });
+  const { prepare, consentSelectors } = await prepExpression(project);
   let stopping = false;
   io.onSignal(() => { stopping = true; });
   const browser = playwright(cli, io, project.work, 'chrome');
   await browser.open(proxiedUrl(origin, urls[0] ?? origin, server.port), { config });
   try {
-    return await captureAll(project, { browser, origin, port: server.port },
+    const port = server.port;
+    const run = await captureAll(project, { browser, origin, port, prepare },
       { urls, shouldStop: () => stopping });
+    if (run.state !== 'done') return run;
+    await writeJson(runFile(project), { ...run, state: 'analysing' });
+    const result = await analyse(project, { browser, origin, port, prepare, consentSelectors });
+    const summary = {
+      header: result.header.length, footer: result.footer.length,
+      defects: [...result.header, ...result.footer].filter((v) => v.screenshotError).length,
+    };
+    await writeJson(runFile(project), { ...run, state: 'done', analysed: summary });
+    return { ...run, analysed: summary };
+  } catch (err) {
+    const run = await readRun(project);
+    await writeJson(runFile(project), { ...run, state: 'failed', error: err.message });
+    throw err;
   } finally {
     await browser.close().catch(() => {});
   }
-}
-
-/** Every stored capture. */
-export async function readCaptures(project) {
-  const dir = capturesDir(project);
-  const files = await readdir(dir).catch(() => []);
-  return Promise.all(files.filter((f) => f.endsWith('.json'))
-    .map((f) => readFile(path.join(dir, f), 'utf8').then(JSON.parse)));
 }
 
 function renderCandidates(list) {

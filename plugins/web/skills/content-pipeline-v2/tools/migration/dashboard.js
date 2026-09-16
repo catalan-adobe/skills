@@ -179,6 +179,57 @@ function drawUrls() {
   );
 }
 
+function chromeVariant(role, v) {
+  const members = v.members.map((m, i) => {
+    const crop = v.screenshots?.members?.[i]?.file;
+    return `<li><code>${esc(m.selector)}</code> · ${m.pages} pages`
+      + (crop ? ` · <a href="${BASE}/chrome/${esc(crop)}">crop</a>` : '') + '</li>';
+  }).join('');
+  const optional = (v.optional ?? []).map((m) => (
+    `<li class="muted"><code>${esc(m.selector)}</code> · optional, on ${m.onPages} pages</li>`
+  )).join('');
+  const defects = (v.screenshotError ?? []).map((e) => `<li class="bad">${esc(e)}</li>`).join('');
+  return `<article class="variant">
+    <h3>${esc(role)} ${esc(v.id)} · ${v.pages.length} pages (${Math.round(v.support * 100)} %)
+      · <code>${esc(v.group)}</code></h3>
+    <p class="small">representative ${link(v.representative)}</p>
+    <ul>${members}${optional}${defects}</ul>
+    ${v.screenshots?.full
+    ? `<a href="${BASE}/chrome/${esc(v.screenshots.full)}"><img class="shot ${esc(role)}"
+        alt="${esc(role)} ${esc(v.id)}"
+        src="${BASE}/chrome/${esc(v.screenshots.full)}"></a>` : ''}
+  </article>`;
+}
+
+/** The chrome panel: variants per role with screenshots, then what was left out. */
+function renderChrome(chrome) {
+  const panel = $('#chrome .panel');
+  if (!chrome) {
+    panel.innerHTML = '<p class="muted">No <code>chrome/chrome.json</code> yet — '
+      + '<code>chrome.mjs</code> after the cache step.</p>';
+    return;
+  }
+  const role = (name) => (chrome[name].length
+    ? chrome[name].map((v) => chromeVariant(name, v)).join('')
+    : `<p class="muted">no ${name} recurs on enough pages</p>`);
+  const list = (items, render) => (items.length ? `<ul>${items.map(render).join('')}</ul>`
+    : '<p class="muted">none</p>');
+  panel.innerHTML = `<p class="small">${chrome.capturedPages} pages captured · generated ${
+    esc(String(chrome.generatedAt ?? '').slice(0, 16).replace('T', ' '))} UTC</p>
+    <div class="variants">${role('header')}${role('footer')}</div>
+    <details><summary>Pages without a header (${chrome.without.header.length}) or footer (${
+  chrome.without.footer.length})</summary>
+      ${list([...new Set([...chrome.without.header, ...chrome.without.footer])],
+    (u) => `<li>${link(u)}</li>`)}</details>
+    <details><summary>Unplaced (${chrome.unplaced.length}) and rejected (${
+  chrome.rejected.length})</summary>
+      ${list([...chrome.unplaced.map((m) => ({ ...m, reason: 'unplaced' })), ...chrome.rejected],
+    (m) => `<li><code>${esc(m.selector)}</code> · ${Math.round(m.support * 100)} % · ${
+      esc(m.reason)}</li>`)}</details>
+    <details><summary>Limits</summary>${
+  list(chrome.limits, (l) => `<li>${esc(l)}</li>`)}</details>`;
+}
+
 function renderReport(md) {
   $('#report .panel').innerHTML = md
     ? `<pre class="report">${esc(md)}</pre>`
@@ -203,11 +254,13 @@ async function refreshLive() {
   return Boolean(progress?.open);
 }
 
-const [project, setup, status, report] = await Promise.all([
+const [project, setup, status, report, chrome] = await Promise.all([
   json('project.json'), json('setup.json'), json('status.json'), text('REPORT.md'),
+  json('chrome/chrome.json'),
 ]);
 renderProject(project, setup, status);
 renderReport(report);
+renderChrome(chrome);
 let open = await refreshLive();
 const tick = async () => {
   open = await refreshLive();

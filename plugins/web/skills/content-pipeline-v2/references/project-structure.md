@@ -100,6 +100,33 @@ approvals must be given again.
   selections with `cached` or `failed`, its `kind` and the selection it came with.
 : Read by `check cache` and `report`.
 
+## chrome/
+
+Chrome — the parts of a page that stay the same from page to page and frame the content:
+the header(s) and footer(s). Detected, not interpreted.
+
+`chrome/.captures/<sha8>.json`
+: Written by the chrome worker: one page-tree capture per verified cached page (tree, text
+  form, nodeMap), rendered from the cache (gitignored).
+: Read by the detection, by `check chrome` (selectors are resolved against them) and by a
+  rerun, which captures only the pages without one.
+
+`chrome/chrome.json`
+: Written by the chrome worker: per role (`header`, `footer`) the variants — members with
+  selectors and positions, pages, support, representative, group label, optional members,
+  screenshots — plus `unplaced`, `rejected` with reasons, `without` (pages carrying no
+  header or footer) and `limits`.
+: Read by `check chrome`, the dashboard and whoever strips or converts the chrome later.
+
+`chrome/chrome.md`
+: Written by the chrome worker: the same for the operator, with the screenshot paths.
+: Read by `report`.
+
+`chrome/screenshots/<role>-<variant>.png`, `chrome/screenshots/<role>-<variant>-m<n>.png`
+: Written by the chrome worker on the variant's representative page: the full page with
+  every member outlined, then one crop per member.
+: Read by the agent (one full screenshot per variant), the dashboard and `check chrome`.
+
 ## .work/
 
 `.work/node_modules/`
@@ -124,6 +151,12 @@ approvals must be given again.
 : Written by `status.mjs cache serve`: pid, port and directory of the offline cache server
   (see `local-cache.md`). Read by every `cache` verb that needs the server, by `status`
   (the cache server line) and by `cache stop`.
+
+`.work/chrome/run.json`, `.work/chrome/worker.log`, `.work/chrome/browser-config.json`
+: Written by `chrome.mjs`: the capture run's state (`queued|running|analysing|done|stopped|
+  failed`, done/total, current page, failures), the worker's output, and the session config
+  (cache browser config plus the page-tree bundle). Read by `chrome.mjs status|stop` and
+  `check chrome` (the running label).
 
 `.work/` (anything else)
 : Browser profiles and scratch from any step; read only by the step that wrote it.

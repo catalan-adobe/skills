@@ -134,12 +134,15 @@ test('startCapture spawns one detached worker, refuses while one runs, and repor
     assert.deepEqual(spawned[1], ['/skill/chrome.mjs', '--worker', '--force']);
   });
 
-test('startCapture does nothing when every page has a capture', async () => {
+test('startCapture with every page captured still runs the worker (for the analysis)', async () => {
   const p = await project(1);
   await mkdir(capturesDir(p), { recursive: true });
   await writeFile(captureFile(p, page(1)), '{}');
-  const out = await startCapture(p, '/s', {}, { spawn: () => { throw new Error('no'); } });
-  assert.match(out.note, /every verified page has a capture/);
+  const spawned = [];
+  const out = await startCapture(p, '/s', {}, {
+    spawn: (cmd, args) => { spawned.push(args); return { pid: 1, unref() {} }; }, alive: () => true,
+  });
+  assert.deepEqual([out.started, out.total, spawned.length], [true, 0, 1]);
 });
 
 test('the capture config adds the bundle to the cache browser config', async () => {
