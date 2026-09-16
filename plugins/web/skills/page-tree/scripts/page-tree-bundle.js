@@ -337,6 +337,9 @@ window.__visualTree = (() => {
     if (element.classList.length > 0) {
       node.className = element.className;
     }
+    if (style.position === "fixed") {
+      node.fixed = true;
+    }
     const role = element.getAttribute("role");
     if (role) {
       node.role = role;
@@ -449,7 +452,7 @@ window.__visualTree = (() => {
     while (node.children.length === 1) {
       const child = node.children[0];
       const parentHasArea = node.bounds.width > 0 && node.bounds.height > 0;
-      if (parentHasArea && !isContainedIn(child.bounds, node.bounds)) {
+      if (child.fixed || parentHasArea && !isContainedIn(child.bounds, node.bounds)) {
         break;
       }
       node.collapsed = node.collapsed || [identityOf(node)];
@@ -503,7 +506,7 @@ window.__visualTree = (() => {
       const stayed = [];
       const escaped = [];
       for (const child of node.children) {
-        if (isContainedIn(child.bounds, node.bounds)) {
+        if (!child.fixed && isContainedIn(child.bounds, node.bounds)) {
           stayed.push(child);
         } else {
           escaped.push(child);
@@ -512,7 +515,7 @@ window.__visualTree = (() => {
       node.children = stayed;
       for (const child of escaped) {
         let placed = false;
-        for (let i = ancestors.length - 1; i >= 0; i--) {
+        for (let i = ancestors.length - 1; i >= 0 && !child.fixed; i--) {
           if (isContainedIn(child.bounds, ancestors[i].bounds)) {
             ancestors[i].children.push(child);
             placed = true;

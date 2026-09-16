@@ -198,3 +198,16 @@ test('processTree: an escaped child lands on the nearest ancestor that contains 
   assert.deepEqual(plain(root.children[1].children).map((c) => c.selector),
     ['div.small', 'div.s2', 'div.inner'], 'it moved up one level, to the section');
 });
+
+test('processTree: a fixed element is never absorbed by a collapse; it floats to root', () => {
+  const banner = node('DIV', '#cmp', box(0, 520, 1280, 200), [], { id: 'cmp', fixed: true });
+  const deeper = node('DIV', 'div.deeper', box(0, 133, 1280, 0), [banner],
+    { className: 'deeper' });
+  const body = page([utility(), node('DIV', 'div.content', box(0, 53, 1280, 3000), [deeper],
+    { className: 'content' }), footer(4000)]);
+  const { root, nodeMap, promotedToRoot } = processTree(body);
+  assert.deepEqual([...promotedToRoot].map((n) => n.selector), ['#cmp']);
+  assert.deepEqual(Array.from(root.children, (c) => c.selector),
+    ['#utility', 'div.content', 'div.footer', '#cmp']);
+  assert.deepEqual(plain(nodeMap.rc4.overlay), { occluding: ['rc2'] });
+});
