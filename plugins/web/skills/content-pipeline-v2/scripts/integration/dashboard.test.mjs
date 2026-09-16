@@ -8,7 +8,11 @@ import path from 'node:path';
 import { dashboard, stopDashboard } from '../lib/dashboard.mjs';
 import { freePort } from '../lib/ports.mjs';
 import { init, resolveProject } from '../lib/project.mjs';
-import { execFileP, need, onPath } from './helpers.mjs';
+import { evalResult } from '../lib/warm-cli.mjs';
+import { parseEval } from '../lib/warm.mjs';
+import {
+  execFileP, need, onPath, pw,
+} from './helpers.mjs';
 
 const git = (cwd, ...args) => execFileP('git', args, { cwd });
 
@@ -59,4 +63,27 @@ test('dashboard: a folder that is not a git repository fails with the message', 
   const project = resolveProject(root);
   await mkdir(project.dir, { recursive: true });
   await assert.rejects(dashboard(project, freePort), /aem up did not answer/);
+});
+
+test('the dashboard server does not live-reload the page when files change', async (t) => {
+  await need(t, 'aem (@adobe/aem-cli)', () => onPath('aem'));
+  const cli = await need(t, 'playwright-cli', () => onPath('playwright-cli'));
+  const root = await edsRepo();
+  const project = resolveProject(root);
+  await init({ origin: 'https://site.example/' }, project);
+  const served = await dashboard(project, freePort);
+  const S = 'cpv2-test-dash-reload';
+  try {
+    const html = await fetch(served.url).then((r) => r.text());
+    assert.ok(!/livereload/i.test(html), 'no live-reload script is injected');
+    await pw(cli, S, 'open', served.url);
+    await pw(cli, S, 'eval', 'window.__marker = "set"');
+    await writeFile(path.join(project.dir, 'touch.json'), '{}');
+    await new Promise((r) => { setTimeout(r, 2000); });
+    const { stdout } = await pw(cli, S, 'eval', 'String(window.__marker)');
+    assert.equal(parseEval(evalResult(stdout)), 'set', 'the page survived a file change');
+  } finally {
+    await pw(cli, S, 'close').catch(() => {});
+    await stopDashboard(project);
+  }
 });

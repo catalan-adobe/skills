@@ -8,10 +8,11 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const chip = (text, cls = '') => `<span class="chip ${esc(cls)}">${esc(text)}</span>`;
 
+// A missing file may come back as the site's 404 page with a 200: parse, never trust.
 async function json(rel) {
   const res = await fetch(`${BASE}/${rel}`, { cache: 'no-store' });
   if (!res.ok) return null;
-  return res.json();
+  try { return await res.json(); } catch { return null; }
 }
 async function text(rel) {
   const res = await fetch(`${BASE}/${rel}`, { cache: 'no-store' });
@@ -68,6 +69,8 @@ function liveCache(progress) {
 }
 
 function renderSteps(status, progress) {
+  // A read that failed (a writer mid-write, a slow server) keeps what is on screen.
+  if (!status && $('#steps tbody')) return;
   const live = liveCache(progress);
   const steps = (status?.steps ?? []).map((s) => (s.id === 'cache' && live
     ? { ...s, state: 'running', running: live } : s));
@@ -236,7 +239,26 @@ function renderReport(md) {
     : '<p class="muted">No <code>REPORT.md</code> yet.</p>';
 }
 
+let chromeSeen = null;
+/**
+ * chrome.json is fetched only once status.json says the chrome step is done, and again
+ * when that status was produced later: a missing file is slow to answer (the local server
+ * asks the remote origin for it), and nothing else may wait behind such a request.
+ */
+async function refreshChrome(status) {
+  const step = status?.steps?.find((s) => s.id === 'chrome');
+  if (!step) return;
+  if (step.state !== 'done') {
+    if (chromeSeen === null) { renderChrome(null); chromeSeen = 'none'; }
+    return;
+  }
+  if (chromeSeen === status.generatedAt) return;
+  chromeSeen = status.generatedAt;
+  renderChrome(await json('chrome/chrome.json'));
+}
+
 const POLL_MS = 5000;
+const IDLE_POLL_MS = 15000;
 
 /** Everything that changes while a cache job runs; polled every 5 s while work is open. */
 async function refreshLive() {
@@ -244,26 +266,29 @@ async function refreshLive() {
     json('status.json'), json('cache/progress.json'), json('urls/urls.json'),
   ]);
   renderSteps(status, progress);
-  renderInventory(records ?? []);
-  renderRedirects(records ?? []);
-  renderNotToMigrate(records ?? []);
-  renderUrls(records ?? []);
+  await refreshChrome(status);
+  if (records || !$('#inventory .card')) {
+    renderInventory(records ?? []);
+    renderRedirects(records ?? []);
+    renderNotToMigrate(records ?? []);
+    renderUrls(records ?? []);
+  }
   $('#live').textContent = progress?.open
     ? `live · updated ${String(progress.updatedAt ?? '').slice(11, 19)} UTC`
     : '';
   return Boolean(progress?.open);
 }
 
-const [project, setup, status, report, chrome] = await Promise.all([
+const [project, setup, status, report] = await Promise.all([
   json('project.json'), json('setup.json'), json('status.json'), text('REPORT.md'),
-  json('chrome/chrome.json'),
 ]);
 renderProject(project, setup, status);
 renderReport(report);
-renderChrome(chrome);
 let open = await refreshLive();
+// Poll always, faster while a job is open: a job started after the page loaded must show
+// up too, and the local server no longer reloads the page on file changes.
 const tick = async () => {
   open = await refreshLive();
-  if (open) setTimeout(tick, POLL_MS);
+  setTimeout(tick, open ? POLL_MS : IDLE_POLL_MS);
 };
-if (open) setTimeout(tick, POLL_MS);
+setTimeout(tick, open ? POLL_MS : IDLE_POLL_MS);

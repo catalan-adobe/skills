@@ -9,6 +9,7 @@ import {
 } from './lib/cache-server.mjs';
 import { dashboard, stopDashboard } from './lib/dashboard.mjs';
 import { setupPaths } from './lib/warm-cli.mjs';
+import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
 import {
   init, readProject, resolveProject, upsertSection, writeProject,
@@ -113,7 +114,8 @@ export async function status(project) {
     steps: stepStates(done, approved, running),
   };
   // The dashboard (tools/migration/) reads this instead of recomputing the checks.
-  await writeFile(project.statusFile, `${JSON.stringify(result, null, 2)}\n`).catch(() => {});
+  // Atomic: the dashboard polls this file while jobs rewrite it.
+  await writeJson(project.statusFile, result).catch(() => {});
   return result;
 }
 

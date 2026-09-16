@@ -77,6 +77,15 @@ test('fixture site → import → approve → cache → check → dashboard', as
       return parseEval(evalResult(stdout));
     };
     await pw(cli, S, 'open', served.url);
+    // The dashboard's first render waits on the local server, which asks the remote origin
+    // for every file that is not there yet (up to a second each): wait for the steps table,
+    // then sample. What is under test is what the page shows during the job, not how fast.
+    const rendered = async () => parseEval(evalResult((await pw(cli, S, 'eval',
+      "document.querySelectorAll('#steps tbody tr').length")).stdout));
+    for (let i = 0; i < 40 && !(await rendered()); i += 1) {
+      await new Promise((r) => { setTimeout(r, 250); });
+    }
+    assert.ok(await rendered(), 'the dashboard rendered the steps table');
     const working = workerMain(project, defaultIo);
     const samples = [];
     for (let i = 0; i < 6; i += 1) {

@@ -10,7 +10,9 @@ const START_TIMEOUT_MS = 30_000;
 
 const defaultIo = {
   spawn: (port, root) => {
-    const child = spawn('aem', ['up', '--no-open', '--port', String(port)], {
+    // No live-reload: the workers write files under migration/ all the time, and every
+    // change would reload the page (the dashboard polls what changes by itself).
+    const child = spawn('aem', ['up', '--no-open', '--no-livereload', '--port', String(port)], {
       cwd: root, detached: true, stdio: 'ignore',
     });
     child.unref();
