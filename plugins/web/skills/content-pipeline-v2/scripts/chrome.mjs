@@ -4,13 +4,14 @@
 // under migration/chrome/.captures/, then returns at once.
 // Usage: node chrome.mjs [--force] | status | stop   (from the project root)
 // A rerun captures only the pages without a capture; --force recaptures all.
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { projectOrigin, proxiedUrl, serveCache } from './lib/cache-server.mjs';
 import {
-  captureAll, pagesToCapture, readRun, startCapture, writeCaptureConfig,
+  captureAll, capturesDir, pagesToCapture, readRun, startCapture, writeCaptureConfig,
 } from './lib/chrome-capture.mjs';
+import { candidates, chromeCandidates } from './lib/chrome.mjs';
 import { freePort } from './lib/ports.mjs';
 import { resolveProject } from './lib/project.mjs';
 import { defaultIo, playwright, setupPaths } from './lib/warm-cli.mjs';
@@ -20,7 +21,9 @@ export const HELP = `chrome.mjs [--force]
 chrome.mjs status
     the capture run: state, done/total, failures
 chrome.mjs stop
-    end the worker after its current page`;
+    end the worker after its current page
+chrome.mjs candidates [--min-support 0.5]
+    dry run: recurring, stably placed elements over the captures, by support`;
 
 const WORKER_SCRIPT = fileURLToPath(import.meta.url);
 
@@ -54,8 +57,33 @@ export async function workerMain(project, argv, io = defaultIo) {
   }
 }
 
+/** Every stored capture. */
+export async function readCaptures(project) {
+  const dir = capturesDir(project);
+  const files = await readdir(dir).catch(() => []);
+  return Promise.all(files.filter((f) => f.endsWith('.json'))
+    .map((f) => readFile(path.join(dir, f), 'utf8').then(JSON.parse)));
+}
+
+function renderCandidates(list) {
+  const rows = list.map((c) => [
+    `${Math.round(c.support * 100)}%`.padStart(4), `d${c.depth}`, c.anchored.padEnd(6),
+    `y${c.bounds.y} h${c.bounds.height} bottom${c.bounds.bottomOffset}`.padEnd(26),
+    `${c.pages.length} pages`.padEnd(9), c.sample.selector,
+  ].join(' '));
+  return ['support depth anchor position                   pages     sample selector', ...rows]
+    .join('\n');
+}
+
 export async function main(argv, project, io = defaultIo) {
   if (argv.includes('--help') || argv[0] === 'help') return HELP;
+  if (argv[0] === 'candidates') {
+    const captures = await readCaptures(project);
+    if (!captures.length) throw new Error('no captures yet; run chrome.mjs first');
+    const i = argv.indexOf('--min-support');
+    const minSupport = i >= 0 ? Number(argv[i + 1]) : 0.5;
+    return renderCandidates(chromeCandidates(candidates(captures), { minSupport }));
+  }
   if (argv[0] === '--worker') return workerMain(project, argv, io);
   if (argv[0] === 'status') return (await readRun(project)) ?? { state: 'never run' };
   if (argv[0] === 'stop') {
