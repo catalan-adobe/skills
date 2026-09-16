@@ -33,14 +33,16 @@ export function fingerprint(node, depth = FINGERPRINT_DEPTH) {
 }
 
 /** Every node with its depth and parent fingerprint, for one capture. */
-export function walk(tree, pageHeight, depth = 0, parent = null, out = []) {
+export function walk(tree, pageHeight, depth = 0, ancestors = [], out = []) {
   const fp = fingerprint(tree);
   const { x, y, width, height } = tree.bounds;
   out.push({
-    fp, parent, depth, node: tree, y, height, width, x,
+    fp, parent: ancestors.at(-1) ?? null, ancestors, depth, node: tree, y, height, width, x,
     bottomOffset: pageHeight - (y + height),
   });
-  for (const child of tree.children ?? []) walk(child, pageHeight, depth + 1, fp, out);
+  for (const child of tree.children ?? []) {
+    walk(child, pageHeight, depth + 1, [...ancestors, fp], out);
+  }
   return out;
 }
 
@@ -75,8 +77,8 @@ export function candidates(captures, { tolerance = POSITION_TOLERANCE_PX } = {})
       for (const key of keys) {
         const entry = buckets.get(key) ?? {
           fp: n.fp, anchored: key.includes('|top:') ? 'top' : 'bottom', parent: n.parent,
-          depth: n.depth, occurrences: [], pages: new Set(), selectors: new Set(),
-          tags: new Set(), sample: null,
+          ancestors: n.ancestors, depth: n.depth, occurrences: [], pages: new Set(),
+          selectors: new Set(), tags: new Set(), sample: null,
         };
         if (entry.pages.has(capture.url)) continue; // a repeated card counts once per page
         entry.pages.add(capture.url);
@@ -96,7 +98,8 @@ export function candidates(captures, { tolerance = POSITION_TOLERANCE_PX } = {})
     const topSpread = spread(ys);
     const bottomSpread = spread(bottoms);
     return {
-      fp: e.fp, anchored: e.anchored, parent: e.parent, depth: e.depth, pages: [...e.pages],
+      fp: e.fp, anchored: e.anchored, parent: e.parent, ancestors: e.ancestors, depth: e.depth,
+      pages: [...e.pages],
       support: e.pages.size / total, tags: [...e.tags], selectors: [...e.selectors],
       bounds: {
         y: median(ys), height: median(e.occurrences.map((o) => o.height)),
@@ -104,7 +107,7 @@ export function candidates(captures, { tolerance = POSITION_TOLERANCE_PX } = {})
       },
       topSpread, bottomSpread,
       stable: e.anchored === 'top' ? topSpread <= tolerance : bottomSpread <= tolerance,
-      sample: e.sample,
+      sample: { ...e.sample, text: e.sample.node.text ?? '' },
     };
   });
   return dedupeAnchors(list).sort((a, b) => b.support - a.support || a.depth - b.depth);
