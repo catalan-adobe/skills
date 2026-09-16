@@ -51,7 +51,7 @@ migration/
   status.json     the runner's view of the steps, rewritten on every status/check
   urls/           scan.json · urls.json (the inventory) · urls.md · subsets/<prefix>.txt
   cache/          .page-cache/ · cache.md
-  chrome/         chrome.json · chrome.md · screenshots/ · .captures/
+  chrome/         chrome.json · chrome.md · screenshots/ · .captures/ (visual-tree store)
   .work/          scratch: npm installs, scan script, browser profiles (gitignored)
   REPORT.md       one ## <step> section per step that ran
 ```

@@ -105,11 +105,18 @@ approvals must be given again.
 Chrome — the parts of a page that stay the same from page to page and frame the content:
 the header(s) and footer(s). Detected, not interpreted.
 
-`chrome/.captures/<sha8>.json`
-: Written by the chrome worker: one page-tree capture per verified cached page (tree, text
-  form, nodeMap), rendered from the cache (gitignored).
-: Read by the detection, by `check chrome` (selectors are resolved against them) and by a
-  rerun, which captures only the pages without one.
+`chrome/.captures/<sha8>.json` — **the project's visual-tree store**
+: One page-tree capture per verified cached page: `url`, `capturedAt`, `minWidth`, `tree`
+  (nodes with tag, selector, id, className, bounds, children, `collapsed` chain, `fixed`),
+  `text` (the indented form), `nodeMap`, `rootBackground`. Rendered from the cache, never
+  from the site (gitignored; `<sha8>` = first 8 hex of sha256 of the URL).
+: Written by the chrome worker today, because chrome is its first consumer; the store is
+  not chrome's private file. Any later analysis of page structure (templates, sections)
+  reads the same captures instead of rendering again. When a second consumer arrives the
+  capture becomes its own step; until then `chrome.mjs` (rerun: only missing pages;
+  `--force`: all) is how the store is filled and refreshed after a page-tree change.
+: Read by the chrome detection, by `check chrome` (selectors resolved against them) and by
+  a rerun.
 
 `chrome/chrome.json`
 : Written by the chrome worker: per role (`header`, `footer`) the variants — members with
