@@ -481,6 +481,19 @@ export const CHECKS = Object.fromEntries(
   }),
 );
 
+/** Every selector a capture knows: each node's, plus the chain a collapsed node absorbed. */
+function captureSelectors(capture) {
+  const out = new Set();
+  const walk = (n) => {
+    if (n.selector) out.add(n.selector);
+    for (const c of n.collapsed ?? []) out.add(c.selector);
+    for (const c of n.children ?? []) walk(c);
+  };
+  if (capture.tree) walk(capture.tree);
+  for (const n of Object.values(capture.nodeMap ?? {})) out.add(n.selector);
+  return out;
+}
+
 /** `chrome` on disk: the run's phase while it is open, else the content check. */
 async function checkChromeOnDisk(project) {
   const run = await readRun(project);
@@ -497,10 +510,7 @@ async function checkChromeOnDisk(project) {
   for (const v of [...(r?.header ?? []), ...(r?.footer ?? [])]) {
     const capture = await readFile(captureFile(project, v.representative), 'utf8')
       .then(JSON.parse, () => null);
-    if (capture) {
-      selectors[v.representative] = new Set(Object.values(capture.nodeMap ?? {})
-        .map((n) => n.selector));
-    }
+    if (capture) selectors[v.representative] = captureSelectors(capture);
   }
   const result = checkChrome(files, { screenshots: shots, selectors });
   if (run?.state === 'failed') result.reasons.push(`chrome: the last run failed — ${run.error}`);

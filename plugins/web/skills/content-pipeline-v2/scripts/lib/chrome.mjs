@@ -43,7 +43,11 @@ export function structuralChildren(node) {
  * children down to `depth`. Text, bounds, hrefs and generated ids are left out on purpose.
  */
 export function fingerprint(node, depth = FINGERPRINT_DEPTH) {
-  const own = `${node.tag}#${stableId(node.id)}.${tokens(node.className).join('.')}`;
+  // A node page-tree collapsed carries the chain of elements it absorbed and may have taken
+  // the box of the innermost one; its identity is the outermost element, the same on every
+  // page however deep the collapse went.
+  const head = node.collapsed?.[0] ?? node;
+  const own = `${head.tag}#${stableId(head.id)}.${tokens(head.className).join('.')}`;
   const kids = depth > 0 ? structuralChildren(node).map((c) => fingerprint(c, depth - 1)) : [];
   return createHash('sha1').update(`${own}[${kids.join(',')}]`).digest('hex').slice(0, 12);
 }
@@ -101,6 +105,7 @@ export function candidates(captures, { tolerance = POSITION_TOLERANCE_PX } = {})
         entry.pages.add(capture.url);
         entry.occurrences.push(n);
         entry.selectors.add(n.node.selector);
+        for (const c of n.node.collapsed ?? []) entry.selectors.add(c.selector);
         entry.tags.add(n.node.tag);
         entry.sample ??= { url: capture.url, selector: n.node.selector, node: n.node };
         buckets.set(key, entry);

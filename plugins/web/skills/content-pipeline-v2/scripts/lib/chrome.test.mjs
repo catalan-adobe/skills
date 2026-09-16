@@ -136,3 +136,17 @@ test('two different elements with the same fingerprint at the top and the bottom
   assert.deepEqual(wrappers.map((c) => c.anchored).sort(), ['bottom', 'top'],
     'the nav wrapper and the footer wrapper share a fingerprint but are two candidates');
 });
+
+test('a collapsed node is identified by its outermost element, not by who owns the box', () => {
+  const chain = [
+    { tag: 'DIV', selector: 'div.wrap', className: 'experiencefragment sticky-nav' },
+    { tag: 'DIV', selector: '#topNav', id: 'topNav' },
+  ];
+  const asWrapper = el('DIV', 'experiencefragment sticky-nav', box(0, 53, 1280, 80), [],
+    { collapsed: chain });
+  const asNav = { ...el('DIV', '', box(0, 53, 1280, 80), [], { id: 'topNav', collapsed: chain }) };
+  assert.equal(fingerprint(asWrapper), fingerprint(asNav));
+  const plainWrapper = el('DIV', 'experiencefragment sticky-nav', box(0, 53, 1280, 80));
+  assert.equal(fingerprint(asWrapper), fingerprint(plainWrapper),
+    'identity is the outermost element, however deep the collapse went on this page');
+});

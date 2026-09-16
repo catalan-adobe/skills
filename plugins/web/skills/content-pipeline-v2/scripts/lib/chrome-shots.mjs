@@ -8,9 +8,11 @@ import { proxiedUrl } from './cache-server.mjs';
 export const shotsDir = (project) => path.join(project.step('chrome'), 'screenshots');
 export const OUTLINE = '4px solid #e00';
 
-/** One eval: which of the member's known selectors resolve here (count per selector). */
+/** One eval: per known selector, how many elements with a visible box it matches here. */
 export const resolveExpression = (selectors) => (
-  `JSON.stringify(${JSON.stringify(selectors)}.map((s) => document.querySelectorAll(s).length))`
+  `JSON.stringify(${JSON.stringify(selectors)}.map((s) => [...document.querySelectorAll(s)]`
+  + '.filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; })'
+  + '.length))'
 );
 
 /** One eval: outline every element the selectors match, scroll back to the top (the prep
@@ -30,7 +32,7 @@ const parse = (raw) => {
   return value;
 };
 
-/** The first of a member's selectors that matches exactly one element on this page. */
+/** The first of a member's selectors matching exactly one element with a box on this page. */
 export async function resolveMember(browser, member) {
   const selectors = [member.selector, ...member.selectors.filter((s) => s !== member.selector)];
   const counts = parse(await browser.eval(resolveExpression(selectors)));
