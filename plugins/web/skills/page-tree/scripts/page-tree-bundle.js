@@ -443,6 +443,10 @@ window.__visualTree = (() => {
     }
     while (node.children.length === 1) {
       const child = node.children[0];
+      const parentHasArea = node.bounds.width > 0 && node.bounds.height > 0;
+      if (parentHasArea && !isContainedIn(child.bounds, node.bounds)) {
+        break;
+      }
       node.collapsed = node.collapsed || [identityOf(node)];
       node.collapsed.push(...child.collapsed || [identityOf(child)]);
       if (!node.text && child.text) {
@@ -454,8 +458,7 @@ window.__visualTree = (() => {
       if (!node.background && child.background) {
         node.background = child.background;
       }
-      const parentHasArea = node.bounds.width > 0 && node.bounds.height > 0;
-      if (!parentHasArea || !isContainedIn(child.bounds, node.bounds)) {
+      if (!parentHasArea) {
         node.bounds = child.bounds;
         node.tag = child.tag;
         node.selector = child.selector;

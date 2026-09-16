@@ -8,7 +8,9 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('./page-tree-bundle.js', import.meta.url), 'utf8');
 const window = {};
 vm.runInNewContext(source, { window });
-const { collapseSingleChildren, pruneZeroHeightLeaves } = window.__visualTree;
+const {
+  collapseSingleChildren, promoteEscapedNodes, pruneZeroHeightLeaves,
+} = window.__visualTree;
 
 const node = (tag, selector, bounds, children = [], extra = {}) => ({
   tag, selector, bounds, children, ...extra,
@@ -36,7 +38,8 @@ test('a zero-height wrapper collapsing onto its visible child takes the child\'s
 test('a wrapper that contains its single child keeps its own box and identity', () => {
   const inner = node('DIV', 'div.inner', box(10, 10, 1260, 60), [], { className: 'inner' });
   const outer = node('DIV', 'div.outer', box(0, 0, 1280, 80), [inner], { className: 'outer' });
-  const body = node('BODY', 'body', box(0, 0, 1280, 1000), [outer, node('DIV', 'x', box(0, 80, 1280, 900))]);
+  const body = node('BODY', 'body', box(0, 0, 1280, 1000),
+    [outer, node('DIV', 'x', box(0, 80, 1280, 900))]);
   collapseSingleChildren(body);
   const [first] = body.children;
   assert.deepEqual(first.bounds, box(0, 0, 1280, 80));
@@ -44,13 +47,20 @@ test('a wrapper that contains its single child keeps its own box and identity', 
   assert.equal(first.className, 'outer');
 });
 
-test('a child escaping a non-empty parent also gives the collapsed node its box', () => {
-  const escaped = node('DIV', 'div.menu', box(0, 200, 1280, 400), [], { className: 'menu' });
-  const small = node('DIV', 'div.trigger', box(0, 0, 1280, 20), [escaped]);
-  const body = node('BODY', 'body', box(0, 0, 1280, 1000), [small, node('DIV', 'y', box(0, 20, 1280, 900))]);
+test('a child escaping a parent that has area is not collapsed: promotion lifts it', () => {
+  // A menu trigger with its dropdown overflowing below it: two visible things, not one.
+  const menu = node('DIV', 'div.menu', box(0, 20, 1280, 400), [], { className: 'menu' });
+  const trigger = node('DIV', 'div.trigger', box(0, 0, 1280, 20), [menu], { className: 'trigger' });
+  const body = node('BODY', 'body', box(0, 0, 1280, 1000),
+    [trigger, node('DIV', 'y', box(0, 420, 1280, 500))]);
   collapseSingleChildren(body);
-  assert.deepEqual(body.children[0].bounds, box(0, 200, 1280, 400));
-  assert.equal(body.children[0].selector, 'div.menu');
+  assert.equal(body.children[0].selector, 'div.trigger', 'the trigger keeps its own box');
+  assert.deepEqual(body.children[0].bounds, box(0, 0, 1280, 20));
+  assert.equal(body.children[0].children[0].selector, 'div.menu', 'and its child');
+  const promoted = promoteEscapedNodes(body);
+  assert.deepEqual([...promoted].map((n) => n.selector), ['div.menu'],
+    'the escaped dropdown is promoted to the root as an overlay');
+  assert.equal(body.children.length, 3);
 });
 
 test('a collapsed node lists every element it absorbed, whichever one owns the box', () => {
@@ -58,7 +68,8 @@ test('a collapsed node lists every element it absorbed, whichever one owns the b
   const contained = node('DIV', 'div.wrap', box(0, 53, 1280, 80), [nav], { className: 'wrap' });
   const empty = node('DIV', 'div.wrap', box(0, 53, 1280, 0), [nav], { className: 'wrap' });
   for (const wrapper of [contained, empty]) {
-    const body = node('BODY', 'body', box(0, 0, 1280, 1000), [wrapper, node('DIV', 'z', box(0, 133, 1280, 800))]);
+    const body = node('BODY', 'body', box(0, 0, 1280, 1000),
+      [wrapper, node('DIV', 'z', box(0, 133, 1280, 800))]);
     collapseSingleChildren(body);
     assert.deepEqual(JSON.parse(JSON.stringify(body.children[0].collapsed)), [
       { tag: 'DIV', selector: 'div.wrap', className: 'wrap' },
@@ -75,7 +86,8 @@ test('nested collapses keep the whole chain, and the chain does not depend on he
     const grid = node('DIV', 'div.grid', box(0, 53, 1280, h), [nav], { className: 'grid' });
     const cmp = node('DIV', 'div.cmp', box(0, 53, 1280, h), [grid], { className: 'cmp' });
     const wrap = node('DIV', 'div.wrap', box(0, 53, 1280, h), [cmp], { className: 'wrap' });
-    const body = node('BODY', 'body', box(0, 0, 1280, 1000), [wrap, node('DIV', 'z', box(0, 133, 1280, 800))]);
+    const body = node('BODY', 'body', box(0, 0, 1280, 1000),
+      [wrap, node('DIV', 'z', box(0, 133, 1280, 800))]);
     collapseSingleChildren(body);
     return body.children[0];
   };
