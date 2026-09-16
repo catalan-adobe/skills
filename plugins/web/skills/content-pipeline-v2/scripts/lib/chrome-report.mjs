@@ -1,9 +1,9 @@
 // The chrome step's outputs: detection over the captures, screenshots, chrome.json,
 // chrome.md and the REPORT.md section.
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { candidates } from './chrome.mjs';
-import { capturesDir } from './chrome-capture.mjs';
+import { readCaptures } from './capture.mjs';
 import { detectChrome } from './chrome-regions.mjs';
 import { screenshotVariants } from './chrome-shots.mjs';
 import { readInventory } from './inventory.mjs';
@@ -12,18 +12,10 @@ import { upsertSection } from './project.mjs';
 export const chromeJson = (project) => path.join(project.step('chrome'), 'chrome.json');
 export const chromeMd = (project) => path.join(project.step('chrome'), 'chrome.md');
 
-/** Every stored capture. */
-export async function readCaptures(project) {
-  const dir = capturesDir(project);
-  const files = await readdir(dir).catch(() => []);
-  return Promise.all(files.filter((f) => f.endsWith('.json'))
-    .map((f) => readFile(path.join(dir, f), 'utf8').then(JSON.parse)));
-}
-
 /** Detection over the captures on disk, labelled with the inventory's groups. */
 export async function detect(project, { consentSelectors = [] } = {}) {
   const captures = await readCaptures(project);
-  if (!captures.length) throw new Error('no captures under chrome/.captures; run chrome.mjs');
+  if (!captures.length) throw new Error('the visual-tree store is empty; run capture.mjs');
   const inventory = await readInventory(project.step('urls'));
   const groups = new Map(inventory.map((r) => [r.url, r.group]));
   return detectChrome(candidates(captures), {

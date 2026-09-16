@@ -51,7 +51,8 @@ migration/
   status.json     the runner's view of the steps, rewritten on every status/check
   urls/           scan.json · urls.json (the inventory) · urls.md · subsets/<prefix>.txt
   cache/          .page-cache/ · cache.md
-  chrome/         chrome.json · chrome.md · screenshots/ · .captures/ (visual-tree store)
+  capture/        <sha8>.json (the visual-tree store) · captures.md
+  chrome/         chrome.json · chrome.md · screenshots/
   .work/          scratch: npm installs, scan script, browser profiles (gitignored)
   REPORT.md       one ## <step> section per step that ran
 ```
@@ -88,7 +89,8 @@ Each step has a brief in `steps/<id>.md`: hand that one file to whoever runs the
 | `scan` | low* | site-scan | `urls/scan.json` → `urls/urls.json`, `urls/urls.md` |
 | `prep-verify` | medium | page-prep | `prep/page-prep.json`, `prep/prep.md` |
 | `cache` | low | page-cache (via `warm.mjs`) | `cache/cache.md`, `cache/.page-cache/` |
-| `chrome` | medium | page-tree (via `chrome.mjs`) | `chrome/chrome.json`, `chrome/chrome.md` |
+| `capture` | low | page-tree (via `capture.mjs`) | `capture/captures.md` + the store |
+| `chrome` | medium | — (`chrome.mjs`) | `chrome/chrome.json`, `chrome/chrome.md` |
 | `report` | medium | — | `REPORT.md` |
 
 \* medium when the site has no usable sitemap. `cache` also needs the operator's yes
@@ -97,16 +99,21 @@ queues the approved selection as a job and returns; one detached worker drives t
 and the browser and writes the artefacts. Caching happens in phases — approve a subset, run
 `warm.mjs`, keep working; approve the next, run `warm.mjs` again, it queues behind.
 
+`capture` fills the visual-tree store: `scripts/capture.mjs` renders every cached page
+from the cache in the background and stores its page-tree capture under `capture/`; every
+later analysis of page structure reads the store instead of rendering again. After each
+cache phase the store is behind the cache and the step is `ready` again.
+
 `chrome` finds the site's chrome — the parts of a page that stay the same from page to
 page and frame the content: header(s) and footer(s), later perhaps other static elements.
-`scripts/chrome.mjs` runs in the background too: it renders every cached page from the
-cache, detects the elements that recur at a stable position, screenshots each variant and
-writes `chrome/`. Detection only; what a header means is another expert's work.
+`scripts/chrome.mjs` runs in the background too: over the store it detects the elements
+that recur at a stable position, screenshots each variant and writes `chrome/`. Detection
+only; what a header means is another expert's work.
 
 Runner commands: `node $SKILL/scripts/status.mjs --help` lists every command with its
 arguments in one line each; `node $SKILL/scripts/warm.mjs --help` the caching ones,
-`node $SKILL/scripts/chrome.mjs --help` the chrome ones. The
-help is generated from the command table, so it is always current; the briefs name the
+`capture.mjs --help` and `chrome.mjs --help` theirs. The help is generated from the
+command table, so it is always current; the briefs name the
 commands a step needs.
 
 ## Harness ladder

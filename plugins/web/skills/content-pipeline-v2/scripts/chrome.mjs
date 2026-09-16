@@ -1,91 +1,56 @@
 #!/usr/bin/env node
-// The chrome step, in the background: `chrome.mjs` starts one detached worker that renders
-// every verified cached page through the offline cache server and stores its visual tree
-// under migration/chrome/.captures/, then returns at once.
-// Usage: node chrome.mjs [--force] | status | stop   (from the project root)
-// A rerun captures only the pages without a capture; --force recaptures all.
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+// The chrome step, in the background: `chrome.mjs` starts one detached worker that detects
+// header and footer over the visual-tree store (capture/), screenshots each variant on its
+// representative page and writes chrome/, then returns at once.
+// Usage: node chrome.mjs | status | stop | candidates   (from the project root)
+import { readdir } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { projectOrigin, proxiedUrl, serveCache } from './lib/cache-server.mjs';
 import {
-  captureAll, pagesToCapture, readRun, runFile, startCapture, writeCaptureConfig,
-} from './lib/chrome-capture.mjs';
+  capturesDir, readCaptures, readRun, runFile, startWorker,
+} from './lib/capture.mjs';
+import { prepExpression } from './capture.mjs';
 import { candidates, chromeCandidates } from './lib/chrome.mjs';
-import { analyse, readCaptures } from './lib/chrome-report.mjs';
+import { analyse } from './lib/chrome-report.mjs';
 import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
 import { resolveProject } from './lib/project.mjs';
 import { defaultIo, playwright, sessionName, setupPaths } from './lib/warm-cli.mjs';
-import { pageExpression } from './lib/warm.mjs';
 
-export const HELP = `chrome.mjs [--force] [--min-width 900]
-    in the background: render every verified cached page, detect header and footer, take
-    the screenshots, write chrome/chrome.json, chrome.md and the report section;
-    --min-width: elements narrower than this are folded into their parent in the capture
+export const HELP = `chrome.mjs
+    in the background: detect header and footer over the visual-tree store, take the
+    screenshots, write chrome/chrome.json, chrome.md and the report section
 chrome.mjs status
-    the capture run: state, done/total, failures
+    the run: state, failures
 chrome.mjs stop
-    end the worker after its current page
+    end the worker
 chrome.mjs candidates [--min-support 0.5]
-    dry run: recurring, stably placed elements over the captures, by support`;
+    dry run: recurring, stably placed elements over the store, by support`;
 
 const WORKER_SCRIPT = fileURLToPath(import.meta.url);
+const KIND = 'chrome';
 
-/** Where setup.json says the page-tree bundle is. */
-export async function bundlePath(project) {
-  const setup = JSON.parse(await readFile(project.setupFile, 'utf8'));
-  const skill = setup.skills?.['page-tree']?.path;
-  if (!skill) {
-    throw new Error('setup.json lacks the page-tree skill; run status.mjs setup --install');
-  }
-  return path.join(path.dirname(skill), 'scripts', 'page-tree-bundle.js');
-}
-
-/** The prep step's recipe: hide rules and scroll fix, applied before every capture. */
-async function prepExpression(project) {
-  const recipe = await readFile(path.join(project.step('prep'), 'page-prep.json'), 'utf8')
-    .then(JSON.parse, () => null);
-  return {
-    prepare: recipe ? pageExpression(recipe) : null,
-    consentSelectors: (recipe?.overlays ?? []).map((o) => o.selector).filter(Boolean),
-  };
-}
-
-/**
- * The worker: the offline server, one browser session with the bundle, every page; then
- * detection, screenshots and the outputs. run.json says which phase it is in.
- */
-export async function workerMain(project, argv, io = defaultIo) {
+/** The worker: the offline server, one browser session, detection, screenshots, outputs. */
+export async function workerMain(project, io = defaultIo) {
   const { proxyScript, cli } = await setupPaths(project);
-  const bundle = await bundlePath(project);
   const origin = await projectOrigin(project);
   const server = await serveCache(project, proxyScript, freePort);
-  const config = await writeCaptureConfig(project, server.browserConfig, bundle);
-  const urls = await pagesToCapture(project, { force: argv.includes('--force') });
   const { prepare, consentSelectors } = await prepExpression(project);
-  let stopping = false;
-  io.onSignal(() => { stopping = true; });
-  const browser = playwright(cli, io, project.work, sessionName(project, 'chrome'));
-  await browser.open(proxiedUrl(origin, urls[0] ?? origin, server.port), { config });
+  const browser = playwright(cli, io, project.work, sessionName(project, KIND));
+  await browser.open(proxiedUrl(origin, origin, server.port), { config: server.browserConfig });
   try {
+    await writeJson(runFile(project, KIND), { ...(await readRun(project, undefined, KIND)),
+      state: 'analysing' });
     const port = server.port;
-    const i = argv.indexOf('--min-width');
-    const minWidth = i >= 0 ? Number(argv[i + 1]) : undefined;
-    const run = await captureAll(project, { browser, origin, port, prepare, minWidth },
-      { urls, shouldStop: () => stopping });
-    if (run.state !== 'done') return run;
-    await writeJson(runFile(project), { ...run, state: 'analysing' });
     const result = await analyse(project, { browser, origin, port, prepare, consentSelectors });
     const summary = {
       header: result.header.length, footer: result.footer.length,
       defects: [...result.header, ...result.footer].filter((v) => v.screenshotError).length,
     };
-    await writeJson(runFile(project), { ...run, state: 'done', analysed: summary });
-    return { ...run, analysed: summary };
+    await writeJson(runFile(project, KIND), { state: 'done', analysed: summary });
+    return { state: 'done', analysed: summary };
   } catch (err) {
-    const run = await readRun(project);
-    await writeJson(runFile(project), { ...run, state: 'failed', error: err.message });
+    await writeJson(runFile(project, KIND), { state: 'failed', error: err.message });
     throw err;
   } finally {
     await browser.close().catch(() => {});
@@ -106,23 +71,28 @@ export async function main(argv, project, io = defaultIo) {
   if (argv.includes('--help') || argv[0] === 'help') return HELP;
   if (argv[0] === 'candidates') {
     const captures = await readCaptures(project);
-    if (!captures.length) throw new Error('no captures yet; run chrome.mjs first');
+    if (!captures.length) throw new Error('no captures yet; run capture.mjs first');
     const i = argv.indexOf('--min-support');
     const minSupport = i >= 0 ? Number(argv[i + 1]) : 0.5;
     return renderCandidates(chromeCandidates(candidates(captures), { minSupport }));
   }
-  if (argv[0] === '--worker') return workerMain(project, argv, io);
-  if (argv[0] === 'status') return (await readRun(project)) ?? { state: 'never run' };
-  if (argv[0] === 'stop') {
-    const run = await readRun(project);
-    if (run?.state !== 'running') return { stopped: false, reason: 'no capture is running' };
-    io.kill(run.pid, 'SIGTERM');
-    return { stopped: true, pid: run.pid, note: 'the worker finishes its current page' };
+  if (argv[0] === '--worker') return workerMain(project, io);
+  if (argv[0] === 'status') {
+    return (await readRun(project, undefined, KIND)) ?? { state: 'never run' };
   }
-  const mw = argv.indexOf('--min-width');
-  return startCapture(project, WORKER_SCRIPT, {
-    force: argv.includes('--force'), minWidth: mw >= 0 ? Number(argv[mw + 1]) : null,
-  }, io);
+  if (argv[0] === 'stop') {
+    const run = await readRun(project, undefined, KIND);
+    if (!['running', 'analysing'].includes(run?.state)) {
+      return { stopped: false, reason: 'no chrome run is open' };
+    }
+    io.kill(run.pid, 'SIGTERM');
+    return { stopped: true, pid: run.pid };
+  }
+  const stored = await readdir(capturesDir(project)).catch(() => []);
+  if (!stored.some((f) => f.endsWith('.json'))) {
+    throw new Error('the visual-tree store is empty; run capture.mjs first');
+  }
+  return startWorker(project, KIND, WORKER_SCRIPT, [], {}, io);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

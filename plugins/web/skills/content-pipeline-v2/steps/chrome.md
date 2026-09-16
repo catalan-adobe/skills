@@ -9,9 +9,9 @@ Everything here comes from the local cache, never the site: `references/local-ca
 
 ## Inputs
 
-- `migration/cache/` and `urls/urls.json` (verified pages), `prep/page-prep.json` (hide
-  rules), `setup.json` (page-tree, page-cache, playwright-cli) — all read by the script.
-- Sibling `.agents/skills/page-tree/SKILL.md`: the capture; read only if the run `failed`.
+- `migration/capture/` (the visual-tree store, filled by the `capture` step),
+  `urls/urls.json` (groups), `prep/page-prep.json` (hide rules), `setup.json` (page-cache,
+  playwright-cli) — all read by the script.
 
 ## Method
 
@@ -21,17 +21,16 @@ Everything here comes from the local cache, never the site: `references/local-ca
    node <skill>/scripts/chrome.mjs
    ```
 
-   One detached worker starts the offline cache server, renders every verified cached page
-   in one browser session (proxy only, the prep step's hide rules applied) and stores its
-   visual tree under `chrome/.captures/`; then it detects the elements that recur at a
-   stable position, groups them into header and footer variants, screenshots each variant
-   on its representative page and writes `chrome/chrome.json`, `chrome/chrome.md` and the
-   `## chrome` section of `REPORT.md`. About one second per page.
+   One detached worker detects, over the store, the elements that recur at a stable
+   position, groups them into header and footer variants, starts the offline cache server
+   and one browser session (proxy only, the prep step's hide rules applied) to screenshot
+   each variant on its representative page, and writes `chrome/chrome.json`,
+   `chrome/chrome.md` and the `## chrome` section of `REPORT.md`. A few minutes.
 2. Do not wait for it, poll it in a loop, or read the captures. Tell the operator the run
    is on and stop, or continue with another `ready` step. `status.mjs` shows `chrome` as
-   `running` with `37/97 pages captured` or `analysing captures`; `chrome.mjs status` has
-   the details; `chrome.mjs stop` ends the worker after its current page; a rerun captures
-   only the pages without a capture and refreshes the outputs. `--force` recaptures all.
+   `running`; `chrome.mjs status` has the details; `chrome.mjs stop` ends the worker. A
+   rerun refreshes the outputs from the store — after a new cache phase run `capture.mjs`
+   first, or the new pages are not seen.
 3. When `status.mjs` shows `chrome` as `done`, open `chrome/chrome.md` and look at the
    **full screenshot of every variant** (members are outlined in red). Confirm that the
    outlined regions are the header or footer, or note what is wrong — a member that is

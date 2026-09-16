@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { openWork, unfinished } from './jobs.mjs';
-import { captureFile, readRun } from './chrome-capture.mjs';
+import { captureFile, readRun, storeStatus } from './capture.mjs';
 import { STEPS } from './steps.mjs';
 import { detect, missingReasons } from './setup.mjs';
 import { relativeSegments, scopeOf } from './urls.mjs';
@@ -451,6 +451,7 @@ export async function resolveSelection(project) {
 export const CHECKS = Object.fromEntries(
   STEPS.map((step) => {
     if (step.id === 'setup') return [step.id, checkSetup];
+    if (step.id === 'capture') return [step.id, checkCaptureOnDisk];
     const contentCheck = CONTENT_CHECKS[step.id];
     if (!contentCheck) throw new Error(`Step "${step.id}" has no done-check`);
     if (step.id === 'cache') {
@@ -494,12 +495,39 @@ function captureSelectors(capture) {
   return out;
 }
 
+/**
+ * `capture` on disk: the run's progress while it is open; else every verified cached page
+ * must have a capture at the run's min-width and captures.md must be there. Verified pages
+ * without a capture (a cache phase since the last run) are named: the store is behind.
+ */
+async function checkCaptureOnDisk(project) {
+  const run = await readRun(project);
+  if (run && ['queued', 'running'].includes(run.state)) {
+    const label = `${run.done ?? 0}/${run.total ?? '?'} pages captured`;
+    return { pass: false, running: label, reasons: [`capture: ${label}; capture.mjs status`] };
+  }
+  const reasons = [];
+  if (run?.state === 'failed') reasons.push(`capture: the last run failed — ${run.error}`);
+  const store = await storeStatus(project, run?.minWidth ?? undefined);
+  if (store.verified === 0) reasons.push('capture: no verified cached page to capture');
+  if (store.missing.length) {
+    reasons.push(`capture: ${store.missing.length} verified pages without a capture — the `
+      + 'store is behind the cache: capture.mjs');
+  }
+  if (store.stale.length) {
+    reasons.push(`capture: ${store.stale.length} pages captured at another min-width than `
+      + `${store.minWidth}: capture.mjs`);
+  }
+  const files = await loadFiles(project);
+  if (!files['capture/captures.md']) reasons.push('capture: capture/captures.md missing');
+  return { pass: !reasons.length, reasons };
+}
+
 /** `chrome` on disk: the run's phase while it is open, else the content check. */
 async function checkChromeOnDisk(project) {
-  const run = await readRun(project);
+  const run = await readRun(project, undefined, 'chrome');
   if (run && ['queued', 'running', 'analysing'].includes(run.state)) {
-    const label = run.state === 'analysing'
-      ? 'analysing captures' : `${run.done ?? 0}/${run.total ?? '?'} pages captured`;
+    const label = 'detecting and screenshotting';
     return { pass: false, running: label, reasons: [`chrome: ${label}; chrome.mjs status`] };
   }
   const files = await loadFiles(project);

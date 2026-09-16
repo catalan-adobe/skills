@@ -100,23 +100,28 @@ approvals must be given again.
   selections with `cached` or `failed`, its `kind` and the selection it came with.
 : Read by `check cache` and `report`.
 
+## capture/
+
+`capture/<sha8>.json` — **the project's visual-tree store**
+: One page-tree capture per verified cached page: `url`, `capturedAt`, `minWidth`, `tree`
+  (nodes with tag, selector, id, className, bounds, children, `collapsed` chain, `fixed`),
+  `text` (the indented form), `nodeMap`, `rootBackground`. Rendered from the cache, never
+  from the site (gitignored; `<sha8>` = first 8 hex of sha256 of the URL). Default
+  min-width 300 px; a capture at another width is stale and redone by the next run.
+: Written by the capture worker (`capture.mjs`; rerun: missing and stale pages only;
+  `--force`: all). Every analysis of page structure reads the store instead of rendering
+  again.
+: Read by the chrome detection, by `check chrome` (selectors resolved against them), by
+  `check capture` (the store against the cache) and by later steps.
+
+`capture/captures.md`
+: Written by the capture worker at the end of a run: verified, captured, missing, stale and
+  failed pages. Read by `check capture` and the operator.
+
 ## chrome/
 
 Chrome — the parts of a page that stay the same from page to page and frame the content:
 the header(s) and footer(s). Detected, not interpreted.
-
-`chrome/.captures/<sha8>.json` — **the project's visual-tree store**
-: One page-tree capture per verified cached page: `url`, `capturedAt`, `minWidth`, `tree`
-  (nodes with tag, selector, id, className, bounds, children, `collapsed` chain, `fixed`),
-  `text` (the indented form), `nodeMap`, `rootBackground`. Rendered from the cache, never
-  from the site (gitignored; `<sha8>` = first 8 hex of sha256 of the URL).
-: Written by the chrome worker today, because chrome is its first consumer; the store is
-  not chrome's private file. Any later analysis of page structure (templates, sections)
-  reads the same captures instead of rendering again. When a second consumer arrives the
-  capture becomes its own step; until then `chrome.mjs` (rerun: only missing pages;
-  `--force`: all) is how the store is filled and refreshed after a page-tree change.
-: Read by the chrome detection, by `check chrome` (selectors resolved against them) and by
-  a rerun.
 
 `chrome/chrome.json`
 : Written by the chrome worker: per role (`header`, `footer`) the variants — members with
@@ -159,11 +164,15 @@ the header(s) and footer(s). Detected, not interpreted.
   (see `local-cache.md`). Read by every `cache` verb that needs the server, by `status`
   (the cache server line) and by `cache stop`.
 
-`.work/chrome/run.json`, `.work/chrome/worker.log`, `.work/chrome/browser-config.json`
-: Written by `chrome.mjs`: the capture run's state (`queued|running|analysing|done|stopped|
-  failed`, done/total, current page, failures), the worker's output, and the session config
-  (cache browser config plus the page-tree bundle). Read by `chrome.mjs status|stop` and
-  `check chrome` (the running label).
+`.work/capture/run.json`, `.work/capture/worker.log`, `.work/capture/browser-config.json`
+: Written by `capture.mjs`: the run's state (`queued|running|done|stopped|failed`,
+  done/total, current page, min-width, failures), the worker's output, and the session
+  config (cache browser config plus the page-tree bundle). Read by `capture.mjs
+  status|stop` and `check capture` (the running label).
+
+`.work/chrome/run.json`, `.work/chrome/worker.log`
+: Written by `chrome.mjs`: the run's state (`queued|running|analysing|done|failed`) and
+  the worker's output. Read by `chrome.mjs status|stop` and `check chrome`.
 
 `.work/` (anything else)
 : Browser profiles and scratch from any step; read only by the step that wrote it.

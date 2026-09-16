@@ -209,7 +209,7 @@ function renderChrome(chrome) {
   const panel = $('#chrome .panel');
   if (!chrome) {
     panel.innerHTML = '<p class="muted">No <code>chrome/chrome.json</code> yet — '
-      + '<code>chrome.mjs</code> after the cache step.</p>';
+      + '<code>chrome.mjs</code> after the capture step.</p>';
     return;
   }
   const role = (name) => (chrome[name].length

@@ -6,9 +6,10 @@ import path from 'node:path';
 import { resolveProject, writeProject } from './project.mjs';
 import { writeInventory } from './inventory.mjs';
 import {
-  MAX_CONSECUTIVE_FAILURES, captureAll, captureFile, capturesDir, pagesToCapture, readRun,
-  runFile, startCapture, writeCaptureConfig,
-} from './chrome-capture.mjs';
+  MAX_CONSECUTIVE_FAILURES, MIN_WIDTH, captureAll, captureFile, capturesDir, pagesToCapture,
+  readRun, runFile, startCapture, startWorker, storeStatus, writeCaptureConfig,
+  writeCapturesMd,
+} from './capture.mjs';
 
 const ORIGIN = 'https://site.example';
 const page = (n) => `${ORIGIN}/p${n}.html`;
@@ -53,9 +54,33 @@ test('pagesToCapture lists verified pages only, minus those already captured', a
   assert.deepEqual(await pagesToCapture(p), [page(1), page(2), page(3)],
     'the binary and the unverified page are left out');
   await mkdir(capturesDir(p), { recursive: true });
-  await writeFile(captureFile(p, page(2)), '{}');
+  await writeFile(captureFile(p, page(2)), JSON.stringify({ url: page(2), minWidth: MIN_WIDTH }));
   assert.deepEqual(await pagesToCapture(p), [page(1), page(3)]);
   assert.deepEqual(await pagesToCapture(p, { force: true }), [page(1), page(2), page(3)]);
+});
+
+test('a capture at another min-width is stale: listed by storeStatus, recaptured', async () => {
+  const p = await project();
+  await mkdir(capturesDir(p), { recursive: true });
+  await writeFile(captureFile(p, page(1)), JSON.stringify({ url: page(1), minWidth: 900 }));
+  await writeFile(captureFile(p, page(2)), JSON.stringify({ url: page(2), minWidth: 300 }));
+  const status = await storeStatus(p, 300);
+  assert.deepEqual([status.verified, status.captured, status.missing, status.stale],
+    [3, 1, [page(3)], [page(1)]]);
+  assert.deepEqual(await pagesToCapture(p, { minWidth: 300 }), [page(3), page(1)]);
+  assert.deepEqual(await pagesToCapture(p, { minWidth: 900 }), [page(3), page(2)]);
+});
+
+test('captures.md states the store against the cache and the failures', async () => {
+  const p = await project(2);
+  const run = await captureAll(p, { browser: fakeBrowser({ failOn: ['p2'] }), origin: ORIGIN,
+    port: 1 }, { urls: [page(1), page(2)] });
+  assert.equal(run.failed.length, 1);
+  await writeCapturesMd(p, { now: () => new Date('2026-01-02T03:04:05Z') });
+  const md = await readFile(path.join(capturesDir(p), 'captures.md'), 'utf8');
+  assert.match(md, /Captured 2026-01-02T03:04Z at min-width 300 px/);
+  assert.match(md, /verified cached pages: 2\n- captured at 300 px: 1\n- without a capture: 1/);
+  assert.match(md, /failed in the last run: 1\n {2}- https:\/\/site.example\/p2.html — /);
 });
 
 test('captureAll stores one capture per page through the proxy and records progress', async () => {
@@ -119,30 +144,35 @@ test('startCapture spawns one detached worker, refuses while one runs, and repor
       spawn: (cmd, args) => { spawned.push(args); return { pid: 4242, unref() {} }; },
       alive: (pid) => pid === 4242,
     };
-    const first = await startCapture(p, '/skill/chrome.mjs', { force: false }, io);
-    assert.deepEqual(first, { started: true, pid: 4242, total: 3 });
-    assert.deepEqual(spawned[0], ['/skill/chrome.mjs', '--worker']);
-    const second = await startCapture(p, '/skill/chrome.mjs', {}, io);
+    const first = await startCapture(p, '/skill/capture.mjs', { force: false }, io);
+    assert.deepEqual([first.started, first.pid, first.total], [true, 4242, 3]);
+    assert.deepEqual(spawned[0], ['/skill/capture.mjs', '--worker', '--min-width', '300']);
+    const second = await startCapture(p, '/skill/capture.mjs', {}, io);
     assert.equal(second.started, false);
     assert.equal(second.run.state, 'running');
     assert.equal(spawned.length, 1);
     const gone = await readRun(p, () => false);
     assert.equal(gone.state, 'interrupted');
-    const restarted = await startCapture(p, '/skill/chrome.mjs', { force: true },
+    const restarted = await startCapture(p, '/skill/capture.mjs', { force: true },
       { ...io, alive: () => false });
     assert.equal(restarted.started, true);
-    assert.deepEqual(spawned[1], ['/skill/chrome.mjs', '--worker', '--force']);
+    assert.deepEqual(spawned[1],
+      ['/skill/capture.mjs', '--worker', '--force', '--min-width', '300']);
   });
 
-test('startCapture with every page captured still runs the worker (for the analysis)', async () => {
+test('startWorker keeps one run per kind: a chrome run does not block a capture run', async () => {
   const p = await project(1);
-  await mkdir(capturesDir(p), { recursive: true });
-  await writeFile(captureFile(p, page(1)), '{}');
   const spawned = [];
-  const out = await startCapture(p, '/s', {}, {
-    spawn: (cmd, args) => { spawned.push(args); return { pid: 1, unref() {} }; }, alive: () => true,
-  });
-  assert.deepEqual([out.started, out.total, spawned.length], [true, 0, 1]);
+  const io = {
+    spawn: (cmd, args) => { spawned.push(args); return { pid: 7, unref() {} }; }, alive: () => true,
+  };
+  const chrome = await startWorker(p, 'chrome', '/skill/chrome.mjs', [], {}, io);
+  assert.deepEqual([chrome.started, spawned[0]], [true, ['/skill/chrome.mjs', '--worker']]);
+  assert.equal((await readRun(p, io.alive, 'chrome')).state, 'running');
+  assert.equal(await readRun(p, io.alive, 'capture'), null);
+  const again = await startWorker(p, 'chrome', '/skill/chrome.mjs', [], {}, io);
+  assert.equal(again.started, false);
+  assert.equal((await startCapture(p, '/skill/capture.mjs', {}, io)).started, true);
 });
 
 test('the capture config adds the bundle to the cache browser config', async () => {
@@ -176,10 +206,10 @@ test('the prep expression runs before the capture and the page is scrolled back 
 test('--min-width reaches the worker and the capture; the capture records it', async () => {
   const p = await project(1);
   const spawned = [];
-  await startCapture(p, '/s', { minWidth: 300 }, {
+  await startCapture(p, '/s', { minWidth: 600 }, {
     spawn: (cmd, args) => { spawned.push(args); return { pid: 1, unref() {} }; }, alive: () => true,
   });
-  assert.deepEqual(spawned[0], ['/s', '--worker', '--min-width', '300']);
+  assert.deepEqual(spawned[0], ['/s', '--worker', '--min-width', '600']);
   const browser = fakeBrowser();
   const evals = [];
   browser.eval = async (expr) => {
