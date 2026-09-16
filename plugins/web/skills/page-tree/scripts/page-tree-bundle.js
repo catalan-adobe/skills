@@ -330,7 +330,7 @@ window.__visualTree = (() => {
       node.id = element.id;
     }
     if (element.classList.length > 0) {
-      node.className = element.classList[0];
+      node.className = element.className;
     }
     const role = element.getAttribute("role");
     if (role) {
@@ -443,6 +443,8 @@ window.__visualTree = (() => {
     }
     while (node.children.length === 1) {
       const child = node.children[0];
+      node.collapsed = node.collapsed || [identityOf(node)];
+      node.collapsed.push(...child.collapsed || [identityOf(child)]);
       if (!node.text && child.text) {
         node.text = child.text;
       }
@@ -452,8 +454,25 @@ window.__visualTree = (() => {
       if (!node.background && child.background) {
         node.background = child.background;
       }
+      const parentHasArea = node.bounds.width > 0 && node.bounds.height > 0;
+      if (!parentHasArea || !isContainedIn(child.bounds, node.bounds)) {
+        node.bounds = child.bounds;
+        node.tag = child.tag;
+        node.selector = child.selector;
+        if (child.id) node.id = child.id;
+        else delete node.id;
+        if (child.className) node.className = child.className;
+        else delete node.className;
+        if (child.role) node.role = child.role;
+      }
       node.children = child.children;
     }
+  }
+  function identityOf(node) {
+    const id = { tag: node.tag, selector: node.selector };
+    if (node.id) id.id = node.id;
+    if (node.className) id.className = node.className;
+    return id;
   }
   function pruneZeroHeightLeaves(node) {
     for (const child of node.children) {
