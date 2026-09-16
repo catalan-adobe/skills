@@ -31,6 +31,7 @@ window.__visualTree = (() => {
     isContainedIn: () => isContainedIn,
     isDefaultBackground: () => isDefaultBackground,
     parseRgb: () => parseRgb,
+    processTree: () => processTree,
     promoteEscapedNodes: () => promoteEscapedNodes,
     pruneZeroHeightLeaves: () => pruneZeroHeightLeaves,
     resolvePageBackground: () => resolvePageBackground,
@@ -230,14 +231,18 @@ window.__visualTree = (() => {
     }
     return void 0;
   }
-  function captureVisualTree(minWidth = 900) {
-    const root = buildVisualNode(document.body, minWidth);
+  function processTree(root) {
     collapseSingleChildren(root);
     pruneZeroHeightLeaves(root);
     const promotedToRoot = promoteEscapedNodes(root);
     const nodeMap = {};
     assignPositionalIds(root, "r", nodeMap);
     enrichOverlayMetadata(root, nodeMap, promotedToRoot);
+    return { root, nodeMap, promotedToRoot };
+  }
+  function captureVisualTree(minWidth = 900) {
+    const built = buildVisualNode(document.body, minWidth);
+    const { root, nodeMap } = processTree(built);
     const bodyBg = window.getComputedStyle(document.body).backgroundColor;
     const htmlBg = window.getComputedStyle(document.documentElement).backgroundColor;
     const rootBackground = bodyBg && bodyBg !== "rgba(0, 0, 0, 0)" && bodyBg !== "transparent" ? bodyBg : htmlBg && htmlBg !== "rgba(0, 0, 0, 0)" && htmlBg !== "transparent" ? htmlBg : "rgb(255, 255, 255)";

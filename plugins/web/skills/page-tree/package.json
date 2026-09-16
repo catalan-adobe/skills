@@ -1,1 +1,8 @@
-{ "name": "page-tree", "version": "0.0.0-semantically-released", "private": true }
+{
+  "name": "page-tree",
+  "version": "0.0.0-semantically-released",
+  "private": true,
+  "scripts": {
+    "test": "node --test scripts/page-tree-bundle.test.mjs"
+  }
+}
