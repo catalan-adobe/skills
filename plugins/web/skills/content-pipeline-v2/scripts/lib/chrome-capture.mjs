@@ -12,8 +12,9 @@ import { parseEval } from './warm.mjs';
 
 export const MIN_WIDTH = 900;
 export const MAX_CONSECUTIVE_FAILURES = 5;
-export const CAPTURE_EXPRESSION = (
-  `JSON.stringify(window.__visualTree.captureVisualTree(${MIN_WIDTH}))`);
+export const captureExpression = (minWidth = MIN_WIDTH) => (
+  `JSON.stringify(window.__visualTree.captureVisualTree(${minWidth}))`);
+export const CAPTURE_EXPRESSION = captureExpression();
 
 export const capturesDir = (project) => path.join(project.step('chrome'), '.captures');
 export const runDir = (project) => path.join(project.work, 'chrome');
@@ -50,7 +51,7 @@ export async function readRun(project, isAlive = alive) {
  * run.json after every page; five failures in a row end the run.
  */
 export async function captureAll(project,
-  { browser, origin, port, prepare = null, now = () => new Date() },
+  { browser, origin, port, prepare = null, minWidth = MIN_WIDTH, now = () => new Date() },
   { urls, shouldStop = () => false }) {
   await mkdir(capturesDir(project), { recursive: true });
   const run = {
@@ -67,13 +68,13 @@ export async function captureAll(project,
       // The prep expression scrolls to the bottom (lazy content); back to the top before
       // capturing, or a sticky nav is recorded where it stuck.
       if (prepare) await browser.eval(`${prepare}, window.scrollTo(0, 0)`);
-      const captured = parseEval(await browser.eval(CAPTURE_EXPRESSION));
+      const captured = parseEval(await browser.eval(captureExpression(minWidth)));
       if (!captured?.data?.tag) {
         throw new Error('the page-tree bundle returned no tree (was it injected?)');
       }
       // The bundle's shape: data (the node tree), textFormat, nodeMap, rootBackground.
       await writeJson(captureFile(project, url), {
-        url, capturedAt: now().toISOString(), minWidth: MIN_WIDTH, tree: captured.data,
+        url, capturedAt: now().toISOString(), minWidth, tree: captured.data,
         text: captured.textFormat, nodeMap: captured.nodeMap,
         rootBackground: captured.rootBackground ?? null,
       });
@@ -113,7 +114,8 @@ export async function writeCaptureConfig(project, browserConfig, bundle) {
  * nothing left to capture the worker goes straight to the analysis, so a rerun refreshes
  * chrome.json from the captures on disk.
  */
-export async function startCapture(project, workerScript, { force = false } = {}, io = {}) {
+export async function startCapture(project, workerScript,
+  { force = false, minWidth = null } = {}, io = {}) {
   const current = await readRun(project, io.alive ?? alive);
   if (current?.state === 'running') return { started: false, run: current };
   const urls = await pagesToCapture(project, { force });
@@ -125,6 +127,7 @@ export async function startCapture(project, workerScript, { force = false } = {}
   try {
     const child = (io.spawn ?? spawn)(process.execPath, [
       workerScript, '--worker', ...(force ? ['--force'] : []),
+      ...(minWidth ? ['--min-width', String(minWidth)] : []),
     ], { cwd: project.root, detached: true, stdio: ['ignore', log.fd, log.fd] });
     child.unref();
     await writeJson(runFile(project), {

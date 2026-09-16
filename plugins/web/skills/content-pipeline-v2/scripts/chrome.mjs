@@ -19,9 +19,10 @@ import { resolveProject } from './lib/project.mjs';
 import { defaultIo, playwright, sessionName, setupPaths } from './lib/warm-cli.mjs';
 import { pageExpression } from './lib/warm.mjs';
 
-export const HELP = `chrome.mjs [--force]
+export const HELP = `chrome.mjs [--force] [--min-width 900]
     in the background: render every verified cached page, detect header and footer, take
-    the screenshots, write chrome/chrome.json, chrome.md and the report section
+    the screenshots, write chrome/chrome.json, chrome.md and the report section;
+    --min-width: elements narrower than this are folded into their parent in the capture
 chrome.mjs status
     the capture run: state, done/total, failures
 chrome.mjs stop
@@ -69,7 +70,9 @@ export async function workerMain(project, argv, io = defaultIo) {
   await browser.open(proxiedUrl(origin, urls[0] ?? origin, server.port), { config });
   try {
     const port = server.port;
-    const run = await captureAll(project, { browser, origin, port, prepare },
+    const i = argv.indexOf('--min-width');
+    const minWidth = i >= 0 ? Number(argv[i + 1]) : undefined;
+    const run = await captureAll(project, { browser, origin, port, prepare, minWidth },
       { urls, shouldStop: () => stopping });
     if (run.state !== 'done') return run;
     await writeJson(runFile(project), { ...run, state: 'analysing' });
@@ -116,7 +119,10 @@ export async function main(argv, project, io = defaultIo) {
     io.kill(run.pid, 'SIGTERM');
     return { stopped: true, pid: run.pid, note: 'the worker finishes its current page' };
   }
-  return startCapture(project, WORKER_SCRIPT, { force: argv.includes('--force') }, io);
+  const mw = argv.indexOf('--min-width');
+  return startCapture(project, WORKER_SCRIPT, {
+    force: argv.includes('--force'), minWidth: mw >= 0 ? Number(argv[mw + 1]) : null,
+  }, io);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

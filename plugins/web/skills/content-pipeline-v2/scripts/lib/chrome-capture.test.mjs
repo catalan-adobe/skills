@@ -172,3 +172,21 @@ test('the prep expression runs before the capture and the page is scrolled back 
   assert.equal(evals.length, 2);
   assert.match(evals[0], /^\(\(\) => "prep"\)\(\), window\.scrollTo\(0, 0\)$/);
 });
+
+test('--min-width reaches the worker and the capture; the capture records it', async () => {
+  const p = await project(1);
+  const spawned = [];
+  await startCapture(p, '/s', { minWidth: 300 }, {
+    spawn: (cmd, args) => { spawned.push(args); return { pid: 1, unref() {} }; }, alive: () => true,
+  });
+  assert.deepEqual(spawned[0], ['/s', '--worker', '--min-width', '300']);
+  const browser = fakeBrowser();
+  const evals = [];
+  browser.eval = async (expr) => {
+    evals.push(expr);
+    return encoded({ tag: 'BODY', selector: 'body', bounds: { x: 0, y: 0 }, children: [] });
+  };
+  await captureAll(p, { browser, origin: ORIGIN, port: 1, minWidth: 300 }, { urls: [page(1)] });
+  assert.match(evals[0], /captureVisualTree\(300\)/);
+  assert.equal(JSON.parse(await readFile(captureFile(p, page(1)), 'utf8')).minWidth, 300);
+});
