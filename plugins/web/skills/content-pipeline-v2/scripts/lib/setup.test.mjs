@@ -208,7 +208,8 @@ test('install runs project-scope npm installs for playwright-cli and the package
   const pw = results.find((r) => r.target === 'playwrightCli');
   assert.deepEqual(pw.command, ['npm', 'install', '--prefix', work, '@playwright/cli']);
   const pkg = results.find((r) => r.target === 'franklin-bulk-shared');
-  assert.deepEqual(pkg.command, ['npm', 'install', '--prefix', work, 'franklin-bulk-shared']);
+  assert.deepEqual(pkg.command,
+    ['npm', 'install', '--prefix', work, 'franklin-bulk-shared@1.31.2']);
   for (const r of results) assert.equal(r.ok, true, r.target);
 
   for (const call of calls) {

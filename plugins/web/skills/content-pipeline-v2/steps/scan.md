@@ -39,8 +39,8 @@ writeFileSync(path.join(migration, 'urls/scan.json'), JSON.stringify(urls, null,
 console.log(`${urls.length} URLs, ${result.errors.length} errors`, result.sitemaps);
 ```
 
-One inclusion pattern only (the library requires every pattern to match); a sitemap index on
-another host is fine. When sitemaps yield nothing, rerun with `http`. Given an operator's
+Several inclusion patterns are fine (a URL matches when any of them does); a sitemap index
+on another host is fine. When sitemaps yield nothing, rerun with `http`. Given an operator's
 list, run `status.mjs urls import <file>` (one URL per line) instead of the snippet. Any
 change to the snippet goes in `REPORT.md`. Then run `node <skill>/scripts/status.mjs urls`:
 it merges `scan.json` into the inventory `urls/urls.json` (the one record per URL the whole

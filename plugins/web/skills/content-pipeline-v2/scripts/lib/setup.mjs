@@ -154,7 +154,8 @@ export async function install(detection, {
   }
 
   if (!detection.packages['franklin-bulk-shared'].ok) {
-    const args = ['install', '--prefix', work, 'franklin-bulk-shared'];
+    // Pinned: the crawler's behaviour is what the scan brief describes; bump on purpose.
+    const args = ['install', '--prefix', work, 'franklin-bulk-shared@1.31.2'];
     const outcome = await runInstall(exec, 'npm', args);
     results.push({ target: 'franklin-bulk-shared', command: ['npm', ...args], ...outcome });
   }
