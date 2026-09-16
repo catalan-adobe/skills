@@ -16,7 +16,7 @@ import { analyse, readCaptures } from './lib/chrome-report.mjs';
 import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
 import { resolveProject } from './lib/project.mjs';
-import { defaultIo, playwright, setupPaths } from './lib/warm-cli.mjs';
+import { defaultIo, playwright, sessionName, setupPaths } from './lib/warm-cli.mjs';
 import { pageExpression } from './lib/warm.mjs';
 
 export const HELP = `chrome.mjs [--force]
@@ -65,7 +65,7 @@ export async function workerMain(project, argv, io = defaultIo) {
   const { prepare, consentSelectors } = await prepExpression(project);
   let stopping = false;
   io.onSignal(() => { stopping = true; });
-  const browser = playwright(cli, io, project.work, 'chrome');
+  const browser = playwright(cli, io, project.work, sessionName(project, 'chrome'));
   await browser.open(proxiedUrl(origin, urls[0] ?? origin, server.port), { config });
   try {
     const port = server.port;

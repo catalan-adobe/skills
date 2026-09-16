@@ -11,7 +11,7 @@ import { init, resolveProject } from './project.mjs';
 import { writeInventory } from './inventory.mjs';
 import { readJobs, readWorker } from './jobs.mjs';
 import {
-  cliError, ensureWorker, evalResult, main, playwright, proxyStarter,
+  cliError, ensureWorker, evalResult, main, playwright, proxyStarter, sessionName,
 } from './warm-cli.mjs';
 
 const fixture = JSON.parse(await readFile(
@@ -33,12 +33,13 @@ test('playwright: every call runs in the cache session; eval reads recorded outp
       return { stdout: joined(fixture.evalOk.stdout), stderr: joined(fixture.evalOk.stderr) };
     },
   };
-  const browser = playwright('/bin/pw', io, '/project/migration/.work');
+  const browser = playwright('/bin/pw', io, '/project/migration/.work', 'cache-abc12345');
   await browser.open('http://127.0.0.1:1/', { config: 'c.json', persistent: true });
   await browser.goto('http://127.0.0.1:1/a');
   const value = await browser.eval('JSON.stringify(location.href)');
   await browser.close();
-  assert.ok(calls.every((c) => c[0] === '/bin/pw' && c[1] === '-s=cache'), 'named session');
+  assert.ok(calls.every((c) => c[0] === '/bin/pw' && c[1] === '-s=cache-abc12345'),
+    'named session');
   assert.deepEqual([...cwds], ['/project/migration/.work'],
     'the CLI writes its logs into cwd, which must be the gitignored .work/');
   assert.deepEqual(calls[0].slice(2),
@@ -207,4 +208,13 @@ test('main: stop with no worker says so; a missing setup.json is the first error
     { stopped: false, reason: 'no worker is running' });
   const bare = resolveProject(await mkdtemp(path.join(os.tmpdir(), 'cpv2-cli-')));
   await assert.rejects(main([], bare, workerIo([])), /run status\.mjs setup --install first/);
+});
+
+test('sessionName is per project and per kind, so two projects never share a session', () => {
+  const a = sessionName({ root: '/a' }, 'chrome');
+  const b = sessionName({ root: '/b' }, 'chrome');
+  assert.match(a, /^chrome-[0-9a-f]{8}$/);
+  assert.notEqual(a, b);
+  assert.equal(a, sessionName({ root: '/a' }, 'chrome'));
+  assert.notEqual(a, sessionName({ root: '/a' }, 'cache'));
 });

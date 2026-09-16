@@ -158,3 +158,17 @@ test('the capture config adds the bundle to the cache browser config', async () 
     network: { allowedOrigins: ['http://127.0.0.1:1'] },
   });
 });
+
+test('the prep expression runs before the capture and the page is scrolled back up', async () => {
+  const p = await project();
+  const browser = fakeBrowser();
+  const evals = [];
+  browser.eval = async (expr) => {
+    evals.push(expr);
+    return encoded({ tag: 'BODY', selector: 'body', bounds: { x: 0, y: 0 }, children: [] });
+  };
+  await captureAll(p, { browser, origin: ORIGIN, port: 1, prepare: '(() => "prep")()' },
+    { urls: [page(1)] });
+  assert.equal(evals.length, 2);
+  assert.match(evals[0], /^\(\(\) => "prep"\)\(\), window\.scrollTo\(0, 0\)$/);
+});

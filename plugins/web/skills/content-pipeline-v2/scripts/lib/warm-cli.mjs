@@ -2,6 +2,7 @@
 // playwright-cli as the browser (its own named session), the detached worker, and the
 // command itself. Every external call comes through `io` so tests can stand in for it.
 import { execFile, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, open as openFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +14,13 @@ import { readInventory } from './inventory.mjs';
 import { freePort } from './ports.mjs';
 import { approvedJob, pendingUrls, warm } from './warm.mjs';
 
-export const SESSION = 'cache';
+/**
+ * playwright-cli session names are global on the machine: two projects working at once
+ * must not share one. `kind-<8 hex of the project root>`.
+ */
+export function sessionName(project, kind) {
+  return `${kind}-${createHash('sha256').update(project.root).digest('hex').slice(0, 8)}`;
+}
 export const WORKER_SCRIPT = fileURLToPath(new URL('../warm.mjs', import.meta.url));
 
 export const defaultIo = {
@@ -104,11 +111,11 @@ export function cliError(err, command) {
 }
 
 /**
- * playwright-cli as the browser: one named session of its own (`-s=cache`), so the default
- * session stays free for whatever else runs meanwhile; one process per command, run from
+ * playwright-cli as the browser: one named session of its own (`sessionName`), so the
+ * default session stays free for whatever else runs meanwhile; one process per command, run from
  * `cwd` (the project's `.work/`): the CLI writes its logs and snapshots into its cwd.
  */
-export function playwright(cli, io = defaultIo, cwd = process.cwd(), session = SESSION) {
+export function playwright(cli, io = defaultIo, cwd = process.cwd(), session = 'cache') {
   const run = (...args) => io.execFile(cli, [`-s=${session}`, ...args], {
     maxBuffer: 16 * 1024 * 1024, cwd,
   }).catch((err) => { throw cliError(err, `${args[0]} ${args.at(-1)}`); });
@@ -156,7 +163,7 @@ export async function workerMain(project, io = defaultIo) {
   io.onSignal(() => { stopping = true; });
   return runWorker(project, (job, hooks) => warm(project, {
     startProxy: proxyStarter(proxyScript, cacheDir, io),
-    browser: playwright(cli, io, project.work),
+    browser: playwright(cli, io, project.work, sessionName(project, 'cache')),
     pace: job.pace ?? 1500,
   }, { ...job, ...hooks }), { stopping: () => stopping, now: io.now });
 }

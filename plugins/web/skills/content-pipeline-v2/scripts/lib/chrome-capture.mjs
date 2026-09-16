@@ -64,7 +64,9 @@ export async function captureAll(project,
     await record({ current: url });
     try {
       await browser.goto(proxiedUrl(origin, url, port));
-      if (prepare) await browser.eval(prepare);
+      // The prep expression scrolls to the bottom (lazy content); back to the top before
+      // capturing, or a sticky nav is recorded where it stuck.
+      if (prepare) await browser.eval(`${prepare}, window.scrollTo(0, 0)`);
       const captured = parseEval(await browser.eval(CAPTURE_EXPRESSION));
       if (!captured?.data?.tag) {
         throw new Error('the page-tree bundle returned no tree (was it injected?)');
