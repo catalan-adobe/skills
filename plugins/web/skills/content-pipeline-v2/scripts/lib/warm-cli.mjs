@@ -117,6 +117,8 @@ export function playwright(cli, io = defaultIo, cwd = process.cwd(), session = S
       ...(persistent ? ['--persistent'] : []), url),
     goto: (url) => run('goto', url),
     eval: async (expression) => evalResult((await run('eval', expression)).stdout),
+    screenshot: (file, target) => run('screenshot', ...(target ? [target] : []),
+      '--filename', file, ...(target ? [] : ['--full-page'])),
     close: () => run('close'),
   };
 }

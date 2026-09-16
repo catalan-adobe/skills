@@ -45,10 +45,12 @@ export async function readRun(project, isAlive = alive) {
 
 /**
  * Renders each page through the proxy and stores its visual tree. `browser` is playwright
- * (goto, eval); `origin`/`port` address the offline server. Progress goes to run.json after
- * every page; five failures in a row end the run.
+ * (goto, eval); `origin`/`port` address the offline server; `prepare` is the eval that
+ * applies the prep step's hide rules and scrolls, when there is one. Progress goes to
+ * run.json after every page; five failures in a row end the run.
  */
-export async function captureAll(project, { browser, origin, port, now = () => new Date() },
+export async function captureAll(project,
+  { browser, origin, port, prepare = null, now = () => new Date() },
   { urls, shouldStop = () => false }) {
   await mkdir(capturesDir(project), { recursive: true });
   const run = {
@@ -62,6 +64,7 @@ export async function captureAll(project, { browser, origin, port, now = () => n
     await record({ current: url });
     try {
       await browser.goto(proxiedUrl(origin, url, port));
+      if (prepare) await browser.eval(prepare);
       const captured = parseEval(await browser.eval(CAPTURE_EXPRESSION));
       if (!captured?.data?.tag) {
         throw new Error('the page-tree bundle returned no tree (was it injected?)');
