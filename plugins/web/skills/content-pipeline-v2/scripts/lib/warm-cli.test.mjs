@@ -80,7 +80,10 @@ test('proxyStarter: waits for /__status, passes --offline, reports an exiting ch
     freePort: async () => 3456,
     execPath: '/bin/node',
     spawn: (cmd, args, opts) => { spawned.push({ cmd, args, opts }); return child; },
-    fetch: async () => { polls += 1; return { ok: polls >= 3 }; },
+    fetch: async () => {
+      polls += 1;
+      return { ok: polls >= 3, json: async () => ({ dir: '/c' }) };
+    },
     sleep: async () => {},
   };
   const proxy = await proxyStarter('/skills/page-cache/scripts/page-cache.js', '/c', io)({
@@ -97,7 +100,8 @@ test('proxyStarter: waits for /__status, passes --offline, reports an exiting ch
   assert.deepEqual(child.killed, ['SIGTERM'], 'a child that exits on SIGTERM is not killed');
 
   const stubborn = fakeChild();
-  const slow = { ...io, spawn: () => stubborn, killDelayMs: 1, fetch: async () => ({ ok: true }) };
+  const answer = async () => ({ ok: true, json: async () => ({ dir: '/c' }) });
+  const slow = { ...io, spawn: () => stubborn, killDelayMs: 1, fetch: answer };
   await (await proxyStarter('/p.js', '/c', slow)({ offline: false })).stop();
   assert.deepEqual(stubborn.killed, ['SIGTERM', 'SIGKILL'], 'escalates when it does not exit');
 
@@ -217,4 +221,18 @@ test('sessionName is per project and per kind, so two projects never share a ses
   assert.notEqual(a, b);
   assert.equal(a, sessionName({ root: '/a' }, 'chrome'));
   assert.notEqual(a, sessionName({ root: '/a' }, 'cache'));
+});
+
+test('proxyStarter refuses a port where another project\'s proxy answers', async () => {
+  const child = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.exitCode = null;
+  child.kill = () => { child.exitCode = 0; child.emit('exit'); };
+  const io = {
+    freePort: async () => 3005, execPath: 'node', spawn: () => child, killDelayMs: 1,
+    fetch: async () => ({ ok: true, json: async () => ({ dir: '/someone/elses/cache' }) }),
+    sleep: async () => {},
+  };
+  await assert.rejects(proxyStarter('/p.js', '/c', io)({ offline: false }),
+    /port 3005 is held by another cache proxy \(\/someone\/elses\/cache\)/);
 });

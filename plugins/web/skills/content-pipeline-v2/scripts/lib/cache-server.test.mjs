@@ -152,3 +152,26 @@ test('ls filters cached inventory records; has and get read the directory', asyn
   });
   await assert.rejects(cacheGet(p, `${ORIGIN}/b.html`), /is not cached \(no migration\/cache/);
 });
+
+test('serve moves to another port when a foreign proxy answers on the one it picked', async () => {
+  const p = await project();
+  const calls = { spawned: [], killed: [] };
+  const alive = new Set();
+  const io = {
+    spawn: async (script, port) => { calls.spawned.push(port); alive.add(port); return port; },
+    // 3002 is held by another project's server (its /__status names another directory).
+    status: async (port) => (alive.has(port) || port === 3002
+      ? {
+        cached: 1, hits: 0, misses: 0, dir: port === 3002 ? '/other/project/cache' : cacheDirOf(p),
+      }
+      : null),
+    alive: (pid) => alive.has(pid),
+    kill: (pid) => { calls.killed.push(pid); alive.delete(pid); },
+    sleep: async () => {},
+  };
+  const freePort = async (from) => ({ 3001: 3002, 3002: 3003 })[from];
+  const served = await serveCache(p, '/s.js', freePort, io);
+  assert.equal(served.port, 3003, 'the second attempt asked from 3002 and got 3003');
+  assert.deepEqual(calls.spawned, [3002, 3003]);
+  assert.deepEqual(calls.killed, [3002], 'our loser on the shared port was killed');
+});

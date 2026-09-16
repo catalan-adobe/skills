@@ -77,10 +77,18 @@ export function proxyStarter(script, cacheDir, io = defaultIo) {
         finish();
       });
     });
+    // Only a proxy reporting our cache directory counts: another project's server may hold
+    // the port we picked (a lost race on freePort), and it would answer /__status too.
     let up = false;
     for (let i = 0; i < 50 && !up; i += 1) {
       if (child.exitCode !== null) throw new Error(`proxy exited: ${stderr.trim()}`);
-      up = await io.fetch(`http://127.0.0.1:${port}/__status`).then((r) => r.ok, () => false);
+      const status = await io.fetch(`http://127.0.0.1:${port}/__status`)
+        .then((r) => (r.ok ? r.json() : null), () => null);
+      if (status && status.dir && path.resolve(status.dir) !== path.resolve(cacheDir)) {
+        await stop();
+        throw new Error(`port ${port} is held by another cache proxy (${status.dir})`);
+      }
+      up = Boolean(status);
       if (!up) await io.sleep(100);
     }
     if (!up) {

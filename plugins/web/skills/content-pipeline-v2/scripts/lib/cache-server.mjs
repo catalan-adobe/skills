@@ -51,6 +51,8 @@ async function writeBrowserConfig(project, url) {
 }
 const readState = (project) => readFile(stateFile(project), 'utf8').then(JSON.parse, () => null);
 
+const sameDir = (a, b) => path.resolve(a ?? '') === path.resolve(b);
+
 async function requireCacheDir(project) {
   const dir = cacheDirOf(project);
   await access(dir).catch(() => {
@@ -64,7 +66,7 @@ export async function cacheServerStatus(project, io = defaultIo) {
   const current = await readState(project);
   if (!current || !io.alive(current.pid)) return null;
   const status = await io.status(current.port);
-  if (!status || (status.dir && status.dir !== current.dir)) return null;
+  if (!status || (status.dir && !sameDir(status.dir, current.dir))) return null;
   return { ...current, cached: status.cached, hits: status.hits, misses: status.misses };
 }
 
@@ -79,19 +81,26 @@ export async function serveCache(project, proxyScript, freePort, io = defaultIo)
     return { ...live, browserConfig: await writeBrowserConfig(project, live.url), reused: true };
   }
   await mkdir(project.work, { recursive: true });
-  const port = await freePort(3001);
   const logFile = path.join(project.work, 'cache-server.log');
-  const pid = await io.spawn(proxyScript, port, dir, logFile);
-  const deadline = Date.now() + START_TIMEOUT_MS;
-  let status = null;
-  while (!status) {
-    status = await io.status(port);
-    if (!status && (Date.now() > deadline || !io.alive(pid))) {
-      io.kill(pid);
-      throw new Error(`cache server did not answer on port ${port}; see ${logFile}`);
+  // Two projects starting at once can pick the same free port; the loser's proxy dies and
+  // the winner's would answer /__status for it. Only a server reporting our directory counts.
+  let port; let pid; let status = null;
+  for (let attempt = 0; attempt < 5 && !status; attempt += 1) {
+    port = await freePort(3001 + attempt);
+    pid = await io.spawn(proxyScript, port, dir, logFile);
+    const deadline = Date.now() + START_TIMEOUT_MS;
+    for (;;) {
+      const answer = await io.status(port);
+      if (answer && sameDir(answer.dir, dir)) { status = answer; break; }
+      if (answer) { io.kill(pid); break; } // another project's server holds this port: next
+      if (Date.now() > deadline || !io.alive(pid)) {
+        io.kill(pid);
+        throw new Error(`cache server did not answer on port ${port}; see ${logFile}`);
+      }
+      await io.sleep(100);
     }
-    if (!status) await io.sleep(100);
   }
+  if (!status) throw new Error('cache server: no free port answered for our cache directory');
   const state = { pid, port, dir, offline: true, url: `http://127.0.0.1:${port}` };
   await writeFile(stateFile(project), `${JSON.stringify(state, null, 2)}\n`);
   const browserConfig = await writeBrowserConfig(project, state.url);
