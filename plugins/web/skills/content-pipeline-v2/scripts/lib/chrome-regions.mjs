@@ -182,6 +182,8 @@ export function detectChrome(all, context) {
       'hover- or click-only panels (mega-menus) are not in a plain render: the trigger is '
         + 'detected, the panel is not',
       'elements narrower than the capture\'s minimum width are folded into their parent',
+      'a header drawn over a hero image can be folded into the hero by the capture: such '
+        + 'pages show only the members found outside it',
     ],
   };
 }

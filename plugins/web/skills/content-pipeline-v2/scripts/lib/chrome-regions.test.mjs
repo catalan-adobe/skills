@@ -21,7 +21,8 @@ function site() {
     if (!landing) {
       children.push(el('DIV', 'utility', box(0, 53), [], { id: 'utility-nav-bar' }));
       children.push(blog
-        ? el('DIV', 'experiencefragment', box(53, 80), [el('DIV', 'blog-nav', box(53, 80))])
+        ? el('DIV', 'experiencefragment', box(53, 80),
+          [el('DIV', 'blog-nav', box(53, 80)), el('DIV', 'blog-search', box(53, 80))])
         : el('DIV', 'experiencefragment', box(53, 80), [el('DIV', 'main-nav', box(53, 80))]));
     }
     if (n <= 6) children.push(el('DIV', 'breadcrumb', box(133, 41)));

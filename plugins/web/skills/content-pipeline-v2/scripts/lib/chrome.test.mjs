@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  candidates, chromeCandidates, fingerprint, stableId, tokens, walk,
+  candidates, chromeCandidates, fingerprint, stableId, structuralChildren, tokens, walk,
 } from './chrome.mjs';
 
 const box = (y, height, width = 1280, x = 0) => ({ x, y, width, height });
@@ -51,6 +51,20 @@ test('fingerprint ignores text, bounds, active classes and generated ids; sees s
     fingerprint({ tag: 'DIV', id: 'x-e5f6a7b8', bounds: box(0, 1) }));
 });
 
+test('a hairline child or a single-child chain does not change the structure', () => {
+  const nav = el('DIV', 'nav-top', box(53, 80));
+  const bar = el('DIV', 'pb_table', box(128, 5));
+  const plain = el('DIV', 'experiencefragment', box(53, 80), [nav]);
+  const withBar = el('DIV', 'experiencefragment', box(53, 80), [nav, bar]);
+  const collapsed = el('DIV', 'experiencefragment', box(53, 80));
+  assert.deepEqual(structuralChildren(withBar), [], 'the bar is dropped, the lone nav collapsed');
+  assert.equal(fingerprint(plain), fingerprint(withBar), 'a 5 px progress bar is not structure');
+  assert.equal(fingerprint(plain), fingerprint(collapsed),
+    'page-tree collapses a single child; so does the fingerprint');
+  const two = el('DIV', 'experiencefragment', box(53, 80), [nav, el('DIV', 'search', box(53, 80))]);
+  assert.notEqual(fingerprint(plain), fingerprint(two), 'a second real child is structure');
+});
+
 test('walk yields every node with its parent fingerprint and bottom offset', () => {
   const nodes = walk(page(1).tree, 3137);
   assert.equal(nodes[0].parent, null);
@@ -93,7 +107,12 @@ test('chromeCandidates keeps stable ones above the support line, drops same-page
 test('a header that differs on some pages is two candidates at the same position', () => {
   const pages = [
     ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => page(n)),
-    ...[9, 10].map((n) => page(n, { nav: 'nav-top other-locale' })),
+    ...[9, 10].map((n) => {
+      const p = page(n);
+      const wrapper = p.tree.children[1];
+      wrapper.children.push(el('DIV', 'locale-switch', box(53, 80)));
+      return p;
+    }),
   ];
   const kept = chromeCandidates(candidates(pages), { minSupport: 0.15 });
   const atNav = kept.filter((c) => c.bounds.y === 53 && c.bounds.height === 80 && c.depth === 1);
@@ -107,4 +126,13 @@ test('pages without a footer lower its support but do not break the position', (
     .find((c) => c.bounds.bottomOffset === 0 && c.bounds.height === 500);
   assert.equal(footer.support, 0.8);
   assert.equal(footer.stable, true);
+});
+
+test('two different elements with the same fingerprint at the top and the bottom both stay', () => {
+  const pages = [1, 2, 3, 4, 5].map((n) => page(n));
+  const all = candidates(pages);
+  const wrappers = all.filter((c) => c.selectors.includes('div.experiencefragment')
+    && c.support === 1);
+  assert.deepEqual(wrappers.map((c) => c.anchored).sort(), ['bottom', 'top'],
+    'the nav wrapper and the footer wrapper share a fingerprint but are two candidates');
 });

@@ -4,6 +4,8 @@
 import { createHash } from 'node:crypto';
 
 export const FINGERPRINT_DEPTH = 3;
+// A child this thin is a border, a rule or a progress bar, not structure.
+export const HAIRLINE_PX = 6;
 export const POSITION_TOLERANCE_PX = 40;
 
 // Class tokens that say "state", not "what": the current menu item or an open panel must
@@ -23,12 +25,26 @@ export function tokens(className) {
 export const stableId = (id) => (id && !HASHED.test(id) ? id : '');
 
 /**
- * A structural fingerprint: tag, stable id, class tokens and the same for children down to
- * `depth`. Text, bounds, hrefs and generated ids are left out on purpose.
+ * The children that count as structure: hairlines dropped, and a single-child chain
+ * collapsed the way page-tree collapses one when it prunes — so a wrapper whose only
+ * visible child is the nav, and the same wrapper rendered with a 5 px progress bar next
+ * to the nav on another page, are the same structure.
+ */
+export function structuralChildren(node) {
+  let kids = (node.children ?? []).filter((c) => (c.bounds?.height ?? Infinity) > HAIRLINE_PX);
+  while (kids.length === 1) {
+    kids = (kids[0].children ?? []).filter((c) => (c.bounds?.height ?? Infinity) > HAIRLINE_PX);
+  }
+  return kids;
+}
+
+/**
+ * A structural fingerprint: tag, stable id, class tokens and the same for the structural
+ * children down to `depth`. Text, bounds, hrefs and generated ids are left out on purpose.
  */
 export function fingerprint(node, depth = FINGERPRINT_DEPTH) {
   const own = `${node.tag}#${stableId(node.id)}.${tokens(node.className).join('.')}`;
-  const kids = depth > 0 ? (node.children ?? []).map((c) => fingerprint(c, depth - 1)) : [];
+  const kids = depth > 0 ? structuralChildren(node).map((c) => fingerprint(c, depth - 1)) : [];
   return createHash('sha1').update(`${own}[${kids.join(',')}]`).digest('hex').slice(0, 12);
 }
 
@@ -67,9 +83,10 @@ const bucket = (value, tolerance) => Math.round(value / tolerance);
  */
 export function candidates(captures, { tolerance = POSITION_TOLERANCE_PX } = {}) {
   const buckets = new Map();
-  for (const capture of captures) {
+  for (const [ci, capture] of captures.entries()) {
     const pageHeight = capture.tree.bounds.height;
-    for (const n of walk(capture.tree, pageHeight).slice(1)) {
+    for (const [ni, n] of walk(capture.tree, pageHeight).slice(1).entries()) {
+      n.id = `${ci}:${ni}`;
       const keys = [
         `${n.fp}|top:${bucket(n.y, tolerance)}`,
         `${n.fp}|bottom:${bucket(n.bottomOffset, tolerance)}`,
@@ -98,6 +115,7 @@ export function candidates(captures, { tolerance = POSITION_TOLERANCE_PX } = {})
     const topSpread = spread(ys);
     const bottomSpread = spread(bottoms);
     return {
+      occurrences: e.occurrences.map((o) => o.id).sort().join(' '),
       fp: e.fp, anchored: e.anchored, parent: e.parent, ancestors: e.ancestors, depth: e.depth,
       pages: [...e.pages],
       support: e.pages.size / total, tags: [...e.tags], selectors: [...e.selectors],
@@ -113,16 +131,15 @@ export function candidates(captures, { tolerance = POSITION_TOLERANCE_PX } = {})
   return dedupeAnchors(list).sort((a, b) => b.support - a.support || a.depth - b.depth);
 }
 
-/** Of a fingerprint's top and bottom buckets over the same pages, keep the tighter one. */
+/** Of the top and bottom buckets holding the very same occurrences, keep the tighter one. */
 function dedupeAnchors(list) {
-  const byFpPages = new Map();
+  const byOccurrences = new Map();
   for (const c of list) {
-    const key = `${c.fp}|${[...c.pages].sort().join(',')}`;
-    const other = byFpPages.get(key);
+    const other = byOccurrences.get(c.occurrences);
     const tighter = (a) => (a.anchored === 'top' ? a.topSpread : a.bottomSpread);
-    if (!other || tighter(c) < tighter(other)) byFpPages.set(key, c);
+    if (!other || tighter(c) < tighter(other)) byOccurrences.set(c.occurrences, c);
   }
-  return [...byFpPages.values()];
+  return [...byOccurrences.values()].map(({ occurrences, ...c }) => c);
 }
 
 /**
