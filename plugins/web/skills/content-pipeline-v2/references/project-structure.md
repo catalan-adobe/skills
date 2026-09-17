@@ -139,6 +139,28 @@ the header(s) and footer(s). Detected, not interpreted.
   every member outlined, then one crop per member.
 : Read by the agent (one full screenshot per variant), the dashboard and `check chrome`.
 
+## elements/
+
+The elements inventory: every captured page decomposed into sections, sections resolved to
+element types of the source markup. Decomposed, not named.
+
+`elements/elements.json`
+: Written by `elements.mjs`: `types` (stable `id` from the identity, `identity`, `pages`,
+  `support`, `recurring`, `instances`, `medianHeight`, `heightRange`, `sample`, `groups`,
+  `variants`, `mergedFrom`), `pages` (`sections` with type/selector/height/variant,
+  `rejected` with reasons, `coverage`, `covered`, `composition`), `compositions`, `groups`
+  (pages, types, compositions, dominant share, deltas, `saturated`), `runs` (one entry per
+  run: summary, new types, new compositions), `warnings`, `limits`. Merged with the previous
+  file on every run. Read by `check elements`, the dashboard and the operator.
+
+`elements/elements.md`
+: Written by `elements.mjs`: the same for the operator. Read by the operator.
+
+`elements/rules.json`
+: Written by the operator or the agent (see `steps/elements.md`): the site's rules over the
+  engine's defaults — identity exclusions, noise classes, leaf tags, container share,
+  recurrence, `merge`, `chrome`, `reject`. Read by `elements.mjs`.
+
 ## .work/
 
 `.work/node_modules/`

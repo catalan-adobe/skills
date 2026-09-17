@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { openWork, unfinished } from './jobs.mjs';
-import { captureFile, readRun, storeStatus } from './capture.mjs';
+import { captureFile, readCaptures, readRun, storeStatus } from './capture.mjs';
 import { STEPS } from './steps.mjs';
 import { detect, missingReasons } from './setup.mjs';
 import { relativeSegments, scopeOf } from './urls.mjs';
@@ -383,6 +383,58 @@ export function checkChrome(files, { screenshots = [], selectors = {} } = {}) {
   return { pass: reasons.length === 0, reasons };
 }
 
+/**
+ * `elements`: elements.json parses and agrees with the store — every captured page once
+ * under `pages`, every section's type known, every type's sample selector in its sample
+ * page's capture — plus elements.md and the report section.
+ *
+ * @param {Record<string, string>} files
+ * @param {{captured: string[], selectors: Record<string, Set<string>>}} disk
+ */
+export function checkElements(files, { captured = [], selectors = {} } = {}) {
+  const text = files['elements/elements.json'];
+  if (text === undefined) {
+    return { pass: false, reasons: ['missing migration/elements/elements.json'] };
+  }
+  let r;
+  try {
+    r = JSON.parse(text);
+  } catch (err) {
+    return { pass: false, reasons: [`elements.json is not valid JSON: ${err.message}`] };
+  }
+  const reasons = [];
+  if (files['elements/elements.md'] === undefined) {
+    reasons.push('missing migration/elements/elements.md');
+  }
+  if (!/^## elements$/m.test(files['REPORT.md'] ?? '')) {
+    reasons.push('REPORT.md has no ## elements section');
+  }
+  if (r.capturedPages !== captured.length) {
+    reasons.push(`elements.json: ${r.capturedPages} pages, the store has ${captured.length}`
+      + ' — run elements.mjs');
+  }
+  const seen = new Map();
+  for (const p of r.pages ?? []) seen.set(p.url, (seen.get(p.url) ?? 0) + 1);
+  const missing = captured.filter((u) => !seen.has(u));
+  if (missing.length) reasons.push(`elements.json: ${missing.length} captured page(s) absent`);
+  const twice = [...seen].filter(([, n]) => n > 1).map(([u]) => u);
+  if (twice.length) reasons.push(`elements.json: page listed twice: ${twice[0]}`);
+  const types = new Set((r.types ?? []).map((t) => t.id));
+  const unknown = new Set();
+  for (const p of r.pages ?? []) {
+    for (const s of p.sections ?? []) if (!types.has(s.type)) unknown.add(s.type);
+  }
+  if (unknown.size) reasons.push(`elements.json: unknown type(s) ${[...unknown].join(', ')}`);
+  for (const t of r.types ?? []) {
+    const known = selectors[t.sample?.url];
+    if (known && !known.has(t.sample.selector)) {
+      reasons.push(`type ${t.id}: sample ${t.sample.selector} is not in the capture of `
+        + t.sample.url);
+    }
+  }
+  return { pass: reasons.length === 0, reasons };
+}
+
 const CONTENT_CHECKS = {
   probe: checkProbe,
   prep: checkPrep,
@@ -390,6 +442,7 @@ const CONTENT_CHECKS = {
   'prep-verify': checkPrepVerify,
   cache: checkCache,
   chrome: checkChrome,
+  elements: checkElements,
   report: checkReport,
 };
 
@@ -473,6 +526,7 @@ export const CHECKS = Object.fromEntries(
       }];
     }
     if (step.id === 'chrome') return [step.id, checkChromeOnDisk];
+    if (step.id === 'elements') return [step.id, checkElementsOnDisk];
     if (step.id === 'prep' || step.id === 'prep-verify') {
       return [step.id, async (project) => contentCheck(
         await loadFiles(project), await listDir(project.step('prep'), 'prep'),
@@ -554,6 +608,29 @@ async function checkChromeOnDisk(project) {
   if (run?.state === 'failed') result.reasons.push(`chrome: the last run failed — ${run.error}`);
   result.reasons.push(...behind);
   return { ...result, pass: result.pass && run?.state !== 'failed' && !behind.length };
+}
+
+/** `elements` on disk: the store's pages and their captures behind the pure check. */
+async function checkElementsOnDisk(project) {
+  const files = await loadFiles(project);
+  const store = await storeStatus(project, (await readRun(project))?.minWidth);
+  const behind = store.missing.length + store.stale.length;
+  const captures = await readCaptures(project);
+  const captured = captures.map((c) => c.url);
+  const selectors = {};
+  let r = null;
+  try { r = JSON.parse(files['elements/elements.json'] ?? 'null'); } catch { /* reported */ }
+  const byUrl = new Map(captures.map((c) => [c.url, c]));
+  for (const t of r?.types ?? []) {
+    const capture = byUrl.get(t.sample?.url);
+    if (capture) selectors[t.sample.url] = captureSelectors(capture);
+  }
+  const result = checkElements(files, { captured, selectors });
+  if (behind) {
+    result.reasons.push(`elements: the store is ${storeNote(store)} — run capture.mjs, then `
+      + 'elements.mjs');
+  }
+  return { ...result, pass: result.pass && !behind };
 }
 
 export async function runCheck(id, project) {

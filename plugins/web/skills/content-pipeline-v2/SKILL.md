@@ -53,6 +53,7 @@ migration/
   cache/          .page-cache/ · cache.md
   capture/        <sha8>.json (the visual-tree store) · captures.md
   chrome/         chrome.json · chrome.md · screenshots/
+  elements/       elements.json · elements.md · rules.json
   .work/          scratch: npm installs, scan script, browser profiles (gitignored)
   REPORT.md       one ## <step> section per step that ran
 ```
@@ -91,6 +92,7 @@ Each step has a brief in `steps/<id>.md`: hand that one file to whoever runs the
 | `cache` | low | page-cache (via `warm.mjs`) | `cache/cache.md`, `cache/.page-cache/` |
 | `capture` | low | page-tree (via `capture.mjs`) | `capture/captures.md` + the store |
 | `chrome` | medium | — (`chrome.mjs`) | `chrome/chrome.json`, `chrome/chrome.md` |
+| `elements` | medium | — (`elements.mjs`) | `elements/elements.json`, `elements/elements.md` |
 | `report` | medium | — | `REPORT.md` |
 
 \* medium when the site has no usable sitemap. `cache` also needs the operator's yes
@@ -110,11 +112,18 @@ page and frame the content: header(s) and footer(s), later perhaps other static 
 that recur at a stable position, screenshots each variant and writes `chrome/`. Detection
 only; what a header means is another expert's work.
 
+`elements` decomposes every captured page into its sections and inventories the element
+types they are made of — the elements inventory: types of the source markup with support,
+variants and samples, coverage per page, the compositions pages share, and per group
+whether new pages still add types. `scripts/elements.mjs` runs in the foreground in seconds
+and merges with the previous run. Naming a type or mapping it to an EDS block is not this
+step's work.
+
 Runner commands: `node $SKILL/scripts/status.mjs --help` lists every command with its
 arguments in one line each; `node $SKILL/scripts/warm.mjs --help` the caching ones,
-`capture.mjs --help` and `chrome.mjs --help` theirs. The help is generated from the
-command table, so it is always current; the briefs name the
-commands a step needs.
+`capture.mjs --help`, `chrome.mjs --help` and `elements.mjs --help` theirs. The help is
+generated from the command table, so it is always current; the briefs name the commands a
+step needs.
 
 ## Harness ladder
 

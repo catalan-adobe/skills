@@ -66,6 +66,14 @@ export const STEPS = [
     writes: ['chrome/chrome.json', 'chrome/chrome.md'],
   },
   {
+    id: 'elements',
+    tier: 'medium',
+    tierNote: 'the decomposition is a script; the model reads the evaluation and edits rules',
+    skill: null,
+    dependsOn: ['capture', 'chrome'],
+    writes: ['elements/elements.json', 'elements/elements.md'],
+  },
+  {
     id: 'report',
     tier: 'medium',
     skill: null,
