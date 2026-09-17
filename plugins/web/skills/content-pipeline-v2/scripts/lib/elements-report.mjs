@@ -140,6 +140,20 @@ function renderGroups(groups) {
   ];
 }
 
+/** Per fragment identity its distinct contents: the reuse candidates. */
+function renderFragments(fragments) {
+  return fragments.flatMap((f) => [
+    `### \`${f.identity}\` — ${f.instances} instances on ${f.pages} pages, `
+      + `${f.contents.length} distinct contents`,
+    '',
+    '| pages | instances | content (types in order) | sample |',
+    '|---|---|---|---|',
+    ...f.contents.map((c) => (
+      `| ${c.pages} | ${c.instances} | ${c.types.join(' ')} | ${c.sample} |`)),
+    '',
+  ]);
+}
+
 const renderRun = (x) => `| ${x.at.slice(0, 16)}Z | ${x.pages} | ${x.types} | ${x.recurring} `
   + `| ${x.newTypes.length} | ${x.removedTypes.length} `
   + `| ${x.rulesChanged ? 'rules changed' : x.newCompositions} |`;
@@ -178,6 +192,10 @@ export function renderElementsMd(r) {
     '|---|---|---|---|---|---|---|',
     ...r.runs.map(renderRun),
     '',
+    '## Fragments', '',
+    r.fragments.length ? renderFragments(r.fragments).join('\n')
+      : '_none declared — `fragments` in rules.json names the identities that are fragments_',
+    '',
     '## Unique types', '',
     unique.length ? renderTypes(unique).join('\n') : '_none_', '',
     '## Rejected', '',
@@ -196,7 +214,9 @@ export function renderSection(r) {
     `${r.capturedPages} cached pages decomposed into ${last.sections} sections; `
       + `${r.types.length} element types, ${last.recurring} recurring.`,
     `Coverage by recurring types: ${last.covered.full} pages full, ${last.covered.partial}`
-      + ` partial, ${last.covered.none} none. ${r.compositions.length} distinct compositions.`,
+      + ` partial, ${last.covered.none} none. ${r.compositions.length} distinct compositions`
+      + (r.fragments.length ? `; ${r.fragments.length} fragment type(s), ${
+        r.fragments.reduce((n, f) => n + f.contents.length, 0)} distinct contents.` : '.'),
     `Run ${r.runs.length}: +${last.newTypes.length} types, -${last.removedTypes.length}`
       + (last.rulesChanged ? ' (rules changed)' : `, +${last.newCompositions} compositions`)
       + `. Saturated groups: ${saturated.join(', ') || 'none yet'}; groups without a page: `

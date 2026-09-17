@@ -2,19 +2,11 @@
 // set of their children's identities, coverage per page, compositions across pages. Pure
 // functions over captures; the rules object comes from elements-rules.mjs.
 import { createHash } from 'node:crypto';
-import { own, structuralChildren } from './chrome.mjs';
-import { decompose } from './decompose.mjs';
+import { structuralChildren } from './chrome.mjs';
+import { decompose, identity } from './decompose.mjs';
 import { mergeRules } from './elements-rules.mjs';
 
-/**
- * A node's identity: the outermost element of its collapsed chain — tag, stable id, class
- * tokens minus state, generated names, the rules' exclusions and noise. Children never
- * enter it, so repetition never splits a type.
- */
-export function identity(node, rules = mergeRules()) {
-  return own(node, (t) => !rules.noiseClasses.has(t)
-    && !rules.identityExclusions.some((re) => re.test(t)));
-}
+export { identity };
 
 export const typeId = (id) => `t-${createHash('sha1').update(id).digest('hex').slice(0, 8)}`;
 /** A variant's id: the hash of its children identities — the same set, the same id. */
@@ -38,13 +30,15 @@ const coverageBucket = (share) => (share >= 0.999 ? 'full' : share > 0 ? 'partia
  *
  * @param {object[]} captures `{ url, tree }` each.
  * @param {{chromeSelectors?: Iterable<string>, rules?: object, groupOf?: (url) => string}}
- * @returns {{types: object[], pages: object[], compositions: object[], warnings: string[]}}
+ * @returns {{types: object[], pages: object[], compositions: object[], fragments: object[],
+ *   warnings: string[]}}
  */
 export function inventory(captures, { chromeSelectors = [], rules = mergeRules(),
   groupOf = () => '/' } = {}) {
   const resolveId = (id) => rules.merge[id] ?? id;
   const types = new Map();
   const pages = [];
+  const fragments = new Map();
   for (const capture of captures) {
     const group = groupOf(capture.url) || '/';
     const { sections, rejected } = decompose(capture, { chromeSelectors, rules });
@@ -52,6 +46,9 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
       url: capture.url, group, capturedAt: capture.capturedAt ?? null, sections: [],
       rejected: [], contentHeight: 0,
     };
+    // Fragment instances on this page (innermost fragment a section sat in, by selector)
+    // and the types each delivered: one content candidate per instance.
+    const fragmentInstances = new Map();
     // A part names its section by index, not by its long selector.
     const index = new Map(sections.map((s, i) => [s.selector, i]));
     page.rejected = rejected.map(({ of, ...r }) => (of ? { ...r, section: index.get(of) } : r));
@@ -80,11 +77,22 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
       v.sample ??= { url: capture.url, selector: node.selector };
       t.variants.set(vk, v);
       types.set(id, t);
-      const section = { type: id, selector: node.selector, height: node.bounds.height };
+      const section = {
+        type: id, selector: node.selector, height: node.bounds.height,
+        ...(node.within ? { within: node.within.map((w) => `${w.kind}:${w.identity}`) } : {}),
+      };
       v.sections.push(section);
       page.sections.push(section);
       page.contentHeight += node.bounds.height;
+      const inFragment = (node.within ?? []).filter((w) => w.kind === 'fragment').at(-1);
+      if (inFragment) {
+        const inst = fragmentInstances.get(inFragment.selector)
+          ?? { identity: inFragment.identity, types: [] };
+        inst.types.push(id);
+        fragmentInstances.set(inFragment.selector, inst);
+      }
     }
+    recordFragments(fragments, fragmentInstances.values(), capture.url);
     pages.push(page);
   }
   const total = captures.length;
@@ -129,9 +137,36 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
     types: typeList,
     pages,
     compositions: [...compositions.values()].sort((a, b) => b.pages - a.pages),
+    fragments: fragmentTable(fragments),
     warnings,
   };
 }
+
+/** Folds a page's fragment instances into the fragments table (by identity, by content). */
+function recordFragments(fragments, instances, url) {
+  for (const inst of instances) {
+    const f = fragments.get(inst.identity) ?? { identity: inst.identity, instances: 0,
+      pages: new Set(), contents: new Map() };
+    f.instances += 1;
+    f.pages.add(url);
+    const ck = inst.types.join(' ');
+    const c = f.contents.get(ck)
+      ?? { types: inst.types, instances: 0, pages: new Set(), sample: url };
+    c.instances += 1;
+    c.pages.add(url);
+    f.contents.set(ck, c);
+    fragments.set(inst.identity, f);
+  }
+}
+
+const fragmentTable = (fragments) => [...fragments.values()].map((f) => ({
+  identity: f.identity,
+  instances: f.instances,
+  pages: f.pages.size,
+  contents: [...f.contents.values()].map((c) => ({
+    types: c.types, instances: c.instances, pages: c.pages.size, sample: c.sample,
+  })).sort((a, b) => b.pages - a.pages),
+})).sort((a, b) => b.pages - a.pages);
 
 /** The numbers that summarise an inventory: what a replay compares. */
 export function summary({ types, pages }) {

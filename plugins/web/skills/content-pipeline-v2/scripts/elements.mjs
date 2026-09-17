@@ -12,6 +12,7 @@ import { writeEvaluation } from './lib/elements-evaluation.mjs';
 import {
   buildElements, chromeSelectors, renderSection, writeOutputs,
 } from './lib/elements-report.mjs';
+import { seedRules } from './lib/elements-rules.mjs';
 import { screenshotTypes } from './lib/elements-shots.mjs';
 import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
@@ -21,7 +22,8 @@ import { defaultIo, playwright, sessionName, setupPaths } from './lib/warm-cli.m
 export const HELP = `elements.mjs
     in the background: decompose every captured page over the visual-tree store, append a
     run to the previous inventory, crop the evidence for every recurring type (only what is
-    missing), write elements/elements.json, elements.md, evaluation.md and the report section
+    missing), write elements/elements.json, elements.md, evaluation.md and the report section;
+    the first run also writes elements/rules.json (empty, with the vocabulary as _example)
 elements.mjs status
     the run: state, crops done/total, error
 elements.mjs stop
@@ -53,6 +55,7 @@ export async function workerMain(project, io = defaultIo, open = openSession) {
   const stop = () => { throw new Error('stopped'); };
   try {
     await mkdir(project.step('elements'), { recursive: true });
+    await seedRules(project);
     const result = await writeOutputs(project, await buildElements(project));
     if (stopping) stop();
     await record({ state: 'analysing', phase: 'crops', done: 0, total: null });

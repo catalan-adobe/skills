@@ -2,7 +2,7 @@
 // from elements/rules.json — a bounded vocabulary, never code. Adaptation to a site happens
 // here; anything the vocabulary cannot say is an engine gap.
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 export const DEFAULT_RULES = {
@@ -19,6 +19,13 @@ export const DEFAULT_RULES = {
   // A node whose children are all of these tags is a leaf component: never peeled.
   leafTags: ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'IMG', 'A', 'SPAN', 'FIGURE',
     'BLOCKQUOTE', 'TABLE', 'PICTURE'],
+  // Identities that are layout containers: decomposition continues into them, their
+  // children are the sections, each recording it sat `within` the container.
+  containers: [],
+  // Identities that are fragments — a reference to another document inserted in the page
+  // (an EDS element in its own right): decomposed like a document, and their distinct
+  // contents tabulated as reuse candidates.
+  fragments: [],
   // Type id → type id: the first is the second (two identities, one element).
   merge: {},
   // Selectors that are chrome after all (the chrome step missed them).
@@ -28,7 +35,8 @@ export const DEFAULT_RULES = {
 };
 
 export const RULE_KEYS = Object.keys(DEFAULT_RULES);
-const LIST_KEYS = ['identityExclusions', 'noiseClasses', 'leafTags', 'chrome', 'reject'];
+const LIST_KEYS = ['identityExclusions', 'noiseClasses', 'leafTags', 'containers', 'fragments',
+  'chrome', 'reject'];
 const NUMBER_KEYS = ['containerShare', 'recurrence'];
 export const rulesFile = (project) => path.join(project.step('elements'), 'rules.json');
 
@@ -81,9 +89,35 @@ export function mergeRules(overrides = {}) {
     identityExclusions: rules.identityExclusions.map(regExp),
     leafTags: new Set(rules.leafTags),
     noiseClasses: new Set(rules.noiseClasses),
+    containers: new Set(rules.containers),
+    fragments: new Set(rules.fragments),
     chrome: new Set(rules.chrome),
     reject: new Set(rules.reject),
   };
+}
+
+// What the first run writes: no rule, and the vocabulary shown once under a key the engine
+// ignores. The operator or the agent edits this file; the engine never does again.
+export const SEED = {
+  _example: {
+    containers: ['DIV#.layout-column'],
+    fragments: ['DIV#.experience-fragment'],
+    merge: { 't-aaaaaaaa': 't-bbbbbbbb' },
+    chrome: ['body > div.cookie-bar'],
+    reject: ['body > div.debug'],
+    identityExclusions: ['-\\d{1,2}$'],
+    noiseClasses: ['clearfix'],
+    containerShare: 0.6,
+    recurrence: 2,
+  },
+};
+
+/** Writes the seed unless a rules.json is there; returns whether it did. */
+export async function seedRules(project) {
+  const file = rulesFile(project);
+  if (await readFile(file, 'utf8').then(() => true, () => false)) return false;
+  await writeFile(file, `${JSON.stringify(SEED, null, 2)}\n`);
+  return true;
 }
 
 /** The project's rules: elements/rules.json over the defaults (defaults without the file). */

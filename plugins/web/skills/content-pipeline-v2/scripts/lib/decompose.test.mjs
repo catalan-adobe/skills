@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { decompose, sections } from './decompose.mjs';
-import { DEFAULT_RULES, mergeRules, readRules } from './elements-rules.mjs';
+import { DEFAULT_RULES, mergeRules, readRules, seedRules } from './elements-rules.mjs';
 import { resolveProject } from './project.mjs';
 
 const W = 1200;
@@ -154,3 +154,83 @@ test('a dominant container with a single non-leaf child is still a container', (
   assert.deepEqual(ids(got), ['body > div.hero-img', 'body > div.c > div.grid > div.s1',
     'body > div.c > div.grid > div.s2']);
 });
+
+test('containers and fragments: decomposition continues into them, within recorded', () => {
+  const column = node('body > div.column', 0, 2000, [
+    text('H2', 'body > div.column > h2', 0, 60),
+    node('body > div.column > div.cards', 60, 900, [node('c1', 60, 450), node('c2', 510, 450)]),
+    node('body > div.column > div.xf', 960, 1040, [
+      node('body > div.column > div.xf > div.banner', 960, 500,
+        [node('b1', 960, 250), node('b2', 1210, 250)]),
+      node('body > div.column > div.xf > hr', 1460, 2),
+      node('body > div.column > div.xf > div.faq', 1462, 538,
+        [node('f1', 1462, 269), node('f2', 1731, 269)]),
+    ], { className: 'xf' }),
+  ], { className: 'column' });
+  const aside = node('body > div.aside', 0, 900, [node('a1', 0, 450), node('a2', 450, 450)]);
+  const cap = capture([column, aside], 5000);
+  assert.deepEqual(ids(sections(cap)), ['body > div.column', 'body > div.aside']);
+  const rules = mergeRules({ containers: ['DIV#.column'], fragments: ['DIV#.xf'] });
+  const { sections: got, rejected } = decompose(cap, { rules });
+  assert.deepEqual(ids(got), ['body > div.column > h2', 'body > div.column > div.cards',
+    'body > div.column > div.xf > div.banner', 'body > div.column > div.xf > div.faq',
+    'body > div.aside']);
+  assert.deepEqual(got[0].within,
+    [{ kind: 'container', identity: 'DIV#.column', selector: 'body > div.column' }]);
+  assert.deepEqual(got[2].within.map((w) => w.kind), ['container', 'fragment']);
+  assert.equal(got[4].within, undefined);
+  assert.deepEqual(rejected, [{ selector: 'body > div.column > div.xf > hr', reason: 'hairline' }]);
+  const empty = node('body > div.xf', 0, 500, [], { className: 'xf' });
+  assert.deepEqual(ids(sections(capture([empty, aside], 5000), { rules })),
+    ['body > div.xf', 'body > div.aside'], 'a fragment without visible children stays a section');
+});
+
+test('the first run seeds rules.json with the vocabulary; a second does not touch it', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'cpv2-seed-'));
+  const p = resolveProject(root);
+  await mkdir(p.step('elements'), { recursive: true });
+  assert.equal(await seedRules(p), true);
+  const text = await readFile(path.join(p.step('elements'), 'rules.json'), 'utf8');
+  assert.deepEqual(Object.keys(JSON.parse(text)), ['_example']);
+  const rules = await readRules(p);
+  assert.equal(rules.containers.size, 0, 'the example is not a rule');
+  await writeFile(path.join(p.step('elements'), 'rules.json'), '{"reject":["x"]}');
+  assert.equal(await seedRules(p), false);
+  assert.ok((await readRules(p)).reject.has('x'));
+});
+
+test('through a collapsed chain: wrappers in the chain are peeled, the first other is the section',
+  () => {
+    // page-tree folded xf > cmp-xf > grid > banner > wrapper into one node whose box and
+    // children are the innermost wrapper's; the banner is in the chain, not a child.
+    const chain = [
+      { tag: 'DIV', className: 'xf', selector: '#xf-1' },
+      { tag: 'DIV', className: 'cmp-xf', selector: '#xf-1 > div.cmp-xf' },
+      { tag: 'DIV', className: 'banner image', selector: '#banner-1' },
+      { tag: 'DIV', className: 'wrapper', selector: '#banner-1 > div.wrapper' },
+    ];
+    const folded = node('#banner-1 > div.wrapper', 0, 500, [
+      node('#banner-1 > div.wrapper > div.text', 0, 250, [], { className: 'text' }),
+      node('#banner-1 > div.wrapper > div.cta', 250, 250, [], { className: 'cta' }),
+    ], { className: 'xf', collapsed: chain });
+    const part = node('#banner-1 > div > div.banner-img', 0, 500, [], { className: 'banner-img' });
+    const rest = node('body > div.rest', 500, 1400, [node('r1', 500, 700), node('r2', 1200, 700)],
+      { className: 'rest' });
+    const cap = capture([folded, part, rest], 5000);
+    const rules = mergeRules({ fragments: ['DIV#.xf'], containers: ['DIV#.cmp-xf'] });
+    const { sections: got, rejected } = decompose(cap, { rules });
+    assert.deepEqual(ids(got), ['#banner-1 > div.wrapper', 'body > div.rest']);
+    assert.deepEqual(got[0].collapsed.map((c) => c.className), ['banner image', 'wrapper'],
+      're-headed at the banner: its identity and selectors are the banner\'s');
+    assert.deepEqual(got[0].within.map((w) => `${w.kind}:${w.identity}@${w.selector}`),
+      ['fragment:DIV#.xf@#banner-1 > div.wrapper', 'container:DIV#.cmp-xf@#xf-1 > div.cmp-xf']);
+    assert.deepEqual(rejected, [{ selector: '#banner-1 > div > div.banner-img', reason: 'part',
+      of: '#banner-1 > div.wrapper' }], 'the promoted image is a part of the banner again');
+    const all = mergeRules({ fragments: ['DIV#.xf'],
+      containers: ['DIV#.cmp-xf', 'DIV#.banner.image', 'DIV#.wrapper'] });
+    assert.deepEqual(ids(sections(cap, { rules: all })),
+      ['#banner-1 > div.wrapper > div.text', '#banner-1 > div.wrapper > div.cta',
+        '#banner-1 > div > div.banner-img', 'body > div.rest'],
+      'a chain of containers all the way down falls to the children; the image, promoted out'
+        + ' of a peeled banner, is content of its own');
+  });

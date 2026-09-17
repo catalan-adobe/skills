@@ -1,9 +1,19 @@
 // Decomposition: a captured page minus its chrome, cut into sections. Pure functions over a
 // capture ({ url, tree }) and the chrome step's member selectors.
-import { HAIRLINE_PX } from './chrome.mjs';
+import { HAIRLINE_PX, own } from './chrome.mjs';
 import { mergeRules } from './elements-rules.mjs';
 
 const PEEL_LIMIT = 12;
+
+/**
+ * A node's identity: the outermost element of its collapsed chain — tag, stable id, class
+ * tokens minus state, generated names, the rules' exclusions and noise. Children never
+ * enter it, so repetition never splits a type.
+ */
+export function identity(node, rules = mergeRules()) {
+  return own(node, (t) => !rules.noiseClasses.has(t)
+    && !rules.identityExclusions.some((re) => re.test(t)));
+}
 
 /** Every selector a node stands for: its own and the chain page-tree collapsed into it. */
 export const selectorsOf = (n) => [n.selector, ...(n.collapsed ?? []).map((c) => c.selector)]
@@ -20,8 +30,10 @@ export const isLeafComponent = (n, rules) => {
  * members (`chrome`, or `rules.chrome` for one the chrome step missed) and `rules.reject`
  * selectors go first, wrappers around chrome are peeled, a lone node or a dominant container
  * is peeled unless it is a leaf component; then `hairline`, `zero-width` and `off-page` nodes
- * go, and a `part` (a node page-tree promoted out of a sibling section, named in `of`) is
- * attached back.
+ * go, a section whose identity is a container or a fragment (`rules.containers`,
+ * `rules.fragments`) is replaced by its children — each carrying `within`, the chain of
+ * containers and fragments it sat in — and a `part` (a node page-tree promoted out of a
+ * sibling section, named in `of`) is attached back.
  *
  * @param {{tree: object}} capture
  * @param {{chromeSelectors?: Iterable<string>, rules?: object}} [options]
@@ -73,13 +85,41 @@ export function decompose(capture, { chromeSelectors = [], rules = mergeRules() 
   }
   const onPage = (b) => b.x + b.width > 0 && b.x < page.width && b.y + b.height > 0
     && b.y < page.height;
-  const kept = nodes.filter((n) => (n.bounds.height > HAIRLINE_PX || drop(n, 'hairline'))
+  const visible = (list) => list.filter((n) => (
+    (n.bounds.height > HAIRLINE_PX || drop(n, 'hairline'))
     && (n.bounds.width > 0 || drop(n, 'zero-width'))
-    && (onPage(n.bounds) || drop(n, 'off-page')));
+    && (onPage(n.bounds) || drop(n, 'off-page'))));
+  const kept = visible(nodes.filter(keep)).flatMap((n) => through(n, rules, visible, keep));
   const partOf = (n) => kept.find((o) => o !== n
     && selectorsOf(o).some((sel) => n.selector.startsWith(`${sel} >`)));
   const sections = kept.filter((n) => !partOf(n) || drop(n, 'part', partOf(n).selector));
   return { sections, rejected };
+}
+
+/**
+ * A container or fragment section is decomposed through: a collapsed chain (page-tree folds
+ * single-child wrappers into one node, outermost first) is walked first — each element that
+ * is itself a container or fragment is peeled, the first that is not becomes the section,
+ * re-headed at that element so its identity and selectors are its own; when the chain is
+ * exhausted the visible children are the sections. Each carries `within`, the chain so far.
+ * A container without children stays a section.
+ */
+function through(node, rules, visible, keep, within = []) {
+  const chain = node.collapsed ?? [];
+  let trail = within;
+  for (let head = 0; head < Math.max(1, chain.length); head += 1) {
+    const current = head === 0 ? node : { ...node, collapsed: chain.slice(head) };
+    const id = identity(current, rules);
+    const kind = rules.fragments.has(id) ? 'fragment'
+      : rules.containers.has(id) ? 'container' : null;
+    if (!kind) return [trail.length ? { ...current, within: trail } : current];
+    const selector = head === 0 ? node.selector : (chain[head].selector ?? node.selector);
+    trail = [...trail, { kind, identity: id, selector }];
+    if (head >= chain.length - 1) break;
+  }
+  const children = visible((node.children ?? []).filter(keep));
+  if (!children.length) return [within.length ? { ...node, within } : node];
+  return children.flatMap((c) => through(c, rules, visible, keep, trail));
 }
 
 /** The sections alone. */

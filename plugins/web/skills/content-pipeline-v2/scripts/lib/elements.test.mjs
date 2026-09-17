@@ -12,8 +12,8 @@ const card = (n, y, withImage = true) => el('DIV', 'card', `c${n}`, y, 200, [
   el('P', '', `c${n} > p`, y + 100, 100),
 ]);
 // A page: two sections side by side under a body, each with two structural children.
-const page = (url, sectionsList) => ({
-  url, tree: el('BODY', '', 'body', 0, 1000, sectionsList),
+const page = (url, sectionsList, height = 1000) => ({
+  url, tree: el('BODY', '', 'body', 0, height, sectionsList),
 });
 const cards = (sel, y, count, cls = 'cards col-sm-4') => el('DIV', cls, sel, y, 400,
   Array.from({ length: count }, (_, i) => card(`${sel}-${i}`, y + i * 10)));
@@ -102,4 +102,32 @@ test('recurrence counts pages, not instances; a page of unique sections has no c
   const withThird = inventory([...[page('u1', [text('s2', 0), text('s3', 300)]),
     page('u3', [text('s2', 0), text('s3', 300)])]]);
   assert.deepEqual(withThird.pages.map((p) => p.covered), ['full', 'full']);
+});
+
+test('inventory through containers and fragments: within on sections, fragment contents', () => {
+  const xf = (sel, y, kids) => el('DIV', 'xf', sel, y, 700, kids);
+  const inner = [cards('col > xf > c', 400), text('col > xf > t', 600)];
+  const p1 = page('u1', [el('DIV', 'column', 'col', 0, 900, [
+    cards('col > s1', 0), xf('col > xf', 400, inner),
+  ]), text('s9', 900)], 3000);
+  const p2 = page('u2', [xf('xf2', 0, [cards('xf2 > c', 0), text('xf2 > t', 400)]),
+    text('s9', 700)], 3000);
+  const p3 = page('u3', [xf('xf3', 0, [text('xf3 > t', 0)]), text('s9', 300)], 3000);
+  const rules = mergeRules({ containers: ['DIV#.column'], fragments: ['DIV#.xf'] });
+  const out = inventory([p1, p2, p3], { rules });
+  assert.deepEqual(out.types.map((t) => t.identity), ['DIV#.text', 'DIV#.cards'],
+    'neither the column nor the fragment is a type');
+  assert.deepEqual(out.pages[0].sections.map((s) => s.within ?? null), [
+    ['container:DIV#.column'], ['container:DIV#.column', 'fragment:DIV#.xf'],
+    ['container:DIV#.column', 'fragment:DIV#.xf'], null,
+  ]);
+  const cardsId = typeId('DIV#.cards');
+  const textId = typeId('DIV#.text');
+  assert.deepEqual(out.fragments, [{
+    identity: 'DIV#.xf', instances: 3, pages: 3,
+    contents: [
+      { types: [cardsId, textId], instances: 2, pages: 2, sample: 'u1' },
+      { types: [textId], instances: 1, pages: 1, sample: 'u3' },
+    ],
+  }]);
 });
