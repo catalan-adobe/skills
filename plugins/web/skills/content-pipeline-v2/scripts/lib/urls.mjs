@@ -326,7 +326,7 @@ function interleave(lists) {
   const out = [];
   const total = lists.reduce((n, list) => n + list.length, 0);
   for (let i = 0; out.length < total; i += 1) {
-    for (const list of lists) if (list[i]) out.push(list[i]);
+    for (const list of lists) if (i < list.length) out.push(list[i]);
   }
   return out;
 }

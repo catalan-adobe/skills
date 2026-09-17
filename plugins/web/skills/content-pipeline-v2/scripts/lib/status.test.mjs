@@ -706,7 +706,8 @@ test('pick reads the saturated groups from elements.json and adds --audit picks'
   ]));
   await mkdir(path.join(cwd, 'migration/elements'), { recursive: true });
   await writeFile(path.join(cwd, 'migration/elements/elements.json'), JSON.stringify({
-    groups: [{ group: 'a', saturated: true }, { group: 'b', saturated: false }],
+    groups: [{ group: 'a', saturated: true }, { group: 'b', saturated: false },
+      { group: '/', saturated: true }],
   }));
   const out = await pickUrls(project, {
     count: 2, exclude: [], write: 'next', audit: 1, reachable: async () => true,
@@ -714,7 +715,8 @@ test('pick reads the saturated groups from elements.json and adds --audit picks'
   assert.deepEqual(out.picks.filter((p) => !p.audit).map((p) => p.group), ['b', 'c']);
   assert.deepEqual(out.picks.filter((p) => p.audit).map((p) => p.group), ['a'],
     'the audit comes from the saturated group');
-  assert.deepEqual([out.count, out.skipped], [3, ['a']], 'the audit pick is in the subset');
+  assert.deepEqual([out.count, out.skipped], [3, ['a', '']],
+    'the audit pick is in the subset; the root group is spelled the way pick spells it');
   const help = await cli(cwd, '--help');
   assert.match(String(help), /--audit/);
 });
