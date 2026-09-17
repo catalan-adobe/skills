@@ -5,14 +5,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 export const DEFAULT_RULES = {
-  // A node covering this share of the page height with several children is a container.
+  // A node covering this share of the page height with children is a container.
   containerShare: 0.6,
-  // A node this thin is a rule or a progress bar, not a section.
-  hairlinePx: 6,
   // A type on this many pages counts as recurring.
   recurrence: 2,
-  // Class tokens dropped from an identity, as regular expressions: widths such as
-  // `col-sm-4` or `aem-GridColumn--default--12`. State and generated names are always out.
+  // Class tokens dropped from an identity, as regular expressions. The default treats a
+  // class ending in one or two digits as a width (`col-sm-4`, `aem-GridColumn--default--12`)
+  // — so `grid-3` and `grid-4` are one element too. State and generated names are always out.
   identityExclusions: ['-\\d{1,2}$'],
   // Class tokens dropped from an identity, literally.
   noiseClasses: [],
@@ -28,20 +27,54 @@ export const DEFAULT_RULES = {
 };
 
 export const RULE_KEYS = Object.keys(DEFAULT_RULES);
+const LIST_KEYS = ['identityExclusions', 'noiseClasses', 'leafTags', 'chrome', 'reject'];
+const NUMBER_KEYS = ['containerShare', 'recurrence'];
 export const rulesFile = (project) => path.join(project.step('elements'), 'rules.json');
 
-/** Defaults with `overrides` on top; an unknown key is an error naming the known ones. */
+const isStringList = (v) => Array.isArray(v) && v.every((s) => typeof s === 'string');
+const fail = (msg) => { throw new Error(`rules.json: ${msg}`); };
+
+function validate(rules) {
+  for (const k of LIST_KEYS) {
+    if (!isStringList(rules[k])) fail(`${k} must be a list of strings`);
+  }
+  for (const k of NUMBER_KEYS) {
+    if (!Number.isFinite(rules[k])) fail(`${k} must be a number`);
+  }
+  const { merge } = rules;
+  if (!merge || typeof merge !== 'object' || Array.isArray(merge)) {
+    fail('merge must be an object of type id → type id');
+  }
+  for (const [from, to] of Object.entries(merge)) {
+    if (typeof to !== 'string') fail(`merge: ${from} must point at a type id`);
+    if (to in merge) {
+      fail(`merge: target ${to} is itself merged into ${merge[to]}; point ${from} at ${merge[to]}`);
+    }
+  }
+}
+
+const regExp = (source, i) => {
+  try { return new RegExp(source); } catch (err) {
+    return fail(`identityExclusions[${i}] "${source}" is not a valid regular expression: `
+      + err.message);
+  }
+};
+
+/**
+ * Defaults with `overrides` on top; an unknown key, a wrong shape, an invalid expression or
+ * a merge chain is an error naming the fix. `_example` is ignored.
+ */
 export function mergeRules(overrides = {}) {
   const unknown = Object.keys(overrides).filter((k) => !RULE_KEYS.includes(k) && k !== '_example');
   if (unknown.length) {
-    throw new Error(`rules.json: unknown key(s) ${unknown.join(', ')}; known: `
-      + RULE_KEYS.join(', '));
+    fail(`unknown key(s) ${unknown.join(', ')}; known: ${RULE_KEYS.join(', ')}`);
   }
   const { _example, ...rest } = overrides;
   const rules = { ...DEFAULT_RULES, ...rest };
+  validate(rules);
   return {
     ...rules,
-    identityExclusions: rules.identityExclusions.map((s) => new RegExp(s)),
+    identityExclusions: rules.identityExclusions.map(regExp),
     leafTags: new Set(rules.leafTags),
     noiseClasses: new Set(rules.noiseClasses),
     chrome: new Set(rules.chrome),
@@ -55,7 +88,7 @@ export async function readRules(project) {
   if (text === null) return mergeRules();
   let parsed;
   try { parsed = JSON.parse(text); } catch (err) {
-    throw new Error(`rules.json is not valid JSON: ${err.message}`);
+    return fail(`not valid JSON: ${err.message}`);
   }
   return mergeRules(parsed);
 }

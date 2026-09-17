@@ -2,8 +2,8 @@
 // set of their children's identities, coverage per page, compositions across pages. Pure
 // functions over captures; the rules object comes from elements-rules.mjs.
 import { createHash } from 'node:crypto';
-import { structuralChildren, stableId, tokens } from './chrome.mjs';
-import { sections } from './decompose.mjs';
+import { own, structuralChildren } from './chrome.mjs';
+import { decompose } from './decompose.mjs';
 import { mergeRules } from './elements-rules.mjs';
 
 /**
@@ -12,10 +12,8 @@ import { mergeRules } from './elements-rules.mjs';
  * enter it, so repetition never splits a type.
  */
 export function identity(node, rules = mergeRules()) {
-  const head = node.collapsed?.[0] ?? node;
-  const classes = tokens(head.className).filter((t) => !rules.noiseClasses.has(t)
+  return own(node, (t) => !rules.noiseClasses.has(t)
     && !rules.identityExclusions.some((re) => re.test(t)));
-  return `${head.tag}#${stableId(head.id)}.${classes.join('.')}`;
 }
 
 export const typeId = (id) => `t-${createHash('sha1').update(id).digest('hex').slice(0, 8)}`;
@@ -25,7 +23,11 @@ export function variantKey(node, rules = mergeRules()) {
   return [...new Set(structuralChildren(node).map((c) => identity(c, rules)))].sort();
 }
 
-const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+const median = (values) => {
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+};
 const coverageBucket = (share) => (share >= 0.999 ? 'full' : share > 0 ? 'partial' : 'none');
 
 /**
@@ -33,7 +35,7 @@ const coverageBucket = (share) => (share >= 0.999 ? 'full' : share > 0 ? 'partia
  *
  * @param {object[]} captures `{ url, tree }` each.
  * @param {{chromeSelectors?: Iterable<string>, rules?: object, groupOf?: (url) => string}}
- * @returns {{types: object[], pages: object[], compositions: object[]}}
+ * @returns {{types: object[], pages: object[], compositions: object[], warnings: string[]}}
  */
 export function inventory(captures, { chromeSelectors = [], rules = mergeRules(),
   groupOf = () => '/' } = {}) {
@@ -42,15 +44,18 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
   const pages = [];
   for (const capture of captures) {
     const group = groupOf(capture.url) || '/';
-    const page = { url: capture.url, group, sections: [], contentHeight: 0 };
-    for (const node of sections(capture, { chromeSelectors, rules })) {
+    const { sections, rejected } = decompose(capture, { chromeSelectors, rules });
+    const page = { url: capture.url, group, sections: [], rejected, contentHeight: 0 };
+    for (const node of sections) {
       const ident = identity(node, rules);
-      const id = resolveId(typeId(ident));
+      const ownId = typeId(ident);
+      const id = resolveId(ownId);
       const t = types.get(id) ?? {
         id, identity: ident, identities: new Set(), pages: new Set(), instances: 0, heights: [],
-        sample: null, groups: {}, variants: new Map(),
+        sample: null, groups: {}, variants: new Map(), merged: false, seenAsSelf: false,
       };
       t.identities.add(ident);
+      if (id !== ownId) t.merged = true; else t.seenAsSelf = true;
       t.pages.add(capture.url);
       t.instances += 1;
       t.heights.push(node.bounds.height);
@@ -71,10 +76,12 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
     pages.push(page);
   }
   const total = captures.length;
+  const warnings = [...types.values()].filter((t) => t.merged && !t.seenAsSelf).map((t) => (
+    `merge target ${t.id} never appears as its own identity; is the id right?`));
   const typeList = [...types.values()].map((t) => ({
     id: t.id,
     identity: t.identity,
-    ...(t.identities.size > 1 ? { mergedFrom: [...t.identities] } : {}),
+    ...(t.merged ? { mergedFrom: [...t.identities] } : {}),
     pages: t.pages.size,
     support: total ? Math.round((t.pages.size / total) * 1000) / 1000 : 0,
     recurring: t.pages.size >= rules.recurrence,
@@ -106,6 +113,7 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
     types: typeList,
     pages,
     compositions: [...compositions.values()].sort((a, b) => b.pages - a.pages),
+    warnings,
   };
 }
 

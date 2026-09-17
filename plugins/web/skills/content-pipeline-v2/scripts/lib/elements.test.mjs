@@ -75,6 +75,23 @@ test('a merge rule joins two identities into one type and records both', () => {
   const cardsType = merged.types.find((t) => t.id === typeId('DIV#.cards'));
   assert.deepEqual([cardsType.pages, cardsType.mergedFrom.sort()],
     [2, ['DIV#.cards', 'DIV#.tiles']]);
+  assert.deepEqual(merged.warnings, []);
+  const typo = inventory(pages,
+    { rules: mergeRules({ merge: { [typeId('DIV#.tiles')]: 't-deadbeef' } }) });
+  const target = typo.types.find((t) => t.id === 't-deadbeef');
+  assert.deepEqual(target.mergedFrom, ['DIV#.tiles'], 'a merged type always says so');
+  assert.deepEqual(typo.warnings,
+    ['merge target t-deadbeef never appears as its own identity; is the id right?']);
+});
+
+test('pages carry what decomposition dropped; medianHeight is the middle of an even count', () => {
+  const rules = mergeRules({ reject: ['x'] });
+  const promo = el('DIV', 'promo', 'x', 700, 100);
+  const out = inventory([page('u1', [cards('s1', 0, 3), text('s2', 400), promo]),
+    page('u2', [{ ...cards('s1', 0, 3), bounds: { x: 0, y: 0, width: W, height: 500 } },
+      text('s3', 500)])], { rules });
+  assert.deepEqual(out.pages[0].rejected, [{ selector: 'x', reason: 'rules.reject' }]);
+  assert.equal(out.types[0].medianHeight, 450);
 });
 
 test('recurrence counts pages, not instances; a page of unique sections has no coverage', () => {

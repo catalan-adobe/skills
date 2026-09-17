@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { sections } from './decompose.mjs';
+import { decompose, sections } from './decompose.mjs';
 import { DEFAULT_RULES, mergeRules, readRules } from './elements-rules.mjs';
 import { resolveProject } from './project.mjs';
 
@@ -106,5 +106,51 @@ test('rules: defaults without a file, overrides on top, unknown keys refused', a
   assert.throws(() => mergeRules({ containerShar: 0.5 }),
     /unknown key\(s\) containerShar; known: containerShare/);
   await writeFile(path.join(p.step('elements'), 'rules.json'), '{ nope');
-  await assert.rejects(readRules(p), /rules.json is not valid JSON/);
+  await assert.rejects(readRules(p), /rules.json: not valid JSON/);
+});
+
+test('rules: wrong shapes, invalid expressions and merge chains are refused by name', () => {
+  assert.throws(() => mergeRules({ reject: 'body > div.promo' }),
+    /rules.json: reject must be a list of strings/);
+  assert.throws(() => mergeRules({ containerShare: '0.5' }), /containerShare must be a number/);
+  assert.throws(() => mergeRules({ identityExclusions: ['('] }),
+    /identityExclusions\[0\] "\(" is not a valid regular expression/);
+  assert.throws(() => mergeRules({ merge: ['a'] }), /merge must be an object/);
+  assert.throws(() => mergeRules({ merge: { 't-a': 't-b', 't-b': 't-c' } }),
+    /merge: target t-b is itself merged into t-c; point t-a at t-c/);
+  assert.throws(() => mergeRules({ merge: { 't-a': 't-b', 't-b': 't-a' } }), /merge: target/);
+  assert.ok(mergeRules({ merge: { 't-a': 't-c', 't-b': 't-c' } }), 'two sources, one target');
+});
+
+test('decompose reports what it dropped and why; the chrome step\'s members are not news', () => {
+  const header = node('body > header', 0, 100);
+  const bar = node('body > div.cookie-bar', 100, 80);
+  const rule = node('body > hr', 180, 4);
+  const helper = node('body > div.sr', 0, 50, [],
+    { bounds: { x: 0, y: -9999, width: 100, height: 50 } });
+  const a = node('body > div.a', 200, 1400, [node('a1', 200, 700), node('a2', 900, 700)]);
+  const part = node('body > div.a > div > img.hero', 200, 300);
+  const b = node('body > div.b', 1600, 1400, [node('b1', 1600, 700), node('b2', 2300, 700)]);
+  const rules = mergeRules({ chrome: ['body > div.cookie-bar'] });
+  const { sections: got, rejected } = decompose(capture([header, bar, rule, helper, a, part, b]),
+    { chromeSelectors: [header.selector], rules });
+  assert.deepEqual(ids(got), ['body > div.a', 'body > div.b']);
+  assert.deepEqual(rejected, [
+    { selector: 'body > div.cookie-bar', reason: 'rules.chrome' },
+    { selector: 'body > hr', reason: 'hairline' },
+    { selector: 'body > div.sr', reason: 'off-page' },
+    { selector: 'body > div.a > div > img.hero', reason: 'part of body > div.a' },
+  ]);
+});
+
+test('a dominant container with a single non-leaf child is still a container', () => {
+  const hero = node('body > div.hero-img', 0, 400);
+  const grid = node('body > div.c > div.grid', 0, 2800, [
+    node('body > div.c > div.grid > div.s1', 0, 1400, [node('a', 0, 700), node('b', 700, 700)]),
+    node('body > div.c > div.grid > div.s2', 1400, 1400,
+      [node('c', 1400, 700), node('d', 2100, 700)]),
+  ]);
+  const got = sections(capture([hero, node('body > div.c', 0, 2800, [grid])]));
+  assert.deepEqual(ids(got), ['body > div.hero-img', 'body > div.c > div.grid > div.s1',
+    'body > div.c > div.grid > div.s2']);
 });

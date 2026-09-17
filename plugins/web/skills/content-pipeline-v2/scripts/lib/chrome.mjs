@@ -39,17 +39,23 @@ export function structuralChildren(node) {
 }
 
 /**
- * A structural fingerprint: tag, stable id, class tokens and the same for the structural
+ * An element's own identity: tag, stable id and class tokens (`keepToken` filters them
+ * further). A node page-tree collapsed carries the chain of elements it absorbed and may have
+ * taken the box of the innermost one; its identity is the outermost element, the same on
+ * every page however deep the collapse went.
+ */
+export function own(node, keepToken = () => true) {
+  const head = node.collapsed?.[0] ?? node;
+  return `${head.tag}#${stableId(head.id)}.${tokens(head.className).filter(keepToken).join('.')}`;
+}
+
+/**
+ * A structural fingerprint: the element's own identity and the same for the structural
  * children down to `depth`. Text, bounds, hrefs and generated ids are left out on purpose.
  */
 export function fingerprint(node, depth = FINGERPRINT_DEPTH) {
-  // A node page-tree collapsed carries the chain of elements it absorbed and may have taken
-  // the box of the innermost one; its identity is the outermost element, the same on every
-  // page however deep the collapse went.
-  const head = node.collapsed?.[0] ?? node;
-  const own = `${head.tag}#${stableId(head.id)}.${tokens(head.className).join('.')}`;
   const kids = depth > 0 ? structuralChildren(node).map((c) => fingerprint(c, depth - 1)) : [];
-  return createHash('sha1').update(`${own}[${kids.join(',')}]`).digest('hex').slice(0, 12);
+  return createHash('sha1').update(`${own(node)}[${kids.join(',')}]`).digest('hex').slice(0, 12);
 }
 
 /** Every node with its depth and parent fingerprint, for one capture. */
