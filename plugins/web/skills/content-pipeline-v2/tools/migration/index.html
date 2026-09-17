@@ -18,6 +18,7 @@
     <section id="redirects"><h2>Redirects</h2><div class="panel"></div></section>
     <section id="not-to-migrate"><h2>Not to migrate</h2><div class="panel"></div></section>
     <section id="chrome"><h2>Chrome — header and footer</h2><div class="panel"></div></section>
+    <section id="elements"><h2>Elements inventory</h2><div class="panel"></div></section>
     <section id="urls">
       <h2>URLs</h2>
       <form class="filters" onsubmit="return false">
@@ -28,6 +29,12 @@
           <option value="">cached or not</option>
           <option value="yes">cached</option>
           <option value="no">not cached</option>
+        </select>
+        <select name="covered" hidden>
+          <option value="">any coverage</option>
+          <option value="full">fully covered</option>
+          <option value="partial">partially covered</option>
+          <option value="none">not covered</option>
         </select>
         <span class="muted" data-count></span>
       </form>

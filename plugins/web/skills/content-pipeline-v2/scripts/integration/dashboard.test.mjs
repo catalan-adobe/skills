@@ -87,3 +87,71 @@ test('the dashboard server does not live-reload the page when files change', asy
     await stopDashboard(project);
   }
 });
+
+test('the elements panel renders types, the groups table and composition chips', async (t) => {
+  await need(t, 'aem (@adobe/aem-cli)', () => onPath('aem'));
+  const cli = await need(t, 'playwright-cli', () => onPath('playwright-cli'));
+  const root = await edsRepo();
+  const project = resolveProject(root);
+  await init({ origin: 'https://site.example/' }, project);
+  const page = (n, types, covered) => ({
+    url: `https://site.example/blog/${n}.html`, group: 'blog', covered,
+    sections: types.map((type) => ({ type, selector: 's', height: 100 })),
+  });
+  const type = (id, identity, pages, recurring = true) => ({
+    id, identity, pages, recurring, support: pages / 3, instances: pages, heightRange: [90, 110],
+    variants: [{ instances: pages, pages, children: [] }], sample: { url: 'u', selector: 's' },
+    screenshots: recurring ? { instances: [`screenshots/type-${id}-1.png`] } : undefined,
+  });
+  const elements = {
+    generatedAt: '2026-01-02T03:04:05Z', capturedPages: 3,
+    types: [type('t-a', 'DIV#.fw.cards', 3), type('t-b', 'DIV#.fw.text', 2),
+      type('t-u', 'DIV#.fw.once', 1, false)],
+    pages: [page(1, ['t-a', 't-b'], 'full'), page(2, ['t-a'], 'full'), page(3, ['t-u'], 'none')],
+    compositions: [{ key: 't-a t-b', pages: 1 }, { key: 't-a', pages: 1 },
+      { key: 't-u', pages: 1 }],
+    groups: [{ group: 'blog', pages: 3, types: 3, compositions: 3, dominantShare: 0.33,
+      recentNewTypes: 3, saturated: false }],
+    groupsWithoutPages: ['docs'],
+    runs: [{ covered: { full: 2, partial: 0, none: 1 } }],
+  };
+  await mkdir(path.join(project.dir, 'elements'), { recursive: true });
+  await writeFile(path.join(project.dir, 'elements', 'elements.json'), JSON.stringify(elements));
+  await writeFile(path.join(project.dir, 'urls', 'urls.json'), JSON.stringify(
+    elements.pages.map((p) => ({ url: p.url, kind: 'page', group: 'blog', cache: { at: 'x' } })),
+  ));
+  await writeFile(project.statusFile, JSON.stringify({
+    generatedAt: '2026-01-02T03:04:05Z', cacheServer: { running: false },
+    steps: [{ id: 'elements', state: 'done', tier: 'medium', blockedBy: [], writes: [] }],
+  }));
+  const served = await dashboard(project, freePort);
+  const S = 'cpv2-test-dash-elements';
+  try {
+    await pw(cli, S, 'open', served.url);
+    const read = async () => parseEval(evalResult((await pw(cli, S, 'eval', `JSON.stringify({
+      heads: [...document.querySelectorAll('#elements .variant h3')]
+        .map((h) => h.textContent.trim()),
+      groups: document.querySelectorAll('#elements table tbody tr').length,
+      without: document.querySelector('#elements .panel').textContent.includes('docs'),
+      chips: [...document.querySelectorAll('#urls td .chip.type')].map((c) => c.textContent),
+      badges: [...document.querySelectorAll('#urls td .chip[class*=cover-]')]
+        .map((c) => c.textContent),
+      filter: document.querySelector('#urls [name=covered]').hidden,
+    })`)).stdout));
+    let got = await read();
+    for (let i = 0; i < 40 && !got.heads.length; i += 1) {
+      await new Promise((r) => { setTimeout(r, 250); });
+      got = await read();
+    }
+    assert.deepEqual(got.heads, ['cards · 3 pages (100 %)', 'text · 2 pages (67 %)'],
+      'recurring types only, labels without the shared framework class');
+    assert.equal(got.groups, 1);
+    assert.equal(got.without, true);
+    assert.deepEqual(got.chips, ['cards', 'text', 'cards', 'once']);
+    assert.deepEqual(got.badges, ['full', 'full', 'none']);
+    assert.equal(got.filter, false, 'the coverage filter appears with the inventory');
+  } finally {
+    await pw(cli, S, 'close').catch(() => {});
+    await stopDashboard(project);
+  }
+});

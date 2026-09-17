@@ -43,3 +43,8 @@ footer { padding: 30px 20px; font-size: 12px; }
   border: 1px solid #ccc; }
 .variant .shot.footer { object-position: bottom; }
 .bad { color: #b00020; }
+.chip.type { background: #f6f8fa; border: 1px solid var(--line); font-size: 11px; }
+.chip.cover-full { background: #dafbe1; } .chip.cover-partial { background: #fff8c5; }
+.chip.cover-none { background: #ffebe9; }
+#elements .variant .shot { max-height: 160px; }
+#urls td.url { min-width: 260px; }

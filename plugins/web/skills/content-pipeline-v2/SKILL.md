@@ -69,12 +69,16 @@ until the page answers and prints the URL; never pick a port yourself. `status.m
 stop` ends it. Never start `aem up` any other way: that server is the EDS local server for
 the whole repository, so anything else you need served (a page, a block) is at the same
 origin; `migration/.work/dashboard.json` holds its port. The page shows steps and
-their state, the inventory by kind and group, redirects, what is not to be migrated, a
-filterable URL table and the report — all read from `migration/` (`status.json`,
-`project.json`, `urls/urls.json`, `REPORT.md`). While a cache job runs it refreshes itself
-every 5 s from `cache/progress.json` and the inventory, which the worker updates after every
-URL (records are `verified` once served from the cache at the end of the job); a job queued
-after the page stopped refreshing shows up on reload. It writes nothing. `init` adds
+their state, the inventory by kind and group, redirects, what is not to be migrated, the
+chrome variants with their screenshots, the elements inventory (coverage, the groups ×
+compositions table, the recurring types with a crop, the unique tail — and, in the URL
+table, each page's composition as chips with its coverage), a filterable URL table and the
+report — all read from `migration/` (`status.json`, `project.json`, `urls/urls.json`,
+`chrome/chrome.json`, `elements/elements.json`, `REPORT.md`). While a cache job runs it
+refreshes itself every 5 s from `cache/progress.json` and the inventory, which the worker
+updates after every URL (records are `verified` once served from the cache at the end of
+the job); a job queued after the page stopped refreshing shows up on reload. It writes
+nothing. `init` adds
 `migration/` to an existing `.hlxignore` so none of it is deployed; the local server still
 serves it.
 

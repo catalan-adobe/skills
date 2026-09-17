@@ -1,5 +1,6 @@
 // Read-only dashboard over migration/: status.json (the runner's view of the steps),
-// project.json, setup.json, urls/urls.json (the inventory), REPORT.md. No writes, no deps.
+// project.json, setup.json, urls/urls.json (the inventory), chrome/chrome.json,
+// elements/elements.json, REPORT.md. No writes, no deps.
 const BASE = '/migration';
 const ROWS = 200;
 
@@ -137,6 +138,10 @@ function renderNotToMigrate(records) {
 
 let urlRecords = [];
 let urlsBound = false;
+// The elements inventory, by page URL, once the elements step is done: composition chips
+// and the coverage badge in the URL table come from it.
+let elementPages = null;
+let typeIndex = new Map();
 
 /** Called on every refresh: options are rebuilt, the operator's filter values are kept. */
 function renderUrls(records) {
@@ -162,24 +167,114 @@ function drawUrls() {
   const records = urlRecords;
   const form = $('#urls .filters');
   const q = form.elements.q.value.trim().toLowerCase();
-  const { kind, group, cached } = Object.fromEntries(['kind', 'group', 'cached']
+  const { kind, group, cached, covered } = Object.fromEntries(['kind', 'group', 'cached', 'covered']
     .map((n) => [n, form.elements[n].value]));
+  form.elements.covered.hidden = !elementPages;
+  const page = (r) => elementPages?.get(r.url);
   const rows = records.filter((r) => (!q || r.url.toLowerCase().includes(q))
     && (!kind || (r.kind ?? 'unclassified') === kind)
     && (!group || (r.group || '(root)') === group)
-    && (!cached || (cached === 'yes') === Boolean(r.cache)));
+    && (!cached || (cached === 'yes') === Boolean(r.cache))
+    && (!covered || page(r)?.covered === covered));
   form.querySelector('[data-count]').textContent = `${rows.length} of ${records.length}`
     + (rows.length > ROWS ? ` (first ${ROWS} shown)` : '');
+  const composition = (r) => {
+    const p = page(r);
+    if (!p) return '';
+    return chip(p.covered, `cover-${p.covered}`) + ' '
+      + p.sections.map((s) => chip(typeIndex.get(s.type)?.label ?? s.type, 'type')).join(' ');
+  };
   $('#urls .panel').innerHTML = table(
-    ['url', 'kind', 'http', 'redirect → / final', 'migrate', 'cached', 'ms'],
+    ['url', 'kind', 'http', 'redirect → / final', 'migrate', 'cached', 'ms',
+      ...(elementPages ? ['composition'] : [])],
     rows.slice(0, ROWS).map((r) => [
       link(r.url), chip(r.kind ?? 'unclassified', r.kind ?? 'unclassified'),
       esc(r.http ? `${r.http.status} ${r.http.contentType ?? ''}` : ''),
       esc(r.redirect?.target ?? (r.finalUrl && r.finalUrl !== r.url ? r.finalUrl : '')),
       esc(r.migrate ?? ''), esc(r.cache?.at?.slice(0, 16).replace('T', ' ') ?? ''),
       esc(r.cache?.durationMs ?? ''),
+      ...(elementPages ? [composition(r)] : []),
     ]),
   );
+}
+
+/**
+ * Short labels for the types: the identity without its tag, minus the class tokens more
+ * than half of the types share (a framework's marker class says nothing about one type).
+ */
+function typeLabels(types) {
+  const tokens = (t) => t.identity.replace(/^[A-Z0-9]+#\.?/, '').split('.').filter(Boolean);
+  const recurring = types.filter((t) => t.recurring);
+  const seen = new Map();
+  for (const t of recurring) {
+    for (const k of new Set(tokens(t))) seen.set(k, (seen.get(k) ?? 0) + 1);
+  }
+  const common = new Set([...seen].filter(([, n]) => n > recurring.length / 2).map(([k]) => k));
+  return new Map(types.map((t) => {
+    const own = tokens(t).filter((k) => !common.has(k));
+    return [t.id, own.join('.') || tokens(t).join('.') || t.identity.split('#')[0]];
+  }));
+}
+
+function elementType(t, label) {
+  const shots = t.screenshots?.instances ?? [];
+  const crop = shots[0]
+    ? `<a href="${BASE}/elements/${esc(shots[0])}"><img class="shot" alt="${esc(t.id)}"
+        src="${BASE}/elements/${esc(shots[0])}"></a>` : '';
+  const more = shots.slice(1).map((f, i) => (
+    `<a href="${BASE}/elements/${esc(f)}">crop ${i + 2}</a>`)).join(' · ');
+  const defects = (t.screenshotError ?? []).map((e) => `<li class="bad">${esc(e)}</li>`).join('');
+  return `<article class="variant">
+    <h3>${esc(label)} · ${t.pages} pages (${Math.round(t.support * 100)} %)</h3>
+    <p class="small"><code>${esc(t.identity)}</code> · ${t.id}</p>
+    <p class="small">${t.instances} instances · ${t.variants.length} variants · ${
+  t.heightRange[0]}–${t.heightRange[1]} px${more ? ` · ${more}` : ''}</p>
+    ${crop}${defects ? `<ul>${defects}</ul>` : ''}
+  </article>`;
+}
+
+/** The elements panel: coverage, the groups × compositions table, the types, the tail. */
+function renderElements(r) {
+  const panel = $('#elements .panel');
+  if (!r) {
+    panel.innerHTML = '<p class="muted">No <code>elements/elements.json</code> yet — '
+      + '<code>elements.mjs</code> after the capture and chrome steps.</p>';
+    elementPages = null;
+    return;
+  }
+  elementPages = new Map(r.pages.map((p) => [p.url, p]));
+  const labels = typeLabels(r.types);
+  typeIndex = new Map(r.types.map((t) => [t.id, { ...t, label: labels.get(t.id) }]));
+  const last = r.runs.at(-1);
+  const recurring = r.types.filter((t) => t.recurring);
+  const unique = r.types.filter((t) => !t.recurring);
+  const cards = [
+    ['pages', r.capturedPages], ['types', r.types.length], ['recurring', recurring.length],
+    ['fully covered', last.covered.full], ['partially', last.covered.partial],
+    ['not covered', last.covered.none], ['compositions', r.compositions.length],
+    ['saturated groups', `${r.groups.filter((g) => g.saturated).length} / ${r.groups.length}`],
+  ].map(([label, n]) => `<div class="card"><div class="n">${n}</div>${chip(label)}</div>`);
+  const groups = table(
+    ['group', 'pages', 'types', 'compositions', 'dominant', 'new types in last pages', 'saturated'],
+    r.groups.map((g) => [esc(g.group), g.pages, g.types, g.compositions,
+      `${Math.round(g.dominantShare * 100)} %`, g.recentNewTypes,
+      g.saturated ? chip('saturated', 'done') : '']));
+  const without = r.groupsWithoutPages?.length
+    ? `<p class="muted small">Groups without a captured page: ${
+      esc(r.groupsWithoutPages.join(', '))}</p>` : '';
+  const tail = unique.length
+    ? `<details><summary>Unique types (${unique.length})</summary><ul>${unique.map((t) => (
+      `<li><code>${esc(t.identity)}</code> · ${link(t.sample.url)}</li>`)).join('')}</ul>
+      </details>` : '';
+  panel.innerHTML = `<p class="small">generated ${
+    esc(String(r.generatedAt ?? '').slice(0, 16).replace('T', ' '))} UTC · run ${r.runs.length}
+    · <a href="${BASE}/elements/evaluation.md">evaluation.md</a></p>
+    <div class="cards">${cards.join('')}</div>
+    <h3>Groups × compositions</h3>${groups}${without}
+    <h3>Recurring types</h3><div class="variants">${
+  recurring.map((t) => elementType(t, labels.get(t.id))).join('')}</div>
+    ${tail}`;
+  drawUrls();
 }
 
 function chromeVariant(role, v) {
@@ -240,6 +335,19 @@ function renderReport(md) {
 }
 
 let chromeSeen = null;
+let elementsSeen = null;
+/** elements.json (large) is fetched like chrome.json: only when the step is done and new. */
+async function refreshElements(status) {
+  const step = status?.steps?.find((s) => s.id === 'elements');
+  if (!step) return;
+  if (step.state !== 'done') {
+    if (elementsSeen === null) { renderElements(null); elementsSeen = 'none'; }
+    return;
+  }
+  if (elementsSeen === status.generatedAt) return;
+  elementsSeen = status.generatedAt;
+  renderElements(await json('elements/elements.json'));
+}
 /**
  * chrome.json is fetched only once status.json says the chrome step is done, and again
  * when that status was produced later: a missing file is slow to answer (the local server
@@ -267,6 +375,7 @@ async function refreshLive() {
   ]);
   renderSteps(status, progress);
   await refreshChrome(status);
+  await refreshElements(status);
   if (records || !$('#inventory .card')) {
     renderInventory(records ?? []);
     renderRedirects(records ?? []);
