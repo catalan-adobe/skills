@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveProject, writeProject } from './project.mjs';
+import { pathToFileURL } from 'node:url';
 import { writeInventory } from './inventory.mjs';
 import { runCheck } from './checks.mjs';
 import { stepStates } from './steps.mjs';
@@ -293,3 +294,26 @@ test('startCapture with nothing to capture still starts the worker (it writes ca
     });
     assert.deepEqual([out.started, out.total, spawned.length], [true, 0, 1]);
   });
+
+test('isMain: the entry script, through a symlink too; never throws on an odd argv', async () => {
+  const { isMain } = await import('./project.mjs');
+  const { realpath, symlink } = await import('node:fs/promises');
+  // import.meta.url is a module's real path (Node resolves symlinks for ES modules).
+  const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'cpv2-main-')));
+  const real = path.join(dir, 'real.mjs');
+  await writeFile(real, '');
+  const linkDir = path.join(dir, 'link');
+  await symlink(dir, linkDir);
+  const saved = process.argv[1];
+  try {
+    process.argv[1] = path.join(linkDir, 'real.mjs');
+    assert.equal(isMain(pathToFileURL(real).href), true, 'resolved through the symlink');
+    assert.equal(isMain(pathToFileURL(path.join(dir, 'other.mjs')).href), false);
+    process.argv[1] = '-';
+    assert.equal(isMain(pathToFileURL(real).href), false, 'stdin entry: not this module');
+    process.argv[1] = path.join(dir, 'missing.mjs');
+    assert.equal(isMain(pathToFileURL(real).href), false);
+  } finally {
+    process.argv[1] = saved;
+  }
+});

@@ -70,8 +70,12 @@ test('renderEvaluationMd lists crops, variants and flags', () => {
     runs: [{ covered: { full: 1, partial: 0, none: 0 } }],
     compositions: [{ pages: 1 }],
     groups: [{ saturated: false }],
+    fragments: [{
+      identity: 'DIV#.xf', instances: 3, pages: 3, contents: [{ pages: 2 }, { pages: 1 }],
+    }],
   };
   const md = renderEvaluationMd(result);
+  assert.match(md, /## Fragments\n\n.*\n\n- `DIV#.xf`: 3 instances on 3 pages, 2 distinct/);
   assert.match(md, /### t-1 — `DIV#.cards`/);
   assert.match(md, /!\[instance 1\]\(screenshots\/type-t-1-abcdef01.png\)/);
   assert.match(md, /- v\d: 10 instances on 10 pages — children `DIV#.x`\n {2}!\[v\d\]/);

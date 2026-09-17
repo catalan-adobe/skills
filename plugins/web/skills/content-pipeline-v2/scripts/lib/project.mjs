@@ -81,8 +81,14 @@ export async function init({
  * entry path is resolved before the comparison, or a skill invoked via a symlinked
  * directory would silently do nothing.
  */
-export const isMain = (importMetaUrl) => Boolean(process.argv[1])
-  && importMetaUrl === pathToFileURL(realpathSync(process.argv[1])).href;
+export function isMain(importMetaUrl) {
+  try {
+    return Boolean(process.argv[1])
+      && importMetaUrl === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
 
 const DASHBOARD_SRC = fileURLToPath(new URL('../../tools/migration/', import.meta.url));
 const exists = (file) => access(file).then(() => true, () => false);

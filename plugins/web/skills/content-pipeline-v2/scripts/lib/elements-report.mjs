@@ -27,6 +27,8 @@ export const LIMITS = [
     + ` ${SATURATION_PAGES} of a group are then arbitrary until new pages are captured.`,
   'Crops show alt text or a blank where the cache holds no image (lazy-loaded sources the'
     + ' cache never fetched); fixed widgets of the page sit inside tall crops.',
+  'A fragment nested in a fragment is counted for the inner one; the outer content does not'
+    + ' record that it held a fragment.',
 ];
 
 /** The chrome step's member selectors. */

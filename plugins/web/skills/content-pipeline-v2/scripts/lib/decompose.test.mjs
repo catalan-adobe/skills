@@ -115,6 +115,11 @@ test('rules: wrong shapes, invalid expressions and merge chains are refused by n
   assert.throws(() => mergeRules({ containerShare: '0.5' }), /containerShare must be a number/);
   assert.throws(() => mergeRules({ identityExclusions: ['('] }),
     /identityExclusions\[0\] "\(" is not a valid regular expression/);
+  const extended = mergeRules({ identityExclusions: ['-bg$'], noiseClasses: ['clearfix'] });
+  assert.deepEqual(extended.raw.identityExclusions, ['-\\d{1,2}$', '-bg$'], 'extends the default');
+  assert.ok(extended.identityExclusions[0].test('col-sm-4') && extended.identityExclusions[1]
+    .test('light-grey-bg'));
+  assert.deepEqual([...extended.noiseClasses], ['clearfix']);
   assert.throws(() => mergeRules({ merge: ['a'] }), /merge must be an object/);
   assert.throws(() => mergeRules({ merge: { 't-a': 't-b', 't-b': 't-c' } }),
     /merge: target t-b is itself merged into t-c; point t-a at t-c/);
@@ -201,31 +206,39 @@ test('the first run seeds rules.json with the vocabulary; a second does not touc
 
 test('through a collapsed chain: wrappers in the chain are peeled, the first other is the section',
   () => {
-    // page-tree folded xf > cmp-xf > grid > banner > wrapper into one node whose box and
-    // children are the innermost wrapper's; the banner is in the chain, not a child.
+    // page-tree folded xf > cmp-xf > banner > wrapper into one node: one box, the innermost's
+    // children, the chain outermost first. The node's own selector is the outermost's when
+    // that one had area (the usual case) and the innermost's otherwise — both are tried.
     const chain = [
       { tag: 'DIV', className: 'xf', selector: '#xf-1' },
       { tag: 'DIV', className: 'cmp-xf', selector: '#xf-1 > div.cmp-xf' },
       { tag: 'DIV', className: 'banner image', selector: '#banner-1' },
       { tag: 'DIV', className: 'wrapper', selector: '#banner-1 > div.wrapper' },
     ];
-    const folded = node('#banner-1 > div.wrapper', 0, 500, [
+    const kids = [
       node('#banner-1 > div.wrapper > div.text', 0, 250, [], { className: 'text' }),
       node('#banner-1 > div.wrapper > div.cta', 250, 250, [], { className: 'cta' }),
-    ], { className: 'xf', collapsed: chain });
+    ];
     const part = node('#banner-1 > div > div.banner-img', 0, 500, [], { className: 'banner-img' });
+    const xfPart = node('#xf-1 > div > div.decoration', 0, 500, [], { className: 'decoration' });
     const rest = node('body > div.rest', 500, 1400, [node('r1', 500, 700), node('r2', 1200, 700)],
       { className: 'rest' });
-    const cap = capture([folded, part, rest], 5000);
     const rules = mergeRules({ fragments: ['DIV#.xf'], containers: ['DIV#.cmp-xf'] });
-    const { sections: got, rejected } = decompose(cap, { rules });
-    assert.deepEqual(ids(got), ['#banner-1 > div.wrapper', 'body > div.rest']);
-    assert.deepEqual(got[0].collapsed.map((c) => c.className), ['banner image', 'wrapper'],
-      're-headed at the banner: its identity and selectors are the banner\'s');
-    assert.deepEqual(got[0].within.map((w) => `${w.kind}:${w.identity}@${w.selector}`),
-      ['fragment:DIV#.xf@#banner-1 > div.wrapper', 'container:DIV#.cmp-xf@#xf-1 > div.cmp-xf']);
-    assert.deepEqual(rejected, [{ selector: '#banner-1 > div > div.banner-img', reason: 'part',
-      of: '#banner-1 > div.wrapper' }], 'the promoted image is a part of the banner again');
+    for (const ownSelector of ['#xf-1', '#banner-1 > div.wrapper']) {
+      const folded = node(ownSelector, 0, 500, kids, { className: 'xf', collapsed: chain });
+      const cap = capture([folded, part, xfPart, rest], 5000);
+      const { sections: got, rejected } = decompose(cap, { rules });
+      assert.deepEqual(ids(got), ['#banner-1', '#xf-1 > div > div.decoration', 'body > div.rest'],
+        `re-headed at the banner with the banner's selector (node selector ${ownSelector})`);
+      assert.deepEqual(got[0].collapsed.map((c) => c.className), ['banner image', 'wrapper']);
+      assert.deepEqual(got[0].within.map((w) => `${w.kind}:${w.identity}@${w.selector}`),
+        ['fragment:DIV#.xf@#xf-1', 'container:DIV#.cmp-xf@#xf-1 > div.cmp-xf']);
+      assert.deepEqual(rejected, [{ selector: '#banner-1 > div > div.banner-img', reason: 'part',
+        of: '#banner-1' }], 'the banner image is a part of the banner; the fragment\'s '
+        + 'decoration, promoted from a peeled level, is content of its own');
+    }
+    const folded = node('#xf-1', 0, 500, kids, { className: 'xf', collapsed: chain });
+    const cap = capture([folded, part, rest], 5000);
     const all = mergeRules({ fragments: ['DIV#.xf'],
       containers: ['DIV#.cmp-xf', 'DIV#.banner.image', 'DIV#.wrapper'] });
     assert.deepEqual(ids(sections(cap, { rules: all })),

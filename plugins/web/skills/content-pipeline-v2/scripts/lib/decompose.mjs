@@ -36,10 +36,12 @@ export const isLeafComponent = (n, rules) => {
  * sibling section, named in `of`) is attached back.
  *
  * @param {{tree: object}} capture
- * @param {{chromeSelectors?: Iterable<string>, rules?: object}} [options]
+ * @param {{chromeSelectors?: Iterable<string>, rules?: object, seen?: Set<string>}} [options]
+ *   `seen`, when given, collects every identity met while decomposing through containers.
  * @returns {{sections: object[], rejected: {selector: string, reason: string}[]}}
  */
-export function decompose(capture, { chromeSelectors = [], rules = mergeRules() } = {}) {
+export function decompose(capture,
+  { chromeSelectors = [], rules = mergeRules(), seen = null } = {}) {
   const stepChrome = new Set(chromeSelectors);
   const rejected = [];
   const drop = (n, reason, of) => {
@@ -89,7 +91,8 @@ export function decompose(capture, { chromeSelectors = [], rules = mergeRules() 
     (n.bounds.height > HAIRLINE_PX || drop(n, 'hairline'))
     && (n.bounds.width > 0 || drop(n, 'zero-width'))
     && (onPage(n.bounds) || drop(n, 'off-page'))));
-  const kept = visible(nodes.filter(keep)).flatMap((n) => through(n, rules, visible, keep));
+  const kept = visible(nodes.filter(keep))
+    .flatMap((n) => through(n, rules, visible, keep, [], seen));
   const partOf = (n) => kept.find((o) => o !== n
     && selectorsOf(o).some((sel) => n.selector.startsWith(`${sel} >`)));
   const sections = kept.filter((n) => !partOf(n) || drop(n, 'part', partOf(n).selector));
@@ -102,24 +105,28 @@ export function decompose(capture, { chromeSelectors = [], rules = mergeRules() 
  * is itself a container or fragment is peeled, the first that is not becomes the section,
  * re-headed at that element so its identity and selectors are its own; when the chain is
  * exhausted the visible children are the sections. Each carries `within`, the chain so far.
- * A container without children stays a section.
+ * A re-headed section keeps the node's box (the chain shares one box) but takes the chain
+ * element's selector, so its parts and its crop are its own. A declared container with no
+ * visible children is a leaf and stays a section under its own identity. `seen` collects
+ * every identity met, so a rule that matches nothing can be reported.
  */
-function through(node, rules, visible, keep, within = []) {
+function through(node, rules, visible, keep, within = [], seen = null) {
   const chain = node.collapsed ?? [];
   let trail = within;
   for (let head = 0; head < Math.max(1, chain.length); head += 1) {
-    const current = head === 0 ? node : { ...node, collapsed: chain.slice(head) };
+    const selector = chain[head]?.selector ?? node.selector;
+    const current = head === 0 ? node : { ...node, collapsed: chain.slice(head), selector };
     const id = identity(current, rules);
+    seen?.add(id);
     const kind = rules.fragments.has(id) ? 'fragment'
       : rules.containers.has(id) ? 'container' : null;
     if (!kind) return [trail.length ? { ...current, within: trail } : current];
-    const selector = head === 0 ? node.selector : (chain[head].selector ?? node.selector);
     trail = [...trail, { kind, identity: id, selector }];
     if (head >= chain.length - 1) break;
   }
   const children = visible((node.children ?? []).filter(keep));
   if (!children.length) return [within.length ? { ...node, within } : node];
-  return children.flatMap((c) => through(c, rules, visible, keep, trail));
+  return children.flatMap((c) => through(c, rules, visible, keep, trail, seen));
 }
 
 /** The sections alone. */

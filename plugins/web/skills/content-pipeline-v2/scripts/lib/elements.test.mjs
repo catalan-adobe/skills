@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { identity, inventory, summary, typeId, variantKey } from './elements.mjs';
+import { identity } from './decompose.mjs';
+import { inventory, summary, typeId, variantKey } from './elements.mjs';
 import { mergeRules } from './elements-rules.mjs';
 
 const W = 1200;

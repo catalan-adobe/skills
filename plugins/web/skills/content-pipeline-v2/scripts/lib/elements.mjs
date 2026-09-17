@@ -6,8 +6,6 @@ import { structuralChildren } from './chrome.mjs';
 import { decompose, identity } from './decompose.mjs';
 import { mergeRules } from './elements-rules.mjs';
 
-export { identity };
-
 export const typeId = (id) => `t-${createHash('sha1').update(id).digest('hex').slice(0, 8)}`;
 /** A variant's id: the hash of its children identities — the same set, the same id. */
 export const variantId = (children) => (
@@ -39,9 +37,10 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
   const types = new Map();
   const pages = [];
   const fragments = new Map();
+  const seen = new Set();
   for (const capture of captures) {
     const group = groupOf(capture.url) || '/';
-    const { sections, rejected } = decompose(capture, { chromeSelectors, rules });
+    const { sections, rejected } = decompose(capture, { chromeSelectors, rules, seen });
     const page = {
       url: capture.url, group, capturedAt: capture.capturedAt ?? null, sections: [],
       rejected: [], contentHeight: 0,
@@ -98,6 +97,14 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
   const total = captures.length;
   const warnings = [...types.values()].filter((t) => t.merged && !t.seenAsSelf).map((t) => (
     `merge target ${t.id} never appears as its own identity; is the id right?`));
+  for (const key of ['containers', 'fragments']) {
+    for (const id of rules[key]) {
+      if (!seen.has(id)) {
+        warnings.push(`${key}: ${id} matched no section in this run — copy the identity from `
+          + 'the type table in elements.md (not a selector)');
+      }
+    }
+  }
   const typeList = [...types.values()].map((t) => ({
     id: t.id,
     identity: t.identity,

@@ -8,7 +8,8 @@ import { writeJson } from './jobs.mjs';
 import { checkElements, runCheck } from './checks.mjs';
 import { writeEvaluation } from './elements-evaluation.mjs';
 import {
-  SATURATION_PAGES, buildElements, elementsJson, groupTable, writeElements, writeOutputs,
+  SATURATION_PAGES, buildElements, elementsJson, groupTable, renderElementsMd, renderSection,
+  writeElements, writeOutputs,
 } from './elements-report.mjs';
 import { screenshotTypes } from './elements-shots.mjs';
 import { writeInventory } from './inventory.mjs';
@@ -240,4 +241,27 @@ test('checkElements: a listed crop absent on disk, a crop error, a failed run', 
   await writeJson(runFile(p, 'elements'),
     { state: 'analysing', pid: process.pid, done: 2, total: 9 });
   assert.equal((await runCheck('elements', p)).running, 'crops 2/9 pages');
+});
+
+test('elements.md and the section render fragments and name unmatched rules', async () => {
+  const p = await project(three);
+  await writeFile(path.join(p.step('elements'), 'rules.json'),
+    JSON.stringify({ containers: ['DIV#.nope'], fragments: ['div.wrong'] }));
+  const r = await writeElements(p);
+  assert.deepEqual(r.warnings, [
+    'containers: DIV#.nope matched no section in this run — copy the identity from the type '
+      + 'table in elements.md (not a selector)',
+    'fragments: div.wrong matched no section in this run — copy the identity from the type '
+      + 'table in elements.md (not a selector)',
+  ]);
+  const md = await readFile(path.join(p.step('elements'), 'elements.md'), 'utf8');
+  assert.match(md, /## Fragments\n\n_none declared/);
+  assert.match(md, /## Warnings\n\n- containers: DIV#.nope matched no section/);
+  const fragments = [{ identity: 'DIV#.xf', instances: 4, pages: 3, contents: [
+    { types: ['t-1', 't-2'], instances: 3, pages: 2, sample: 'u1' },
+    { types: ['t-1'], instances: 1, pages: 1, sample: 'u3' }] }];
+  const rendered = renderElementsMd({ ...r, fragments });
+  assert.match(rendered, /### `DIV#.xf` — 4 instances on 3 pages, 2 distinct contents/);
+  assert.match(rendered, /\| 2 \| 3 \| t-1 t-2 \| u1 \|/);
+  assert.match(renderSection({ ...r, fragments }), /1 fragment type\(s\), 2 distinct contents/);
 });

@@ -178,7 +178,7 @@ export function renderEvaluationMd(result) {
     `Groups: ${result.groups.filter((g) => g.saturated).length} of ${result.groups.length}`
       + ` saturated (last ${SATURATION_PAGES} pages brought no new type).`,
     '',
-    ...(result.fragments?.length ? ['## Fragments', '',
+    ...(result.fragments.length ? ['## Fragments', '',
       'Each distinct content of a fragment is a candidate fragment document; its page count'
         + ' is the reuse.', '',
       ...result.fragments.map((f) => `- \`${f.identity}\`: ${f.instances} instances on `

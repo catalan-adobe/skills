@@ -10,11 +10,12 @@ export const DEFAULT_RULES = {
   containerShare: 0.6,
   // A type on this many pages counts as recurring.
   recurrence: 2,
-  // Class tokens dropped from an identity, as regular expressions. The default treats a
-  // class ending in one or two digits as a width (`col-sm-4`, `aem-GridColumn--default--12`)
-  // — so `grid-3` and `grid-4` are one element too. State and generated names are always out.
+  // Class tokens dropped from an identity, as regular expressions; rules.json extends the
+  // list. The default treats a class ending in one or two digits as a width (`col-sm-4`,
+  // `aem-GridColumn--default--12`) — so `grid-3` and `grid-4` are one element too. State and
+  // generated names are always out.
   identityExclusions: ['-\\d{1,2}$'],
-  // Class tokens dropped from an identity, literally.
+  // Class tokens dropped from an identity, literally; rules.json extends the list.
   noiseClasses: [],
   // A node whose children are all of these tags is a leaf component: never peeled.
   leafTags: ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'IMG', 'A', 'SPAN', 'FIGURE',
@@ -81,12 +82,17 @@ export function mergeRules(overrides = {}) {
   const { _example, ...rest } = overrides;
   const rules = { ...DEFAULT_RULES, ...rest };
   validate(rules);
+  // The file's own expressions are checked under the file's indices, then extend the default.
+  const ownExclusions = (rest.identityExclusions ?? []).map(regExp);
+  for (const k of ['identityExclusions', 'noiseClasses']) {
+    rules[k] = [...new Set([...DEFAULT_RULES[k], ...rules[k]])];
+  }
   return {
     ...rules,
     // The rules as data, and their hash: a run records which rules produced it.
     raw: rules,
     hash: createHash('sha1').update(JSON.stringify(rules)).digest('hex').slice(0, 12),
-    identityExclusions: rules.identityExclusions.map(regExp),
+    identityExclusions: [...DEFAULT_RULES.identityExclusions.map(regExp), ...ownExclusions],
     leafTags: new Set(rules.leafTags),
     noiseClasses: new Set(rules.noiseClasses),
     containers: new Set(rules.containers),
@@ -105,7 +111,7 @@ export const SEED = {
     merge: { 't-aaaaaaaa': 't-bbbbbbbb' },
     chrome: ['body > div.cookie-bar'],
     reject: ['body > div.debug'],
-    identityExclusions: ['-\\d{1,2}$'],
+    identityExclusions: ['-bg$', '^vert-pad-'],
     noiseClasses: ['clearfix'],
     containerShare: 0.6,
     recurrence: 2,
