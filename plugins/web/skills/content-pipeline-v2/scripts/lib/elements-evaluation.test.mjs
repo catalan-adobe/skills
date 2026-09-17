@@ -7,46 +7,62 @@ const t = (id, identity, extra = {}) => ({
   medianHeight: 150, variants: [{ instances: 10, pages: 10, children: ['DIV#.x'] }],
   sample: { url: 'u', selector: 's' }, ...extra,
 });
-const page = (url, types) => ({ url, sections: types.map((type) => ({ type })) });
+const page = (url, types, height = 100) => ({
+  url, sections: types.map((type) => ({ type, height })),
+});
 
-test('positionHabit: the share of instances that open or close their page', () => {
+test('positionHabit: the share of instances first and last, and the height quantiles', () => {
   const pages = [page('a', ['t-1', 't-2']), page('b', ['t-1', 't-3', 't-2']), page('c', ['t-2'])];
-  assert.deepEqual(positionHabit({ id: 't-1' }, pages), { first: 1, last: 0, instances: 2 });
-  assert.deepEqual(positionHabit({ id: 't-2' }, pages), { first: 1 / 3, last: 1, instances: 3 });
+  assert.deepEqual(positionHabit({ id: 't-1' }, pages),
+    { first: 1, last: 0, instances: 2, p10: 100, p90: 100 });
+  assert.equal(positionHabit({ id: 't-2' }, pages).last, 1);
+  const tall = Array.from({ length: 10 }, (_, i) => ({
+    url: `p${i}`, sections: [{ type: 't', height: i === 9 ? 5000 : 100 + i }],
+  }));
+  const h = positionHabit({ id: 't' }, tall);
+  assert.deepEqual([h.p10, h.p90], [101, 5000]);
 });
 
-test('lookAlikes: identities one class apart', () => {
+test('lookAlikes: one class more, attributed to the base; no class, no part', () => {
   const types = [t('t-1', 'DIV#.banner.image'), t('t-2', 'DIV#.banner'), t('t-3', 'DIV#.text'),
-    t('t-4', 'SECTION#.banner.image')];
-  assert.deepEqual(lookAlikes(types), [['t-1', ['t-2']]], 'a different tag is not a look-alike');
-  assert.deepEqual(lookAlikes([...types, t('t-5', 'DIV#.banner.image.dark')]),
-    [['t-1', ['t-2', 't-5']]], 'one line per type');
+    t('t-4', 'SECTION#.banner.image'), t('t-5', 'DIV#.'), t('t-6', 'DIV#.banner.dark')];
+  assert.deepEqual(lookAlikes(types), [['t-2', ['t-1', 't-6']]],
+    'banner is the base of banner.image and banner.dark; another tag or no class does not count');
 });
 
-test('flags: height spread, chrome leak, look-alike, crop failure, one-section and empty pages',
+test('flags: height spread on quantiles, leaks without a support gate, base classes, pages',
   () => {
-    const pages = [page('a', ['t-lead', 't-1']), page('b', ['t-lead', 't-2']), page('c', ['t-1']),
-      page('d', [])];
+    const many = Array.from({ length: 6 }, (_, i) => page(`p${i}`, ['t-lead', 't-1', 't-2']));
+    const pages = [...many, page('c', ['t-1']), page('d', []),
+      { url: 'e', sections: [{ type: 't-1', height: 5000 }] }];
     const result = {
       types: [
-        t('t-lead', 'DIV#.lead', { pages: 2, instances: 2, support: 0.5 }),
-        t('t-1', 'DIV#.wide', { heightRange: [50, 900], support: 0.3 }),
-        t('t-2', 'DIV#.wide.dark', { screenshotError: ['x on b: gone'], support: 0.3 }),
-        t('t-u', 'DIV#.once', { recurring: false, heightRange: [1, 5000] }),
+        t('t-lead', 'DIV#.lead', { pages: 6, instances: 6, support: 0.3 }),
+        t('t-1', 'DIV#.wide', { support: 0.3 }),
+        t('t-2', 'DIV#.wide.dark',
+          { screenshotError: ['x on b: gone'], support: 0.3, instances: 12 }),
+        t('t-3', 'DIV#.wide.blue', { support: 0.2 }), t('t-4', 'DIV#.wide.red', { support: 0.2 }),
+        t('t-u', 'DIV#.once', { recurring: false }),
       ],
       pages,
     };
-    assert.deepEqual(flags(result).map((f) => [f.type, f.flag]), [
+    const got = flags(result);
+    assert.deepEqual(got.map((f) => [f.type, f.flag]), [
       ['t-lead', 'chrome leak?'], ['t-1', 'height spread'], ['t-2', 'crop failed'],
-      ['t-1', 'look-alike'], [undefined, 'one-section pages'], [undefined, 'empty pages'],
+      ['t-1', 'base class'], [undefined, 'one-section pages'], [undefined, 'empty pages'],
     ]);
+    assert.match(got[4].detail, /2 pages have a single section \(t-1 ×2\)/);
+    const few = flags({ ...result, types: [t('t-lead', 'DIV#.lead', { pages: 3, instances: 3 })],
+      pages: many.slice(0, 3) });
+    assert.deepEqual(few, [], 'a habit on three pages is not a flag');
   });
 
 test('renderEvaluationMd lists crops, variants and flags', () => {
   const result = {
     types: [t('t-1', 'DIV#.cards', {
       screenshots: {
-        instances: ['screenshots/type-t-1-1.png'], variants: [`screenshots/type-t-1-v${1}.png`],
+        instances: ['screenshots/type-t-1-abcdef01.png'],
+        variants: ['screenshots/type-t-1-vab.png'],
       },
     }), t('t-u', 'DIV#.once', { recurring: false })],
     pages: [page('u', ['t-1', 't-u'])],
@@ -56,8 +72,9 @@ test('renderEvaluationMd lists crops, variants and flags', () => {
   };
   const md = renderEvaluationMd(result);
   assert.match(md, /### t-1 — `DIV#.cards`/);
-  assert.match(md, /!\[instance 1\]\(screenshots\/type-t-1-1.png\)/);
+  assert.match(md, /!\[instance 1\]\(screenshots\/type-t-1-abcdef01.png\)/);
   assert.match(md, /- v\d: 10 instances on 10 pages — children `DIV#.x`\n {2}!\[v\d\]/);
   assert.match(md, /## Unique types\n\n- t-u `DIV#.once` on u/);
   assert.match(md, /Groups: 0 of 1 saturated/);
+  assert.match(md, /runs table in `elements.md`/);
 });

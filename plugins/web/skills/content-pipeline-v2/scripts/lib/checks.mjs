@@ -459,7 +459,10 @@ export function checkElements(files, { captured = [], selectors = {}, storeCaptu
         if (!screenshots.includes(f)) reasons.push(`type ${t.id}: missing ${f}`);
       }
     }
-    for (const e of t.screenshotError ?? []) reasons.push(`type ${t.id}: ${e}`);
+    for (const e of t.screenshotError ?? []) {
+      reasons.push(`type ${t.id}: ${e} — rerun elements.mjs; if it persists, reject the `
+        + 'selector in rules.json');
+    }
   }
   return { pass: reasons.length === 0, reasons };
 }
@@ -643,7 +646,8 @@ async function checkChromeOnDisk(project) {
 async function checkElementsOnDisk(project) {
   const run = await readRun(project, undefined, 'elements');
   if (run && ['queued', 'running', 'analysing'].includes(run.state)) {
-    const label = run.total ? `crops ${run.done}/${run.total} pages` : 'decomposing';
+    const label = run.total ? `crops ${run.done}/${run.total} pages`
+      : run.state === 'analysing' ? 'preparing the crops' : 'decomposing';
     return { pass: false, running: label, reasons: [`elements: ${label}; elements.mjs status`] };
   }
   const files = await loadFiles(project);

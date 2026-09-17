@@ -226,7 +226,7 @@ function elementType(t, label) {
   const defects = (t.screenshotError ?? []).map((e) => `<li class="bad">${esc(e)}</li>`).join('');
   return `<article class="variant">
     <h3>${esc(label)} · ${t.pages} pages (${Math.round(t.support * 100)} %)</h3>
-    <p class="small"><code>${esc(t.identity)}</code> · ${t.id}</p>
+    <p class="small"><code>${esc(t.identity)}</code> · ${esc(t.id)}</p>
     <p class="small">${t.instances} instances · ${t.variants.length} variants · ${
   t.heightRange[0]}–${t.heightRange[1]} px${more ? ` · ${more}` : ''}</p>
     ${crop}${defects ? `<ul>${defects}</ul>` : ''}

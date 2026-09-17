@@ -25,6 +25,8 @@ export const LIMITS = [
     + ' chrome removal counts as not covered.',
   'Saturation reads the capture order: a --force recapture re-dates every page, so the last'
     + ` ${SATURATION_PAGES} of a group are then arbitrary until new pages are captured.`,
+  'Crops show alt text or a blank where the cache holds no image (lazy-loaded sources the'
+    + ' cache never fetched); fixed widgets of the page sit inside tall crops.',
 ];
 
 /** The chrome step's member selectors. */

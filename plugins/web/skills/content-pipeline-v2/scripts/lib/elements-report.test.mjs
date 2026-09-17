@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { captureFile, capturesDir } from './capture.mjs';
+import { captureFile, capturesDir, runFile } from './capture.mjs';
+import { writeJson } from './jobs.mjs';
 import { checkElements, runCheck } from './checks.mjs';
 import { writeEvaluation } from './elements-evaluation.mjs';
 import {
@@ -214,4 +215,29 @@ test('checkElements: missing or invalid file, count mismatch, page twice, no sec
     'elements.json: 1 captured page(s) absent',
     'elements.json: page listed twice: u',
   ]);
+});
+
+test('checkElements: a listed crop absent on disk, a crop error, a failed run', async () => {
+  const p = await project(three);
+  await fullRun(p);
+  const file = elementsJson(p);
+  const good = JSON.parse(await readFile(file, 'utf8'));
+  const gone = JSON.parse(JSON.stringify(good));
+  gone.types[0].screenshots.instances[0] = 'screenshots/type-nope.png';
+  await writeFile(file, JSON.stringify(gone));
+  assert.match((await runCheck('elements', p)).reasons[0], /missing screenshots\/type-nope.png/);
+  const broken = JSON.parse(JSON.stringify(good));
+  broken.types[0].screenshotError = ['s on u: gone'];
+  await writeFile(file, JSON.stringify(broken));
+  assert.match((await runCheck('elements', p)).reasons[0],
+    /s on u: gone — rerun elements.mjs; if it persists, reject the selector/);
+  await writeFile(file, JSON.stringify(good));
+  await writeJson(runFile(p, 'elements'), { state: 'failed', error: 'boom' });
+  assert.deepEqual((await runCheck('elements', p)).reasons,
+    ['elements: the last run failed — boom']);
+  await writeJson(runFile(p, 'elements'), { state: 'analysing', pid: process.pid, total: null });
+  assert.equal((await runCheck('elements', p)).running, 'preparing the crops');
+  await writeJson(runFile(p, 'elements'),
+    { state: 'analysing', pid: process.pid, done: 2, total: 9 });
+  assert.equal((await runCheck('elements', p)).running, 'crops 2/9 pages');
 });

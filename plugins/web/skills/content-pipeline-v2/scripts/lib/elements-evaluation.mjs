@@ -8,41 +8,59 @@ export const evaluationMd = (project) => path.join(project.step('elements'), 'ev
 export const writeEvaluation = (project, result) => (
   writeFile(evaluationMd(project), renderEvaluationMd(result)));
 
+// p90/p10 of the instance heights: one collapsed or one giant instance is not a spread.
 export const HEIGHT_SPREAD_FLAG = 10;
 export const HABIT_SHARE = 0.9;
-export const LEAK_SUPPORT = 0.5;
+// A position habit on fewer pages says nothing.
+export const HABIT_MIN_PAGES = 5;
+// A base class shared by this many types is a framework's, not a merge candidate.
+export const BASE_CLASS_TYPES = 3;
 
 const pct = (x) => `${Math.round(x * 100)} %`;
-const identityTokens = (identity) => new Set(identity.split(/[#.]/).filter(Boolean));
+const classTokens = (identity) => new Set(identity.replace(/^[^.]*\.?/, '').split('.')
+  .filter(Boolean));
+const quantile = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
 
-/** Where a type's instances sit on their pages: the share that are first and last. */
+/**
+ * Where a type's instances sit on their pages (the share that are first and last) and the
+ * spread of their heights (p10, p90).
+ */
 export function positionHabit(type, pages) {
   let first = 0;
   let last = 0;
-  let n = 0;
+  const heights = [];
   for (const p of pages) {
     p.sections.forEach((s, i) => {
       if (s.type !== type.id) return;
-      n += 1;
+      heights.push(s.height);
       if (i === 0) first += 1;
       if (i === p.sections.length - 1) last += 1;
     });
   }
-  return { first: n ? first / n : 0, last: n ? last / n : 0, instances: n };
+  const n = heights.length;
+  heights.sort((a, b) => a - b);
+  return {
+    first: n ? first / n : 0, last: n ? last / n : 0, instances: n,
+    p10: n ? quantile(heights, 0.1) : 0, p90: n ? quantile(heights, 0.9) : 0,
+  };
 }
 
 /**
- * Identities one class apart (`DIV#.banner.image` and `DIV#.banner`), per type: the ids of
- * its look-alikes. A shared base class between components is the common false positive.
+ * Identities one class apart, attributed to the shorter (base) identity: `DIV#.banner` is
+ * the base of `DIV#.banner.image`. Identities without a class never take part. Returns
+ * `[baseId, [ids…]]`; a base of BASE_CLASS_TYPES or more is a shared base class.
  */
 export function lookAlikes(types) {
   const out = new Map();
-  for (let i = 0; i < types.length; i += 1) {
-    for (let j = i + 1; j < types.length; j += 1) {
-      const a = identityTokens(types[i].identity);
-      const b = identityTokens(types[j].identity);
-      const diff = [...a].filter((t) => !b.has(t)).length + [...b].filter((t) => !a.has(t)).length;
-      if (diff === 1) out.set(types[i].id, [...(out.get(types[i].id) ?? []), types[j].id]);
+  const withClasses = types.filter((t) => classTokens(t.identity).size > 0);
+  for (const a of withClasses) {
+    for (const b of withClasses) {
+      if (a === b || a.identity.split('.')[0] !== b.identity.split('.')[0]) continue;
+      const ta = classTokens(a.identity);
+      const tb = classTokens(b.identity);
+      if (tb.size === ta.size + 1 && [...ta].every((k) => tb.has(k))) {
+        out.set(a.id, [...(out.get(a.id) ?? []), b.id]);
+      }
     }
   }
   return [...out];
@@ -53,13 +71,15 @@ export function flags(result) {
   const recurring = result.types.filter((t) => t.recurring);
   const out = [];
   for (const t of recurring) {
-    const [lo, hi] = t.heightRange;
-    if (lo > 0 && hi / lo >= HEIGHT_SPREAD_FLAG) {
-      out.push({ type: t.id, flag: 'height spread', detail: `${lo}–${hi} px: one type or several?`
+    const habit = positionHabit(t, result.pages);
+    if (habit.p10 > 0 && habit.p90 / habit.p10 >= HEIGHT_SPREAD_FLAG) {
+      out.push({
+        type: t.id, flag: 'height spread',
+        detail: `p10 ${habit.p10} px, p90 ${habit.p90} px (${t.heightRange.join('–')}): one`
+          + ' type or several?',
       });
     }
-    const habit = positionHabit(t, result.pages);
-    if (t.support >= LEAK_SUPPORT && t.instances === t.pages
+    if (t.pages >= HABIT_MIN_PAGES && t.instances === t.pages
       && (habit.first >= HABIT_SHARE || habit.last >= HABIT_SHARE)) {
       out.push({
         type: t.id, flag: 'chrome leak?',
@@ -71,18 +91,21 @@ export function flags(result) {
       out.push({ type: t.id, flag: 'crop failed', detail: t.screenshotError[0] });
     }
   }
-  for (const [a, others] of lookAlikes(recurring)) {
-    out.push({
-      type: a, flag: 'look-alike',
-      detail: `one class apart from ${others.join(', ')} — one element (a merge) or a shared`
-        + ' base class?',
-    });
+  for (const [base, others] of lookAlikes(recurring)) {
+    out.push(others.length >= BASE_CLASS_TYPES
+      ? { type: base, flag: 'base class', detail: `base of ${others.length} types (${others
+        .join(', ')}) — a shared base class, not a merge` }
+      : { type: base, flag: 'look-alike', detail: `${others.join(', ')} is one class more —`
+        + ' one element (a merge) or a variant?' });
   }
-  const one = result.pages.filter((p) => p.sections.length === 1).length;
+  const single = result.pages.filter((p) => p.sections.length === 1);
   const empty = result.pages.filter((p) => p.sections.length === 0).length;
-  if (one) {
-    out.push({ flag: 'one-section pages', detail: `${one} pages have a single section: a container`
-      + ' not peeled?' });
+  if (single.length) {
+    const byType = Map.groupBy(single, (p) => p.sections[0].type);
+    const named = [...byType].sort((a, b) => b[1].length - a[1].length)
+      .map(([id, list]) => `${id} ×${list.length}`).join(', ');
+    out.push({ flag: 'one-section pages', detail: `${single.length} pages have a single `
+      + `section (${named}): a container not peeled?` });
   }
   if (empty) {
     out.push({
@@ -99,8 +122,9 @@ function renderType(t, pages) {
     `### ${t.id} — \`${t.identity}\``,
     '',
     `${t.pages} pages (${pct(t.support)}), ${t.instances} instances, ${t.variants.length}`
-      + ` variants, height ${t.heightRange[0]}–${t.heightRange[1]} px (median ${t.medianHeight}),`
-      + ` first on ${pct(habit.first)}, last on ${pct(habit.last)} of its pages.`,
+      + ` variants, height ${t.heightRange[0]}–${t.heightRange[1]} px (median ${t.medianHeight},`
+      + ` p10 ${habit.p10}, p90 ${habit.p90}), first on ${pct(habit.first)}, last on `
+      + `${pct(habit.last)} of its pages.`,
     '',
     ...shots.instances.map((f, i) => `![instance ${i + 1}](${f})`),
     '',
@@ -135,7 +159,7 @@ export function renderEvaluationMd(result) {
     '',
     'Read the crops: do the instances of a type look like one element? Do two types look'
       + ' alike? Edit `rules.json` (merge, chrome, reject) and run `elements.mjs` again; the'
-      + ' runs table says what moved. Never edit `elements.json`.',
+      + ' runs table in `elements.md` says what moved. Never edit `elements.json`.',
     '',
     '## Flags', '',
     all.length ? all.map((f) => `- ${f.type ? `${f.type}: ` : ''}**${f.flag}** — ${f.detail}`)

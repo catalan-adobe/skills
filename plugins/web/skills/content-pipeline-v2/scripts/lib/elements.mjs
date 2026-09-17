@@ -17,6 +17,9 @@ export function identity(node, rules = mergeRules()) {
 }
 
 export const typeId = (id) => `t-${createHash('sha1').update(id).digest('hex').slice(0, 8)}`;
+/** A variant's id: the hash of its children identities — the same set, the same id. */
+export const variantId = (children) => (
+  createHash('sha1').update(children.join(',')).digest('hex').slice(0, 8));
 
 /** The variant of a section: the sorted set of its structural children's identities. */
 export function variantKey(node, rules = mergeRules()) {
@@ -104,7 +107,7 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
         // A section names its variant by index within its type.
         for (const s of v.sections) s.variant = i;
         const { children, instances, sample } = v;
-        return { children, instances, pages: v.pages.size, sample };
+        return { id: variantId(children), children, instances, pages: v.pages.size, sample };
       }),
   })).sort((a, b) => b.pages - a.pages || a.identity.localeCompare(b.identity));
   const recurring = new Set(typeList.filter((t) => t.recurring).map((t) => t.id));

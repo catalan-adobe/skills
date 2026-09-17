@@ -30,28 +30,40 @@ elements.mjs stop
 const WORKER_SCRIPT = fileURLToPath(import.meta.url);
 const KIND = 'elements';
 
-/** The worker: inventory first (written at once), then the crops, then the evaluation. */
-export async function workerMain(project, io = defaultIo) {
+/** The offline server and one browser session on it, for the crops. */
+export async function openSession(project, io) {
+  const { proxyScript, cli } = await setupPaths(project);
+  const origin = await projectOrigin(project);
+  const server = await serveCache(project, proxyScript, freePort);
+  const { prepare } = await prepExpression(project);
+  const browser = playwright(cli, io, project.work, sessionName(project, KIND));
+  await browser.open(proxiedUrl(origin, origin, server.port), { config: server.browserConfig });
+  return { browser, origin, port: server.port, prepare, hide: await chromeSelectors(project) };
+}
+
+/**
+ * The worker: inventory first (written at once), then the crops, then the evaluation.
+ * run.json ends `done`, `stopped` (a signal, honoured after the current page) or `failed`.
+ */
+export async function workerMain(project, io = defaultIo, open = openSession) {
   const record = async (patch) => writeJson(runFile(project, KIND),
     { ...(await readRun(project, undefined, KIND)), ...patch });
+  let stopping = false;
+  io.onSignal(() => { stopping = true; });
+  const stop = () => { throw new Error('stopped'); };
   try {
     await mkdir(project.step('elements'), { recursive: true });
     const result = await writeOutputs(project, await buildElements(project));
+    if (stopping) stop();
     await record({ state: 'analysing', phase: 'crops', done: 0, total: null });
-    const { proxyScript, cli } = await setupPaths(project);
-    const origin = await projectOrigin(project);
-    const server = await serveCache(project, proxyScript, freePort);
-    const { prepare } = await prepExpression(project);
-    const browser = playwright(cli, io, project.work, sessionName(project, KIND));
-    let stopping = false;
-    io.onSignal(() => { stopping = true; });
-    await browser.open(proxiedUrl(origin, origin, server.port), { config: server.browserConfig });
+    const session = await open(project, io);
+    const { browser } = session;
     try {
       const shot = await screenshotTypes(project, result, {
-        browser, origin, port: server.port, prepare, hide: await chromeSelectors(project),
-        onProgress: (done, total) => {
-          record({ done, total });
-          if (stopping) throw new Error('stopped');
+        ...session,
+        onProgress: async (done, total) => {
+          await record({ done, total });
+          if (stopping) stop();
         },
       });
       await writeOutputs(project, shot);
