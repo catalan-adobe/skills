@@ -5,9 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { captureFile, capturesDir } from './capture.mjs';
 import { checkElements, runCheck } from './checks.mjs';
+import { writeEvaluation } from './elements-evaluation.mjs';
 import {
-  SATURATION_PAGES, buildElements, elementsJson, groupTable, writeElements,
+  SATURATION_PAGES, buildElements, elementsJson, groupTable, writeElements, writeOutputs,
 } from './elements-report.mjs';
+import { screenshotTypes } from './elements-shots.mjs';
 import { writeInventory } from './inventory.mjs';
 import { resolveProject, writeProject } from './project.mjs';
 
@@ -53,6 +55,18 @@ async function addPages(p, pages) {
 }
 
 const header = el('HEADER', 'top', 'body > header', 0, 80);
+
+/** The worker's whole run with a browser that writes empty crops. */
+async function fullRun(p) {
+  const browser = {
+    goto: async () => {}, eval: async () => '1', screenshot: async (file) => writeFile(file, ''),
+  };
+  const result = await writeElements(p);
+  const shot = await screenshotTypes(p, result, { browser, origin: ORIGIN, port: 1 });
+  await writeOutputs(p, shot);
+  await writeEvaluation(p, shot);
+  return shot;
+}
 const three = [
   ['a', 'blog', pageTree([header, cards('s1', 80), text('s2', 480)])],
   ['b', 'blog', pageTree([header, cards('s1', 80), text('s2', 480)])],
@@ -77,7 +91,15 @@ test('elements.mjs writes the inventory, the operator view and the report sectio
   assert.match(md, /Groups without a captured page: empty\./);
   const report = await readFile(p.report, 'utf8');
   assert.match(report, /## elements\n[\s\S]*3 cached pages decomposed into 6 sections/);
+  const before = await runCheck('elements', p);
+  assert.deepEqual(before.reasons.slice(0, 2),
+    ['missing migration/elements/evaluation.md', 'type t-4e67f7ee: 0 instances crops of 3'],
+    'without the crops and the evaluation the step is not done');
+  const shot = await fullRun(p);
+  assert.deepEqual(shot.types[0].screenshots.instances.length, 3);
   assert.deepEqual(await runCheck('elements', p), { step: 'elements', pass: true, reasons: [] });
+  const evaluation = await readFile(path.join(p.step('elements'), 'evaluation.md'), 'utf8');
+  assert.match(evaluation, /### t-.* — `DIV#.text`/);
 });
 
 test('without chrome.json the step refuses rather than inventory the header', async () => {
@@ -141,7 +163,7 @@ test('groupTable on a small group: never saturated, dominant share measured', ()
 test('check elements: an edited id, a removed page, a wrong sample, a stale file fail by name',
   async () => {
     const p = await project(three);
-    await writeElements(p);
+    await fullRun(p);
     const file = elementsJson(p);
     const good = JSON.parse(await readFile(file, 'utf8'));
     const mutate = async (f) => {
@@ -164,7 +186,7 @@ test('check elements: an edited id, a removed page, a wrong sample, a stale file
     }));
     assert.deepEqual((await runCheck('elements', p)).reasons,
       ['elements.json predates the store — run elements.mjs']);
-    await writeElements(p);
+    await fullRun(p);
     await writeFile(path.join(p.step('elements'), 'rules.json'), JSON.stringify({ recurrence: 3 }));
     assert.deepEqual((await runCheck('elements', p)).reasons,
       ['elements.json predates rules.json — run elements.mjs']);
@@ -186,6 +208,7 @@ test('checkElements: missing or invalid file, count mismatch, page twice, no sec
   };
   const r = checkElements(files, { captured: ['u', 'v'], selectors: { u: new Set(['s']) } });
   assert.deepEqual(r.reasons, [
+    'missing migration/elements/evaluation.md',
     'REPORT.md has no ## elements section',
     'elements.json: 1 pages, the store has 2 — run elements.mjs',
     'elements.json: 1 captured page(s) absent',

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { openWork, unfinished } from './jobs.mjs';
 import { captureFile, readCaptures, readRun, storeStatus } from './capture.mjs';
 import { readRules } from './elements-rules.mjs';
+import { INSTANCES_PER_TYPE, VARIANTS_PER_TYPE } from './elements-shots.mjs';
 import { STEPS } from './steps.mjs';
 import { detect, missingReasons } from './setup.mjs';
 import { relativeSegments, scopeOf } from './urls.mjs';
@@ -391,11 +392,12 @@ export function checkChrome(files, { screenshots = [], selectors = {} } = {}) {
  *
  * @param {Record<string, string>} files
  * @param {{captured: string[], selectors: Record<string, Set<string>>, storeCapturedAt?: string,
- *   rulesHash?: string}} disk `storeCapturedAt` is the newest capture; `rulesHash` the
- *   project's current rules — an inventory older than either is stale.
+ *   rulesHash?: string, screenshots?: string[]}} disk `storeCapturedAt` is the newest capture;
+ *   `rulesHash` the project's current rules — an inventory older than either is stale;
+ *   `screenshots` the crop files on disk (every recurring type needs its crops).
  */
-export function checkElements(files,
-  { captured = [], selectors = {}, storeCapturedAt = null, rulesHash = null } = {}) {
+export function checkElements(files, { captured = [], selectors = {}, storeCapturedAt = null,
+  rulesHash = null, screenshots = [] } = {}) {
   const text = files['elements/elements.json'];
   if (text === undefined) {
     return { pass: false, reasons: ['missing migration/elements/elements.json'] };
@@ -407,8 +409,8 @@ export function checkElements(files,
     return { pass: false, reasons: [`elements.json is not valid JSON: ${err.message}`] };
   }
   const reasons = [];
-  if (files['elements/elements.md'] === undefined) {
-    reasons.push('missing migration/elements/elements.md');
+  for (const f of ['elements/elements.md', 'elements/evaluation.md']) {
+    if (files[f] === undefined) reasons.push(`missing migration/${f}`);
   }
   if (!/^## elements$/m.test(files['REPORT.md'] ?? '')) {
     reasons.push('REPORT.md has no ## elements section');
@@ -443,6 +445,21 @@ export function checkElements(files,
       reasons.push(`type ${t.id}: sample ${t.sample.selector} is not in the capture of `
         + t.sample.url);
     }
+    if (!t.recurring) continue;
+    const want = {
+      instances: Math.min(INSTANCES_PER_TYPE, t.pages),
+      variants: Math.min(VARIANTS_PER_TYPE, t.variants?.length ?? 0),
+    };
+    for (const kind of ['instances', 'variants']) {
+      const files_ = t.screenshots?.[kind] ?? [];
+      if (files_.length < want[kind]) {
+        reasons.push(`type ${t.id}: ${files_.length} ${kind} crops of ${want[kind]}`);
+      }
+      for (const f of files_) {
+        if (!screenshots.includes(f)) reasons.push(`type ${t.id}: missing ${f}`);
+      }
+    }
+    for (const e of t.screenshotError ?? []) reasons.push(`type ${t.id}: ${e}`);
   }
   return { pass: reasons.length === 0, reasons };
 }
@@ -622,8 +639,13 @@ async function checkChromeOnDisk(project) {
   return { ...result, pass: result.pass && run?.state !== 'failed' && !behind.length };
 }
 
-/** `elements` on disk: the store's pages and their captures behind the pure check. */
+/** `elements` on disk: the run's phase while open, else the store behind the pure check. */
 async function checkElementsOnDisk(project) {
+  const run = await readRun(project, undefined, 'elements');
+  if (run && ['queued', 'running', 'analysing'].includes(run.state)) {
+    const label = run.total ? `crops ${run.done}/${run.total} pages` : 'decomposing';
+    return { pass: false, running: label, reasons: [`elements: ${label}; elements.mjs status`] };
+  }
   const files = await loadFiles(project);
   const store = await storeStatus(project, (await readRun(project))?.minWidth);
   const behind = store.missing.length + store.stale.length;
@@ -642,12 +664,17 @@ async function checkElementsOnDisk(project) {
     return { pass: false, reasons: [`elements: ${err.message}`] };
   }
   const storeCapturedAt = captures.map((c) => c.capturedAt ?? '').sort().at(-1) || null;
-  const result = checkElements(files, { captured, selectors, storeCapturedAt, rulesHash });
+  const shots = await listDir(path.join(project.step('elements'), 'screenshots'), 'screenshots');
+  const result = checkElements(files,
+    { captured, selectors, storeCapturedAt, rulesHash, screenshots: shots });
+  if (run?.state === 'failed') {
+    result.reasons.push(`elements: the last run failed — ${run.error}`);
+  }
   if (behind) {
     result.reasons.push(`elements: the store is ${storeNote(store)} — run capture.mjs, then `
       + 'elements.mjs');
   }
-  return { ...result, pass: result.pass && !behind };
+  return { ...result, pass: result.pass && !behind && run?.state !== 'failed' };
 }
 
 export async function runCheck(id, project) {

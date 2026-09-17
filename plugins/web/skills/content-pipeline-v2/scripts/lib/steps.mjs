@@ -71,7 +71,7 @@ export const STEPS = [
     tierNote: 'the decomposition is a script; the model reads the evaluation and edits rules',
     skill: null,
     dependsOn: ['capture', 'chrome'],
-    writes: ['elements/elements.json', 'elements/elements.md'],
+    writes: ['elements/elements.json', 'elements/elements.md', 'elements/evaluation.md'],
   },
   {
     id: 'report',

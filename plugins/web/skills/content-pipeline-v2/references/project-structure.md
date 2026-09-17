@@ -160,6 +160,13 @@ element types of the source markup. Decomposed, not named.
 `elements/elements.md`
 : Written by `elements.mjs`: the same for the operator. Read by the operator.
 
+`elements/evaluation.md`, `elements/screenshots/`
+: Written by `elements.mjs` after the crops: per recurring type its identity, numbers,
+  position habit, three instance crops (`type-<id>-<n>.png`, instances chosen by hash so a
+  rerun wants the same files) and one crop per largest variant (`type-<id>-v<n>.png`); the
+  flags (height spread, chrome leak, look-alike identities, failed crops, one-section and
+  empty pages); the unique tail. Read by the agent and the operator to decide a rules edit.
+
 `elements/rules.json`
 : Written by the operator or the agent (see `steps/elements.md`): the site's rules over the
   engine's defaults — identity exclusions, noise classes, leaf tags, container share,

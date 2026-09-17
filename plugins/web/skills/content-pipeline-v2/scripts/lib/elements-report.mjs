@@ -28,7 +28,7 @@ export const LIMITS = [
 ];
 
 /** The chrome step's member selectors. */
-async function chromeSelectors(project) {
+export async function chromeSelectors(project) {
   const chrome = await readFile(path.join(project.step('chrome'), 'chrome.json'), 'utf8')
     .then(JSON.parse, () => null);
   if (!chrome) throw new Error('chrome/chrome.json missing; run chrome.mjs first');
@@ -105,14 +105,17 @@ export async function buildElements(project, { now = () => new Date() } = {}) {
   };
 }
 
-/** Builds and writes elements.json, elements.md and the REPORT.md section. */
-export async function writeElements(project, options = {}) {
-  const result = await buildElements(project, options);
+/** Writes a result as elements.json, elements.md and the REPORT.md section. */
+export async function writeOutputs(project, result) {
   await writeFile(elementsJson(project), `${JSON.stringify(result, null, 2)}\n`);
   await writeFile(elementsMd(project), renderElementsMd(result));
   await upsertSection(project, 'elements', renderSection(result));
   return result;
 }
+
+/** Builds and writes, without screenshots. */
+export const writeElements = async (project, options = {}) => (
+  writeOutputs(project, await buildElements(project, options)));
 
 const pct = (x) => `${Math.round(x * 100)} %`;
 const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
