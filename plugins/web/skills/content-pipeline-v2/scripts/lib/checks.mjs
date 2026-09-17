@@ -508,7 +508,10 @@ async function checkCaptureOnDisk(project) {
   }
   const reasons = [];
   if (run?.state === 'failed') reasons.push(`capture: the last run failed — ${run.error}`);
-  const store = await storeStatus(project, run?.minWidth ?? undefined);
+  if (run?.state === 'interrupted') {
+    reasons.push('capture: the last run was interrupted — .work/capture/worker.log says where');
+  }
+  const store = await storeStatus(project, run?.minWidth);
   if (store.verified === 0) reasons.push('capture: no verified cached page to capture');
   if (store.missing.length) {
     reasons.push(`capture: ${store.missing.length} verified pages without a capture — the `
@@ -534,7 +537,7 @@ async function checkChromeOnDisk(project) {
     const label = 'detecting and screenshotting';
     return { pass: false, running: label, reasons: [`chrome: ${label}; chrome.mjs status`] };
   }
-  const store = await storeStatus(project, (await readRun(project))?.minWidth ?? undefined);
+  const store = await storeStatus(project, (await readRun(project))?.minWidth);
   const behind = store.missing.length + store.stale.length
     ? [`chrome: the store is ${storeNote(store)} — run capture.mjs, then chrome.mjs`] : [];
   const files = await loadFiles(project);

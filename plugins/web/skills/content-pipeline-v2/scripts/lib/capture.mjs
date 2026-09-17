@@ -3,19 +3,20 @@
 // read by chrome and by every later analysis of page structure. Runs detached, one browser
 // session on the offline proxy; a rerun captures only what is missing or stale.
 import { createHash } from 'node:crypto';
-import { mkdir, open as openFile, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, open as openFile, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { proxiedUrl } from './cache-server.mjs';
 import { readInventory } from './inventory.mjs';
 import { alive, writeJson } from './jobs.mjs';
-import { parseEval } from './warm.mjs';
+import { pageExpression, parseEval } from './warm.mjs';
 
 export const MIN_WIDTH = 300;
 export const MAX_CONSECUTIVE_FAILURES = 5;
 export const captureExpression = (minWidth = MIN_WIDTH) => (
   `JSON.stringify(window.__visualTree.captureVisualTree(${minWidth}))`);
-export const CAPTURE_EXPRESSION = captureExpression();
+// A run whose process must be alive: `readRun` turns these into `interrupted` when it is not.
+const OPEN_STATES = ['queued', 'running', 'analysing'];
 
 export const capturesDir = (project) => project.step('capture');
 export const capturesMd = (project) => path.join(capturesDir(project), 'captures.md');
@@ -25,12 +26,15 @@ export const captureFile = (project, url) => path.join(
   capturesDir(project), `${createHash('sha256').update(url).digest('hex').slice(0, 8)}.json`,
 );
 
-/** The `minWidth` a stored capture was taken at, from the head of the file; null if none. */
+/**
+ * The `minWidth` a stored capture was taken at — the first key the writer emits, so the head
+ * of the file is enough; 0 for a capture without one (an old store); null for no file.
+ */
 export async function storedMinWidth(file) {
   const fh = await openFile(file).catch(() => null);
   if (!fh) return null;
   try {
-    const { buffer, bytesRead } = await fh.read(Buffer.alloc(256), 0, 256, 0);
+    const { buffer, bytesRead } = await fh.read(Buffer.alloc(64), 0, 64, 0);
     const m = buffer.toString('utf8', 0, bytesRead).match(/"minWidth":\s*(\d+)/);
     return m ? Number(m[1]) : 0;
   } finally {
@@ -66,6 +70,26 @@ export async function pagesToCapture(project, { force = false, minWidth = MIN_WI
   return [...status.missing, ...status.stale];
 }
 
+/** Where setup.json says the page-tree bundle is. */
+export async function bundlePath(project) {
+  const setup = JSON.parse(await readFile(project.setupFile, 'utf8'));
+  const skill = setup.skills?.['page-tree']?.path;
+  if (!skill) {
+    throw new Error('setup.json lacks the page-tree skill; run status.mjs setup --install');
+  }
+  return path.join(path.dirname(skill), 'scripts', 'page-tree-bundle.js');
+}
+
+/** The prep step's recipe as one expression: hide rules and scroll fix; null without one. */
+export async function prepExpression(project) {
+  const recipe = await readFile(path.join(project.step('prep'), 'page-prep.json'), 'utf8')
+    .then(JSON.parse, () => null);
+  return {
+    prepare: recipe ? pageExpression(recipe) : null,
+    consentSelectors: (recipe?.overlays ?? []).map((o) => o.selector).filter(Boolean),
+  };
+}
+
 /** Every stored capture. */
 export async function readCaptures(project) {
   const dir = capturesDir(project);
@@ -78,7 +102,7 @@ export async function readCaptures(project) {
 export async function readRun(project, isAlive = alive, kind = 'capture') {
   const run = await readFile(runFile(project, kind), 'utf8').then(JSON.parse, () => null);
   if (!run) return null;
-  if (run.state === 'running' && !isAlive(run.pid)) return { ...run, state: 'interrupted' };
+  if (OPEN_STATES.includes(run.state) && !isAlive(run.pid)) return { ...run, state: 'interrupted' };
   return run;
 }
 
@@ -112,7 +136,7 @@ export async function captureAll(project,
       }
       // The bundle's shape: data (the node tree), textFormat, nodeMap, rootBackground.
       await writeJson(captureFile(project, url), {
-        url, capturedAt: now().toISOString(), minWidth, tree: captured.data,
+        minWidth, url, capturedAt: now().toISOString(), tree: captured.data,
         text: captured.textFormat, nodeMap: captured.nodeMap,
         rootBackground: captured.rootBackground ?? null,
       });
@@ -173,7 +197,7 @@ export async function writeCaptureConfig(project, browserConfig, bundle) {
  */
 export async function startWorker(project, kind, workerScript, args, run = {}, io = {}) {
   const current = await readRun(project, io.alive ?? alive, kind);
-  if (['queued', 'running'].includes(current?.state)) return { started: false, run: current };
+  if (OPEN_STATES.includes(current?.state)) return { started: false, run: current };
   await mkdir(runDir(project, kind), { recursive: true });
   await writeJson(runFile(project, kind), { ...run, state: 'queued' });
   const log = await openFile(path.join(runDir(project, kind), 'worker.log'), 'a');
@@ -196,6 +220,3 @@ export async function startCapture(project, workerScript,
   return startWorker(project, 'capture', workerScript, args,
     { total: urls.length, done: 0, failed: [], force, minWidth }, io);
 }
-
-/** Forgets a finished run (its captures stay). */
-export const clearRun = (project, kind = 'capture') => rm(runFile(project, kind), { force: true });

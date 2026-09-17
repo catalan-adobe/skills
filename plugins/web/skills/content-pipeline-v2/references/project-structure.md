@@ -168,7 +168,8 @@ the header(s) and footer(s). Detected, not interpreted.
 : Written by `capture.mjs`: the run's state (`queued|running|done|stopped|failed`,
   done/total, current page, min-width, failures), the worker's output, and the session
   config (cache browser config plus the page-tree bundle). Read by `capture.mjs
-  status|stop` and `check capture` (the running label).
+  status|stop`, `check capture` (the running label; the min-width the store is held to) and
+  `check chrome` (the same min-width). Without a run the store is held to 300 px.
 
 `.work/chrome/run.json`, `.work/chrome/worker.log`
 : Written by `chrome.mjs`: the run's state (`queued|running|analysing|done|failed`) and

@@ -40,6 +40,9 @@ Everything here comes from the local cache, never the site: `references/local-ca
 - `migration/capture/captures.md`: the store against the cache — verified, captured,
   missing, stale, failed pages.
 
+A project from before this step has a `chrome/.captures/` directory: delete it, the store
+lives here now.
+
 ## Done
 
 Fails with the run's progress while it is open — not an error to fix. Once done, it fails

@@ -4,19 +4,16 @@
 // under migration/capture/ — the project's visual-tree store — then returns at once.
 // Usage: node capture.mjs [--force] [--min-width 300] | status | stop   (from the project root)
 // A rerun captures only the pages without a capture at that width; --force recaptures all.
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { projectOrigin, proxiedUrl, serveCache } from './lib/cache-server.mjs';
 import {
-  MIN_WIDTH, captureAll, pagesToCapture, readRun, runFile, startCapture, writeCaptureConfig,
-  writeCapturesMd,
+  MIN_WIDTH, bundlePath, captureAll, pagesToCapture, prepExpression, readRun, runFile,
+  startCapture, writeCaptureConfig, writeCapturesMd,
 } from './lib/capture.mjs';
 import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
 import { resolveProject } from './lib/project.mjs';
 import { defaultIo, playwright, sessionName, setupPaths } from './lib/warm-cli.mjs';
-import { pageExpression } from './lib/warm.mjs';
 
 export const HELP = `capture.mjs [--force] [--min-width ${MIN_WIDTH}]
     in the background: render every verified cached page and store its visual tree under
@@ -28,26 +25,6 @@ capture.mjs stop
     end the worker after its current page`;
 
 const WORKER_SCRIPT = fileURLToPath(import.meta.url);
-
-/** Where setup.json says the page-tree bundle is. */
-export async function bundlePath(project) {
-  const setup = JSON.parse(await readFile(project.setupFile, 'utf8'));
-  const skill = setup.skills?.['page-tree']?.path;
-  if (!skill) {
-    throw new Error('setup.json lacks the page-tree skill; run status.mjs setup --install');
-  }
-  return path.join(path.dirname(skill), 'scripts', 'page-tree-bundle.js');
-}
-
-/** The prep step's recipe as one expression: hide rules and scroll fix; null without one. */
-export async function prepExpression(project) {
-  const recipe = await readFile(path.join(project.step('prep'), 'page-prep.json'), 'utf8')
-    .then(JSON.parse, () => null);
-  return {
-    prepare: recipe ? pageExpression(recipe) : null,
-    consentSelectors: (recipe?.overlays ?? []).map((o) => o.selector).filter(Boolean),
-  };
-}
 
 export const minWidthArg = (argv) => {
   const i = argv.indexOf('--min-width');

@@ -9,9 +9,10 @@ import { runCheck } from './checks.mjs';
 import { stepStates } from './steps.mjs';
 import {
   MAX_CONSECUTIVE_FAILURES, MIN_WIDTH, captureAll, captureFile, capturesDir, pagesToCapture,
-  readRun, runFile, startCapture, startWorker, storeStatus, writeCaptureConfig,
+  readRun, runFile, startCapture, startWorker, storeStatus, storedMinWidth, writeCaptureConfig,
   writeCapturesMd,
 } from './capture.mjs';
+import { writeJson } from './jobs.mjs';
 
 const ORIGIN = 'https://site.example';
 const page = (n) => `${ORIGIN}/p${n}.html`;
@@ -241,3 +242,54 @@ test('a store behind the cache: capture notes it, chrome fails on it', async () 
   assert.equal(stepStates({ capture: true }, {}, {}, { capture: 'x' })
     .find((s) => s.id === 'capture').note, undefined, 'a done step carries no note');
 });
+
+test('storedMinWidth reads the head of a real capture whatever the URL length', async () => {
+  const p = await project(1);
+  const long = `${ORIGIN}/${'segment-'.repeat(40)}index.html?utm=${'x'.repeat(100)}`;
+  await captureAll(p, { browser: fakeBrowser(), origin: ORIGIN, port: 1 }, { urls: [long] });
+  assert.equal(await storedMinWidth(captureFile(p, long)), MIN_WIDTH);
+  await writeFile(captureFile(p, page(1)), '{}');
+  assert.equal(await storedMinWidth(captureFile(p, page(1))), 0, 'an old capture is stale');
+  assert.equal(await storedMinWidth(captureFile(p, page(2))), null);
+});
+
+test('an open run whose process is gone is interrupted, whatever its phase', async () => {
+  const p = await project(1);
+  await mkdir(p.work, { recursive: true });
+  for (const state of ['queued', 'running', 'analysing']) {
+    await writeJson(runFile(p, 'chrome'), { state, pid: 99 });
+    assert.equal((await readRun(p, () => false, 'chrome')).state, 'interrupted', state);
+    assert.equal((await readRun(p, () => true, 'chrome')).state, state);
+    const io = { spawn: () => { throw new Error('must not spawn'); }, alive: () => true };
+    assert.equal((await startWorker(p, 'chrome', '/s', [], {}, io)).started, false, state);
+  }
+  await writeJson(runFile(p, 'chrome'), { state: 'done' });
+  assert.equal((await readRun(p, () => false, 'chrome')).state, 'done');
+});
+
+test('check capture passes on a complete store and names a failed or interrupted run', async () => {
+  const p = await project(2);
+  await captureAll(p, { browser: fakeBrowser(), origin: ORIGIN, port: 1 },
+    { urls: [page(1), page(2)] });
+  await writeCapturesMd(p);
+  assert.deepEqual(await runCheck('capture', p), { step: 'capture', pass: true, reasons: [] });
+  await writeJson(runFile(p), { state: 'failed', error: 'boom', minWidth: MIN_WIDTH });
+  assert.match((await runCheck('capture', p)).reasons[0], /last run failed — boom/);
+  await writeJson(runFile(p), { state: 'running', pid: 99, minWidth: MIN_WIDTH });
+  const dead = await runCheck('capture', p);
+  assert.equal(dead.pass, false);
+  assert.match(dead.reasons[0], /interrupted — .work\/capture\/worker.log/);
+});
+
+test('startCapture with nothing to capture still starts the worker (it writes captures.md)',
+  async () => {
+    const p = await project(1);
+    await mkdir(capturesDir(p), { recursive: true });
+    await writeFile(captureFile(p, page(1)), JSON.stringify({ minWidth: MIN_WIDTH, url: page(1) }));
+    const spawned = [];
+    const out = await startCapture(p, '/s', {}, {
+      spawn: (cmd, args) => { spawned.push(args); return { pid: 1, unref() {} }; },
+      alive: () => true,
+    });
+    assert.deepEqual([out.started, out.total, spawned.length], [true, 0, 1]);
+  });

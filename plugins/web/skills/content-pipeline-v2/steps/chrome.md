@@ -50,9 +50,10 @@ Everything here comes from the local cache, never the site: `references/local-ca
 
 ## Done
 
-Fails with the run's phase while it is open — not an error to fix. Once done, it fails on a
-member whose selector is not in its representative's capture, a missing screenshot, or a
-screenshot defect: rerun `chrome.mjs`; if it fails again, `chrome.mjs status` says why.
+Fails while the run is open — not an error to fix. Once done, it fails on a store behind the
+cache (run `capture.mjs`, then `chrome.mjs`), a member whose selector is not in its
+representative's capture, a missing screenshot, or a screenshot defect: rerun `chrome.mjs`;
+if it fails again, `chrome.mjs status` says why.
 
 ```bash
 node <skill>/scripts/status.mjs check chrome

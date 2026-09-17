@@ -7,9 +7,8 @@ import { readdir } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { projectOrigin, proxiedUrl, serveCache } from './lib/cache-server.mjs';
 import {
-  capturesDir, readCaptures, readRun, runFile, startWorker,
+  capturesDir, prepExpression, readCaptures, readRun, runFile, startWorker,
 } from './lib/capture.mjs';
-import { prepExpression } from './capture.mjs';
 import { candidates, chromeCandidates } from './lib/chrome.mjs';
 import { analyse } from './lib/chrome-report.mjs';
 import { writeJson } from './lib/jobs.mjs';
