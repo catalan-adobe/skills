@@ -318,15 +318,21 @@ export function stratum(url, scope) {
 
 /** Round-robin over the strata of `urls`, keeping each stratum's own order. */
 export function stratified(urls, scope) {
-  const strata = Map.groupBy(urls, (u) => stratum(u, scope));
+  return interleave([...Map.groupBy(urls, (u) => stratum(u, scope)).values()]);
+}
+
+/** One from each list in turn, each list in its own order. */
+function interleave(lists) {
   const out = [];
-  for (let i = 0; out.length < urls.length; i += 1) {
-    for (const list of strata.values()) if (list[i]) out.push(list[i]);
+  const total = lists.reduce((n, list) => n + list.length, 0);
+  for (let i = 0; out.length < total; i += 1) {
+    for (const list of lists) if (list[i]) out.push(list[i]);
   }
   return out;
 }
 
 const rank = (url) => createHash('sha1').update(url).digest('hex');
+const byRank = (a, b) => rank(a.url).localeCompare(rank(b.url));
 
 /**
  * Picks representative pages: one reachable URL from each of the largest groups (first
@@ -338,8 +344,9 @@ const rank = (url) => createHash('sha1').update(url).digest('hex');
  *   audit?: number, reachable?: (url: string) => Promise<boolean>}} [options] `fill` keeps
  *   rounding over the groups until `count` pages are picked (HTML pages only), for building
  *   a cache selection; `saturated` groups (the elements inventory's) are not picked from;
- *   `audit` adds that many pages chosen by hash from the saturated groups (from every group
- *   when none is saturated) — the check on what sampling by novelty leaves out.
+ *   `audit` adds that many pages from the saturated groups (from every group when none is
+ *   saturated), one group at a time, by hash within a group — the check on what sampling by
+ *   novelty leaves out.
  * @returns {Promise<{url: string, group: string, count: number, audit?: true}[]>} At most
  *   `count` + `audit` picks, fewer when the site has fewer groups.
  */
@@ -389,11 +396,10 @@ export async function pick(urls, {
   }
   const picked = new Set(picks.map((p) => p.url));
   const auditable = [...byGroup].filter(([group]) => !done.size || done.has(group));
-  const pool = auditable.flatMap(([group, members]) => members
+  const pool = interleave(auditable.map(([group, members]) => members
     .filter((url) => !picked.has(url) && isPage(url))
-    .map((url) => ({ url, group, count: members.length, rank: rank(url) })));
-  pool.sort((a, b) => a.rank.localeCompare(b.rank));
-  for (const { rank: _, ...candidate } of pool) {
+    .map((url) => ({ url, group, count: members.length })).sort(byRank)));
+  for (const candidate of pool) {
     if (picks.filter((p) => p.audit).length >= audit) break;
     if (await reachable(candidate.url)) picks.push({ ...candidate, audit: true });
   }

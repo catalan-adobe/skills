@@ -516,6 +516,9 @@ test('audit picks: from the saturated groups, pages only, disjoint, capped, dete
     const audits = got.filter((p) => p.audit);
     assert.equal(audits.length, 3);
     assert.ok(audits.every((a) => a.group === 'blog'), 'from the saturated group');
+    const two = await pick(shapes, { ...opts, saturated: ['blog', 'docs'], audit: 4 });
+    assert.deepEqual(two.filter((p) => p.audit).map((p) => p.group),
+      ['blog', 'docs', 'blog', 'docs'], 'one saturated group at a time, not the biggest pool');
     assert.ok(audits.every((a) => !a.url.endsWith('.pdf')), 'pages only');
     const main = new Set(got.filter((p) => !p.audit).map((p) => p.url));
     assert.ok(audits.every((a) => !main.has(a.url)), 'never a page already picked');
