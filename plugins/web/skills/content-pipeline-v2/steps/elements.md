@@ -22,8 +22,8 @@ Everything here comes from the visual-tree store, never the site: `references/lo
    node <skill>/scripts/elements.mjs
    ```
 
-   It decomposes every capture, merges with the previous run (type ids are stable, so the
-   run is a delta: new types, new compositions, saturation per group) and writes
+   It decomposes every capture, appends a run to the previous file (type ids are stable, so
+   a run is a delta: new and removed types, new compositions, "rules changed") and writes
    `elements/elements.json`, `elements/elements.md` and the `## elements` section of
    `REPORT.md`.
 2. Open `elements/elements.md`: the recurring types by support, the groups table (how many
@@ -38,14 +38,16 @@ Everything here comes from the visual-tree store, never the site: `references/lo
 
 - `migration/elements/elements.json`: the deliverable — `types` (id, identity, pages,
   support, instances, variants, sample, groups), `pages` (sections, coverage, composition,
-  rejected), `compositions`, `groups`, `runs`, `warnings`, `limits`.
+  rejected), `compositions`, `groups` (with `saturated`), `groupsWithoutPages`, `runs`,
+  `warnings`, `limits`.
 - `migration/elements/elements.md`: the same for the operator; `REPORT.md` `## elements`.
 
 ## Done
 
 Fails on a store behind the cache (`capture.mjs`, then `elements.mjs`), an `elements.json`
-that disagrees with the store (rerun `elements.mjs`), a type whose sample selector is not
-in its capture, or a missing `elements.md` or report section.
+older than the store or than `rules.json` or disagreeing with the store (rerun
+`elements.mjs`), a type whose sample selector is not in its capture, or a missing
+`elements.md` or report section.
 
 ```bash
 node <skill>/scripts/status.mjs check elements

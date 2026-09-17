@@ -20,7 +20,8 @@ export const isLeafComponent = (n, rules) => {
  * members (`chrome`, or `rules.chrome` for one the chrome step missed) and `rules.reject`
  * selectors go first, wrappers around chrome are peeled, a lone node or a dominant container
  * is peeled unless it is a leaf component; then `hairline`, `zero-width` and `off-page` nodes
- * go, and a `part` (a node page-tree promoted out of a sibling section) is attached back.
+ * go, and a `part` (a node page-tree promoted out of a sibling section, named in `of`) is
+ * attached back.
  *
  * @param {{tree: object}} capture
  * @param {{chromeSelectors?: Iterable<string>, rules?: object}} [options]
@@ -29,7 +30,10 @@ export const isLeafComponent = (n, rules) => {
 export function decompose(capture, { chromeSelectors = [], rules = mergeRules() } = {}) {
   const stepChrome = new Set(chromeSelectors);
   const rejected = [];
-  const drop = (n, reason) => { rejected.push({ selector: n.selector, reason }); return false; };
+  const drop = (n, reason, of) => {
+    rejected.push({ selector: n.selector, reason, ...(of ? { of } : {}) });
+    return false;
+  };
   const dropReason = (n) => {
     const own = selectorsOf(n);
     if (own.some((s) => stepChrome.has(s))) return 'chrome';
@@ -74,7 +78,7 @@ export function decompose(capture, { chromeSelectors = [], rules = mergeRules() 
     && (onPage(n.bounds) || drop(n, 'off-page')));
   const partOf = (n) => kept.find((o) => o !== n
     && selectorsOf(o).some((sel) => n.selector.startsWith(`${sel} >`)));
-  const sections = kept.filter((n) => !partOf(n) || drop(n, `part of ${partOf(n).selector}`));
+  const sections = kept.filter((n) => !partOf(n) || drop(n, 'part', partOf(n).selector));
   return { sections, rejected };
 }
 

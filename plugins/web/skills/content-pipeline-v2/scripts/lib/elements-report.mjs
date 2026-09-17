@@ -12,69 +12,53 @@ import { upsertSection } from './project.mjs';
 export const elementsJson = (project) => path.join(project.step('elements'), 'elements.json');
 export const elementsMd = (project) => path.join(project.step('elements'), 'elements.md');
 
-// A group with this many new pages and no new type in a run has stopped teaching us.
-// ponytail: one fixed number; a per-site value if a real run shows it wrong.
+// A group whose last pages, in capture order, brought no type absent from its earlier pages
+// has stopped teaching us. ponytail: one fixed number; a per-site value if a run shows it wrong.
 export const SATURATION_PAGES = 10;
 
 export const LIMITS = [
-  'Types are identities of the source markup with a first structural reading, not EDS blocks;'
-    + ' naming and mapping are the content expert\'s.',
+  'Types are identities of the source markup, not EDS blocks; classification, naming and'
+    + ' mapping are the content expert\'s.',
   'A part promoted from under an element with an id is not recognised as a part (page-tree'
     + ' selectors stop at the nearest id) and becomes a type of its own.',
   'Coverage counts recurring types by height; a page whose content region is empty after'
     + ' chrome removal counts as not covered.',
+  'Saturation reads the capture order: a --force recapture re-dates every page, so the last'
+    + ` ${SATURATION_PAGES} of a group are then arbitrary until new pages are captured.`,
 ];
 
-/** The chrome step's member selectors, or none when chrome.json is absent. */
+/** The chrome step's member selectors. */
 async function chromeSelectors(project) {
   const chrome = await readFile(path.join(project.step('chrome'), 'chrome.json'), 'utf8')
     .then(JSON.parse, () => null);
-  if (!chrome) return [];
+  if (!chrome) throw new Error('chrome/chrome.json missing; run chrome.mjs first');
   return [...chrome.header, ...chrome.footer].flatMap((v) => v.members.flatMap((m) => m.selectors));
 }
 
 const typeSet = (pages) => new Set(pages.flatMap((p) => p.sections.map((s) => s.type)));
-const compositionSet = (pages) => new Set(pages.map((p) => p.composition));
+const byCapture = (a, b) => String(a.capturedAt ?? '').localeCompare(String(b.capturedAt ?? ''));
 
 /**
- * The per-group table: pages, types, compositions, the dominant composition's share, and the
- * delta against the previous run's pages of that group; `saturated` when the run added
- * pages to the group and no new type.
+ * The per-group table from the pages alone: pages, types, compositions, the dominant
+ * composition's share, and `saturated` when the group's last SATURATION_PAGES pages (in
+ * capture order) brought no type its earlier pages lack.
  */
-export function groupTable(pages, previousPages = []) {
-  const groups = new Map();
-  for (const p of pages) {
-    const g = groups.get(p.group) ?? { group: p.group, pages: [] };
-    g.pages.push(p);
-    groups.set(p.group, g);
-  }
-  const before = new Map();
-  for (const p of previousPages) {
-    const g = before.get(p.group) ?? { pages: [] };
-    g.pages.push(p);
-    before.set(p.group, g);
-  }
-  return [...groups.values()].map(({ group, pages: list }) => {
-    const prev = before.get(group)?.pages ?? [];
-    const prevTypes = typeSet(prev);
-    const prevCompositions = compositionSet(prev);
-    const counts = new Map();
-    for (const p of list) counts.set(p.composition, (counts.get(p.composition) ?? 0) + 1);
-    const dominant = [...counts.values()].sort((a, b) => b - a)[0] ?? 0;
-    const newPages = list.length - prev.length;
-    const newTypes = [...typeSet(list)].filter((t) => !prevTypes.has(t)).length;
-    const newCompositions = [...compositionSet(list)]
-      .filter((c) => !prevCompositions.has(c)).length;
+export function groupTable(pages) {
+  return [...Map.groupBy(pages, (p) => p.group)].map(([group, list]) => {
+    const counts = Map.groupBy(list, (p) => p.composition);
+    const dominant = Math.max(0, ...[...counts.values()].map((l) => l.length));
+    const ordered = [...list].sort(byCapture);
+    const recent = ordered.slice(-SATURATION_PAGES);
+    const earlier = typeSet(ordered.slice(0, -SATURATION_PAGES));
+    const novel = [...typeSet(recent)].filter((t) => !earlier.has(t)).length;
     return {
       group,
       pages: list.length,
       types: typeSet(list).size,
       compositions: counts.size,
-      dominantShare: list.length ? Math.round((dominant / list.length) * 100) / 100 : 0,
-      newPages,
-      newTypes,
-      newCompositions,
-      saturated: newPages >= SATURATION_PAGES && newTypes === 0,
+      dominantShare: Math.round((dominant / list.length) * 100) / 100,
+      recentNewTypes: novel,
+      saturated: list.length > SATURATION_PAGES && novel === 0,
     };
   }).sort((a, b) => b.pages - a.pages);
 }
@@ -91,20 +75,31 @@ export async function buildElements(project, { now = () => new Date() } = {}) {
     chromeSelectors: await chromeSelectors(project), rules, groupOf: (u) => groups.get(u),
   });
   const prevTypes = new Set((previous?.types ?? []).map((t) => t.id));
-  const prevCompositions = compositionSet(previous?.pages ?? []);
+  const prevCompositions = new Set((previous?.compositions ?? []).map((c) => c.key));
+  const rulesChanged = previous ? previous.rulesHash !== rules.hash : false;
   const run = {
     at: now().toISOString(),
+    rulesHash: rules.hash,
+    ...(rulesChanged ? { rulesChanged: true } : {}),
     ...summary(result),
     newTypes: result.types.filter((t) => !prevTypes.has(t.id)).map((t) => t.id),
-    newCompositions: result.compositions.filter((c) => !prevCompositions.has(c.key)).length,
+    removedTypes: [...prevTypes].filter((id) => !result.types.some((t) => t.id === id)),
+    // Compositions are renamed wholesale by a rule change; the count means nothing then.
+    newCompositions: rulesChanged ? null
+      : result.compositions.filter((c) => !prevCompositions.has(c.key)).length,
   };
+  const seenGroups = new Set(result.pages.map((p) => p.group));
+  const pageGroups = new Set(urls.filter((r) => r.kind === 'page').map((r) => r.group));
   return {
     generatedAt: run.at,
     capturedPages: captures.length,
+    storeCapturedAt: captures.map((c) => c.capturedAt ?? '').sort().at(-1) || null,
     minWidth: (await readRun(project))?.minWidth ?? captures[0].minWidth ?? null,
+    rulesHash: rules.hash,
     recurrence: rules.recurrence,
     ...result,
-    groups: groupTable(result.pages, previous?.pages ?? []),
+    groups: groupTable(result.pages),
+    groupsWithoutPages: [...pageGroups].filter((g) => !seenGroups.has(g)).sort(),
     runs: [...(previous?.runs ?? []), run],
     limits: LIMITS,
   };
@@ -124,23 +119,25 @@ const short = (s, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 function renderTypes(types) {
   return [
-    '| id | pages | support | instances | variants | median h | identity | sample |',
-    '|---|---|---|---|---|---|---|---|',
+    '| id | pages | support | instances | variants | median h | identity |',
+    '|---|---|---|---|---|---|---|',
     ...types.map((t) => `| ${t.id} | ${t.pages} | ${pct(t.support)} | ${t.instances} `
-      + `| ${t.variants.length} | ${t.medianHeight} | \`${short(t.identity)}\` `
-      + `| \`${short(t.sample.selector, 50)}\` |`),
+      + `| ${t.variants.length} | ${t.medianHeight} | \`${short(t.identity)}\` |`),
   ];
 }
 
 function renderGroups(groups) {
   return [
-    '| group | pages | types | compositions | dominant | new pages | new types | saturated |',
-    '|---|---|---|---|---|---|---|---|',
+    '| group | pages | types | compositions | dominant | new types in last pages | saturated |',
+    '|---|---|---|---|---|---|---|',
     ...groups.map((g) => `| ${g.group} | ${g.pages} | ${g.types} | ${g.compositions} `
-      + `| ${pct(g.dominantShare)} | ${g.newPages} | ${g.newTypes} `
-      + `| ${g.saturated ? 'yes' : ''} |`),
+      + `| ${pct(g.dominantShare)} | ${g.recentNewTypes} | ${g.saturated ? 'yes' : ''} |`),
   ];
 }
+
+const renderRun = (x) => `| ${x.at.slice(0, 16)}Z | ${x.pages} | ${x.types} | ${x.recurring} `
+  + `| ${x.newTypes.length} | ${x.removedTypes.length} `
+  + `| ${x.rulesChanged ? 'rules changed' : x.newCompositions} |`;
 
 /** The operator's view of the inventory. */
 export function renderElementsMd(r) {
@@ -150,8 +147,7 @@ export function renderElementsMd(r) {
   const covered = last.covered;
   const rejected = new Map();
   for (const x of r.pages.flatMap((p) => p.rejected)) {
-    const reason = x.reason.replace(/^part of .*/, 'part of a sibling section');
-    rejected.set(reason, (rejected.get(reason) ?? 0) + 1);
+    rejected.set(x.reason, (rejected.get(x.reason) ?? 0) + 1);
   }
   return [
     '# Elements inventory',
@@ -166,13 +162,16 @@ export function renderElementsMd(r) {
     '## Recurring types', '', ...renderTypes(recurring), '',
     '## Groups', '',
     'Dominant: the share of the group\'s pages carrying its most common composition. A group'
-      + ` is saturated when a run added ${SATURATION_PAGES}+ pages and no new type.`,
+      + ` is saturated when its last ${SATURATION_PAGES} captured pages brought no type its`
+      + ' earlier pages lack.',
     '', ...renderGroups(r.groups), '',
+    r.groupsWithoutPages.length
+      ? `Groups without a captured page: ${r.groupsWithoutPages.join(', ')}.` : '',
+    '',
     '## Runs', '',
-    '| at | pages | types | recurring | new types | new compositions |',
-    '|---|---|---|---|---|---|',
-    ...r.runs.map((x) => `| ${x.at.slice(0, 16)}Z | ${x.pages} | ${x.types} | ${x.recurring} `
-      + `| ${x.newTypes.length} | ${x.newCompositions} |`),
+    '| at | pages | types | recurring | new types | removed | new compositions |',
+    '|---|---|---|---|---|---|---|',
+    ...r.runs.map(renderRun),
     '',
     '## Unique types', '',
     unique.length ? renderTypes(unique).join('\n') : '_none_', '',
@@ -193,8 +192,10 @@ export function renderSection(r) {
       + `${r.types.length} element types, ${last.recurring} recurring.`,
     `Coverage by recurring types: ${last.covered.full} pages full, ${last.covered.partial}`
       + ` partial, ${last.covered.none} none. ${r.compositions.length} distinct compositions.`,
-    `This run: +${last.newTypes.length} types, +${last.newCompositions} compositions`
-      + ` (run ${r.runs.length}). Saturated groups: ${saturated.join(', ') || 'none yet'}.`,
+    `Run ${r.runs.length}: +${last.newTypes.length} types, -${last.removedTypes.length}`
+      + (last.rulesChanged ? ' (rules changed)' : `, +${last.newCompositions} compositions`)
+      + `. Saturated groups: ${saturated.join(', ') || 'none yet'}; groups without a page: `
+      + `${r.groupsWithoutPages.length}.`,
     'Types, groups and runs: `migration/elements/elements.md`.',
   ].join('\n');
 }

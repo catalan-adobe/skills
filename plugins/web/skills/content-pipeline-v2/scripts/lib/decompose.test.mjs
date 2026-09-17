@@ -139,7 +139,7 @@ test('decompose reports what it dropped and why; the chrome step\'s members are 
     { selector: 'body > div.cookie-bar', reason: 'rules.chrome' },
     { selector: 'body > hr', reason: 'hairline' },
     { selector: 'body > div.sr', reason: 'off-page' },
-    { selector: 'body > div.a > div > img.hero', reason: 'part of body > div.a' },
+    { selector: 'body > div.a > div > img.hero', reason: 'part', of: 'body > div.a' },
   ]);
 });
 

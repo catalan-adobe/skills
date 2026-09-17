@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { openWork, unfinished } from './jobs.mjs';
 import { captureFile, readCaptures, readRun, storeStatus } from './capture.mjs';
+import { readRules } from './elements-rules.mjs';
 import { STEPS } from './steps.mjs';
 import { detect, missingReasons } from './setup.mjs';
 import { relativeSegments, scopeOf } from './urls.mjs';
@@ -389,9 +390,12 @@ export function checkChrome(files, { screenshots = [], selectors = {} } = {}) {
  * page's capture — plus elements.md and the report section.
  *
  * @param {Record<string, string>} files
- * @param {{captured: string[], selectors: Record<string, Set<string>>}} disk
+ * @param {{captured: string[], selectors: Record<string, Set<string>>, storeCapturedAt?: string,
+ *   rulesHash?: string}} disk `storeCapturedAt` is the newest capture; `rulesHash` the
+ *   project's current rules — an inventory older than either is stale.
  */
-export function checkElements(files, { captured = [], selectors = {} } = {}) {
+export function checkElements(files,
+  { captured = [], selectors = {}, storeCapturedAt = null, rulesHash = null } = {}) {
   const text = files['elements/elements.json'];
   if (text === undefined) {
     return { pass: false, reasons: ['missing migration/elements/elements.json'] };
@@ -413,6 +417,12 @@ export function checkElements(files, { captured = [], selectors = {} } = {}) {
     reasons.push(`elements.json: ${r.capturedPages} pages, the store has ${captured.length}`
       + ' — run elements.mjs');
   }
+  if (storeCapturedAt && (r.storeCapturedAt ?? '') < storeCapturedAt) {
+    reasons.push('elements.json predates the store — run elements.mjs');
+  }
+  if (rulesHash && r.rulesHash !== rulesHash) {
+    reasons.push('elements.json predates rules.json — run elements.mjs');
+  }
   const seen = new Map();
   for (const p of r.pages ?? []) seen.set(p.url, (seen.get(p.url) ?? 0) + 1);
   const missing = captured.filter((u) => !seen.has(u));
@@ -427,7 +437,9 @@ export function checkElements(files, { captured = [], selectors = {} } = {}) {
   if (unknown.size) reasons.push(`elements.json: unknown type(s) ${[...unknown].join(', ')}`);
   for (const t of r.types ?? []) {
     const known = selectors[t.sample?.url];
-    if (known && !known.has(t.sample.selector)) {
+    if (!known) {
+      reasons.push(`type ${t.id}: sample page ${t.sample?.url} is not in the store`);
+    } else if (!known.has(t.sample.selector)) {
       reasons.push(`type ${t.id}: sample ${t.sample.selector} is not in the capture of `
         + t.sample.url);
     }
@@ -625,7 +637,12 @@ async function checkElementsOnDisk(project) {
     const capture = byUrl.get(t.sample?.url);
     if (capture) selectors[t.sample.url] = captureSelectors(capture);
   }
-  const result = checkElements(files, { captured, selectors });
+  let rulesHash = null;
+  try { rulesHash = (await readRules(project)).hash; } catch (err) {
+    return { pass: false, reasons: [`elements: ${err.message}`] };
+  }
+  const storeCapturedAt = captures.map((c) => c.capturedAt ?? '').sort().at(-1) || null;
+  const result = checkElements(files, { captured, selectors, storeCapturedAt, rulesHash });
   if (behind) {
     result.reasons.push(`elements: the store is ${storeNote(store)} — run capture.mjs, then `
       + 'elements.mjs');

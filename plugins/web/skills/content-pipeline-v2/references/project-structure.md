@@ -145,13 +145,17 @@ The elements inventory: every captured page decomposed into sections, sections r
 element types of the source markup. Decomposed, not named.
 
 `elements/elements.json`
-: Written by `elements.mjs`: `types` (stable `id` from the identity, `identity`, `pages`,
-  `support`, `recurring`, `instances`, `medianHeight`, `heightRange`, `sample`, `groups`,
-  `variants`, `mergedFrom`), `pages` (`sections` with type/selector/height/variant,
-  `rejected` with reasons, `coverage`, `covered`, `composition`), `compositions`, `groups`
-  (pages, types, compositions, dominant share, deltas, `saturated`), `runs` (one entry per
-  run: summary, new types, new compositions), `warnings`, `limits`. Merged with the previous
-  file on every run. Read by `check elements`, the dashboard and the operator.
+: Written by `elements.mjs`: `storeCapturedAt` and `rulesHash` (what the inventory was built
+  from — the check fails when the store or the rules are newer), `types` (stable `id` from
+  the identity, `identity`, `pages`, `support`, `recurring`, `instances`, `medianHeight`,
+  `heightRange`, `sample`, `groups`, `variants`, `mergedFrom`), `pages` (`capturedAt`,
+  `sections` with type/selector/height and the variant's index, `rejected` with reasons —
+  a `part` names its section's index —, `coverage`, `covered`, `composition`),
+  `compositions`, `groups` (pages, types, compositions, dominant share, `recentNewTypes`,
+  `saturated`: the group's last 10 captured pages brought no type its earlier pages lack),
+  `groupsWithoutPages`, `runs` (one entry per run: rules hash, `rulesChanged`, summary, new
+  and removed types, new compositions — null when the rules changed), `warnings`, `limits`.
+  Read by `check elements`, the dashboard and the operator.
 
 `elements/elements.md`
 : Written by `elements.mjs`: the same for the operator. Read by the operator.

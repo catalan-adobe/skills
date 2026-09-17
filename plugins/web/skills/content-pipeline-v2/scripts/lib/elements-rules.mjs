@@ -1,6 +1,7 @@
 // The elements step's rules: defaults the engine runs with, and the per-project overrides
 // from elements/rules.json — a bounded vocabulary, never code. Adaptation to a site happens
 // here; anything the vocabulary cannot say is an engine gap.
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -74,6 +75,9 @@ export function mergeRules(overrides = {}) {
   validate(rules);
   return {
     ...rules,
+    // The rules as data, and their hash: a run records which rules produced it.
+    raw: rules,
+    hash: createHash('sha1').update(JSON.stringify(rules)).digest('hex').slice(0, 12),
     identityExclusions: rules.identityExclusions.map(regExp),
     leafTags: new Set(rules.leafTags),
     noiseClasses: new Set(rules.noiseClasses),

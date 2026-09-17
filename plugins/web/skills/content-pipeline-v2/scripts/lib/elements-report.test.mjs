@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { captureFile, capturesDir } from './capture.mjs';
@@ -26,13 +26,17 @@ async function project(pages) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'cpv2-elements-'));
   const p = resolveProject(root);
   await writeProject(p, { origin: `${ORIGIN}/`, cacheAllUpTo: 500 });
-  await mkdir(p.step('urls'), { recursive: true });
-  await mkdir(capturesDir(p), { recursive: true });
-  await mkdir(p.step('elements'), { recursive: true });
+  for (const step of ['urls', 'capture', 'chrome', 'elements']) {
+    await mkdir(p.step(step), { recursive: true });
+  }
+  await writeFile(path.join(p.step('chrome'), 'chrome.json'), JSON.stringify({
+    header: [{ members: [{ selectors: ['body > header'] }] }], footer: [],
+  }));
   await addPages(p, pages);
   return p;
 }
 
+let clock = 0;
 async function addPages(p, pages) {
   const existing = await readFile(path.join(p.step('urls'), 'urls.json'), 'utf8')
     .then(JSON.parse, () => []);
@@ -40,82 +44,134 @@ async function addPages(p, pages) {
   for (const [name, group, tree] of pages) {
     const url = `${ORIGIN}/${group}/${name}.html`;
     records.push({ url, kind: 'page', group, cache: { path: 'x', verified: true } });
-    await writeFile(captureFile(p, url), JSON.stringify({ minWidth: 300, url, tree }));
+    clock += 1;
+    const capturedAt = new Date(Date.UTC(2026, 0, 1, 0, clock)).toISOString();
+    await writeFile(captureFile(p, url), JSON.stringify({ minWidth: 300, url, capturedAt, tree }));
   }
+  records.push({ url: `${ORIGIN}/empty/x.html`, kind: 'page', group: 'empty', cache: {} });
   await writeInventory(p.step('urls'), records);
 }
 
+const header = el('HEADER', 'top', 'body > header', 0, 80);
 const three = [
-  ['a', 'blog', pageTree([cards('s1', 0), text('s2', 400)])],
-  ['b', 'blog', pageTree([cards('s1', 0), text('s2', 400)])],
-  ['c', 'docs', pageTree([text('s2', 0), text('s3', 300)])],
+  ['a', 'blog', pageTree([header, cards('s1', 80), text('s2', 480)])],
+  ['b', 'blog', pageTree([header, cards('s1', 80), text('s2', 480)])],
+  ['c', 'docs', pageTree([header, text('s2', 80), text('s3', 380)])],
 ];
+const blogPage = (i) => [`m${i}`, 'blog', pageTree([header, cards('s1', 80), text('s2', 480)])];
 
 test('elements.mjs writes the inventory, the operator view and the report section', async () => {
   const p = await project(three);
   const r = await writeElements(p, { now: () => new Date('2026-01-02T03:04:05Z') });
   assert.equal(r.capturedPages, 3);
   assert.deepEqual(r.types.map((t) => [t.identity, t.pages]),
-    [['DIV#.text', 3], ['DIV#.cards', 2]]);
-  assert.deepEqual(r.runs.map((x) => [x.at, x.newTypes.length, x.newCompositions]),
-    [['2026-01-02T03:04:05.000Z', 2, 2]]);
+    [['DIV#.text', 3], ['DIV#.cards', 2]], 'the header is chrome, not a type');
+  assert.deepEqual(r.runs.map((x) => [x.at, x.newTypes.length, x.removedTypes, x.newCompositions]),
+    [['2026-01-02T03:04:05.000Z', 2, [], 2]]);
+  assert.equal(r.storeCapturedAt, r.pages.map((x) => x.capturedAt).sort().at(-1));
+  assert.deepEqual(r.groupsWithoutPages, ['empty']);
+  assert.match(r.rulesHash, /^[0-9a-f]{12}$/);
   const md = await readFile(path.join(p.step('elements'), 'elements.md'), 'utf8');
   assert.match(md, /3 pages decomposed .* 2 element types, 2 recurring/);
-  assert.match(md, /\| blog \| 2 \| 2 \| 1 \| 100 % \| 2 \| 2 \|  \|/);
+  assert.match(md, /\| blog \| 2 \| 2 \| 1 \| 100 % \| 2 \|  \|/);
+  assert.match(md, /Groups without a captured page: empty\./);
   const report = await readFile(p.report, 'utf8');
   assert.match(report, /## elements\n[\s\S]*3 cached pages decomposed into 6 sections/);
   assert.deepEqual(await runCheck('elements', p), { step: 'elements', pass: true, reasons: [] });
 });
 
-test('a second run is a delta: ids stable, new types and saturation per group', async () => {
+test('without chrome.json the step refuses rather than inventory the header', async () => {
   const p = await project(three);
-  const first = await writeElements(p);
-  const more = Array.from({ length: SATURATION_PAGES }, (_, i) => (
-    [`m${i}`, 'blog', pageTree([cards('s1', 0), text('s2', 400)])]));
-  await addPages(p, [...more, ['n', 'docs', pageTree([cards('s1', 0, 'tiles'), text('s2', 400)])]]);
-  const second = await buildElements(p);
-  assert.equal(second.runs.length, 2);
-  const [run1, run2] = second.runs;
-  assert.deepEqual([run1.pages, run2.pages], [3, 3 + SATURATION_PAGES + 1]);
-  assert.equal(run2.newTypes.length, 1, 'tiles is new; cards and text keep their ids');
-  assert.ok(second.types.some((t) => t.id === first.types[0].id));
-  const blog = second.groups.find((g) => g.group === 'blog');
-  const docs = second.groups.find((g) => g.group === 'docs');
-  assert.deepEqual([blog.newPages, blog.newTypes, blog.saturated], [SATURATION_PAGES, 0, true]);
-  assert.deepEqual([docs.newPages, docs.newTypes, docs.saturated], [1, 1, false]);
+  await rm(path.join(p.step('chrome'), 'chrome.json'));
+  await assert.rejects(buildElements(p), /chrome\/chrome.json missing; run chrome.mjs first/);
 });
 
-test('groupTable without a previous run: everything is new, nothing saturated', () => {
-  const pages = [{ group: 'g', composition: 'a b', sections: [{ type: 'a' }, { type: 'b' }] },
-    { group: 'g', composition: 'a', sections: [{ type: 'a' }] }];
+test('a second run is a delta: ids stable, new and removed types, rule changes labelled',
+  async () => {
+    const p = await project(three);
+    const first = await writeElements(p);
+    const tilesPage = pageTree([header, cards('s1', 80, 'tiles'), text('s2', 480)]);
+    await addPages(p, [['n', 'docs', tilesPage]]);
+    const second = await writeElements(p);
+    const [, run2] = second.runs;
+    assert.deepEqual([run2.pages, run2.newTypes.length, run2.removedTypes, run2.newCompositions],
+      [4, 1, [], 1], 'tiles is new; cards and text keep their ids');
+    assert.ok(second.types.some((t) => t.id === first.types[0].id));
+    const tiles = second.types.find((t) => t.identity === 'DIV#.tiles');
+    const cardsId = first.types.find((t) => t.identity === 'DIV#.cards').id;
+    await writeFile(path.join(p.step('elements'), 'rules.json'),
+      JSON.stringify({ merge: { [tiles.id]: cardsId } }));
+    const third = await writeElements(p);
+    const run3 = third.runs[2];
+    assert.deepEqual([run3.rulesChanged, run3.newTypes, run3.removedTypes, run3.newCompositions],
+      [true, [], [tiles.id], null]);
+    assert.notEqual(run3.rulesHash, run2.rulesHash);
+    const md = await readFile(path.join(p.step('elements'), 'elements.md'), 'utf8');
+    assert.match(md, /\| 0 \| 1 \| rules changed \|/);
+  });
+
+test('saturation reads the capture order and survives a rerun with nothing new', async () => {
+  const p = await project(three);
+  await addPages(p, Array.from({ length: SATURATION_PAGES }, (_, i) => blogPage(i)));
+  const r = await writeElements(p);
+  const blog = r.groups.find((g) => g.group === 'blog');
+  assert.deepEqual([blog.pages, blog.recentNewTypes, blog.saturated],
+    [SATURATION_PAGES + 2, 0, true]);
+  assert.equal(r.groups.find((g) => g.group === 'docs').saturated, false, 'one page');
+  const again = await writeElements(p);
+  assert.equal(again.groups.find((g) => g.group === 'blog').saturated, true);
+  const late = pageTree([header, cards('s1', 80, 'tiles'), text('s2', 480)]);
+  await addPages(p, [['z', 'blog', late]]);
+  const after = await writeElements(p);
+  const b = after.groups.find((g) => g.group === 'blog');
+  assert.deepEqual([b.recentNewTypes, b.saturated], [1, false], 'a late new type unsaturates');
+});
+
+test('groupTable on a small group: never saturated, dominant share measured', () => {
+  const pages = [
+    { group: 'g', composition: 'a b', capturedAt: '1', sections: [{ type: 'a' }, { type: 'b' }] },
+    { group: 'g', composition: 'a', capturedAt: '2', sections: [{ type: 'a' }] },
+  ];
   assert.deepEqual(groupTable(pages), [{
-    group: 'g', pages: 2, types: 2, compositions: 2, dominantShare: 0.5, newPages: 2,
-    newTypes: 2, newCompositions: 2, saturated: false,
+    group: 'g', pages: 2, types: 2, compositions: 2, dominantShare: 0.5, recentNewTypes: 2,
+    saturated: false,
   }]);
 });
 
-test('check elements: a type id edited or a page removed fails by name', async () => {
-  const p = await project(three);
-  await writeElements(p);
-  const file = elementsJson(p);
-  const good = JSON.parse(await readFile(file, 'utf8'));
-  const edited = JSON.parse(JSON.stringify(good));
-  edited.types[0].id = 't-00000000';
-  await writeFile(file, JSON.stringify(edited));
-  const r1 = await runCheck('elements', p);
-  assert.equal(r1.pass, false);
-  assert.match(r1.reasons[0], /unknown type\(s\) t-/);
-  const shorter = JSON.parse(JSON.stringify(good));
-  shorter.pages.pop();
-  await writeFile(file, JSON.stringify(shorter));
-  const r2 = await runCheck('elements', p);
-  assert.match(r2.reasons[0], /1 captured page\(s\) absent/);
-  const wrongSample = JSON.parse(JSON.stringify(good));
-  wrongSample.types[0].sample.selector = 'body > div.nope';
-  await writeFile(file, JSON.stringify(wrongSample));
-  assert.match((await runCheck('elements', p)).reasons[0],
-    /sample body > div.nope is not in the capture/);
-});
+test('check elements: an edited id, a removed page, a wrong sample, a stale file fail by name',
+  async () => {
+    const p = await project(three);
+    await writeElements(p);
+    const file = elementsJson(p);
+    const good = JSON.parse(await readFile(file, 'utf8'));
+    const mutate = async (f) => {
+      const copy = JSON.parse(JSON.stringify(good));
+      f(copy);
+      await writeFile(file, JSON.stringify(copy));
+      return (await runCheck('elements', p)).reasons;
+    };
+    assert.match((await mutate((c) => { c.types[0].id = 't-00000000'; }))[0],
+      /unknown type\(s\) t-/);
+    assert.match((await mutate((c) => c.pages.pop()))[0], /1 captured page\(s\) absent/);
+    assert.match((await mutate((c) => { c.types[0].sample.selector = 'body > div.nope'; }))[0],
+      /sample body > div.nope is not in the capture/);
+    assert.match((await mutate((c) => { c.types[0].sample.url = 'https://site.example/gone'; }))[0],
+      /sample page https:\/\/site.example\/gone is not in the store/);
+    await writeFile(file, JSON.stringify(good));
+    const url = `${ORIGIN}/blog/a.html`;
+    await writeFile(captureFile(p, url), JSON.stringify({
+      minWidth: 300, url, capturedAt: '2027-01-01T00:00:00.000Z', tree: three[0][2],
+    }));
+    assert.deepEqual((await runCheck('elements', p)).reasons,
+      ['elements.json predates the store — run elements.mjs']);
+    await writeElements(p);
+    await writeFile(path.join(p.step('elements'), 'rules.json'), JSON.stringify({ recurrence: 3 }));
+    assert.deepEqual((await runCheck('elements', p)).reasons,
+      ['elements.json predates rules.json — run elements.mjs']);
+    await writeFile(path.join(p.step('elements'), 'rules.json'), '{ nope');
+    assert.match((await runCheck('elements', p)).reasons[0],
+      /elements: rules.json: not valid JSON/);
+  });
 
 test('checkElements: missing or invalid file, count mismatch, page twice, no section', () => {
   assert.deepEqual(checkElements({}),

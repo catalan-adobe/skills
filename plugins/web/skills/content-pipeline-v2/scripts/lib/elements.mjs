@@ -45,7 +45,13 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
   for (const capture of captures) {
     const group = groupOf(capture.url) || '/';
     const { sections, rejected } = decompose(capture, { chromeSelectors, rules });
-    const page = { url: capture.url, group, sections: [], rejected, contentHeight: 0 };
+    const page = {
+      url: capture.url, group, capturedAt: capture.capturedAt ?? null, sections: [],
+      rejected: [], contentHeight: 0,
+    };
+    // A part names its section by index, not by its long selector.
+    const index = new Map(sections.map((s, i) => [s.selector, i]));
+    page.rejected = rejected.map(({ of, ...r }) => (of ? { ...r, section: index.get(of) } : r));
     for (const node of sections) {
       const ident = identity(node, rules);
       const ownId = typeId(ident);
@@ -63,14 +69,17 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
       t.groups[group] = (t.groups[group] ?? 0) + 1;
       const children = variantKey(node, rules);
       const vk = children.join(',');
-      const v = t.variants.get(vk) ?? { children, instances: 0, pages: new Set(), sample: null };
+      const v = t.variants.get(vk) ?? {
+        key: vk, children, instances: 0, pages: new Set(), sample: null, sections: [],
+      };
       v.instances += 1;
       v.pages.add(capture.url);
       v.sample ??= { url: capture.url, selector: node.selector };
       t.variants.set(vk, v);
       types.set(id, t);
-      page.sections.push({ type: id, selector: node.selector, height: node.bounds.height,
-        variant: vk });
+      const section = { type: id, selector: node.selector, height: node.bounds.height };
+      v.sections.push(section);
+      page.sections.push(section);
       page.contentHeight += node.bounds.height;
     }
     pages.push(page);
@@ -90,9 +99,13 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
     heightRange: [Math.min(...t.heights), Math.max(...t.heights)],
     sample: t.sample,
     groups: t.groups,
-    variants: [...t.variants.values()].map((v) => ({
-      children: v.children, instances: v.instances, pages: v.pages.size, sample: v.sample,
-    })).sort((a, b) => b.instances - a.instances),
+    variants: [...t.variants.values()].sort((a, b) => b.instances - a.instances)
+      .map((v, i) => {
+        // A section names its variant by index within its type.
+        for (const s of v.sections) s.variant = i;
+        const { children, instances, sample } = v;
+        return { children, instances, pages: v.pages.size, sample };
+      }),
   })).sort((a, b) => b.pages - a.pages || a.identity.localeCompare(b.identity));
   const recurring = new Set(typeList.filter((t) => t.recurring).map((t) => t.id));
   const compositions = new Map();
