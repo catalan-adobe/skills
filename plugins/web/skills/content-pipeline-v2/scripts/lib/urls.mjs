@@ -1,6 +1,7 @@
 import {
   mkdir, readFile, rm, writeFile,
 } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 const COVER_THRESHOLD = 0.8;
@@ -175,7 +176,7 @@ function sentenceOf(dist, prop) {
  * @param {ReturnType<typeof distribution>} dist
  * @param {ReturnType<typeof proposal>} prop
  */
-export function renderUrlsMd(dist, prop) {
+export function renderUrlsMd(dist, prop, elements = null) {
   const known = dist.total - (dist.candidates ?? dist.total);
   return [
     '# URL distribution',
@@ -195,9 +196,28 @@ export function renderUrlsMd(dist, prop) {
     '',
     tableOf('By language', dist.byLanguage),
     '',
+    ...saturationSection(elements),
     ...redirectSection(dist.redirects ?? []),
     ...notToMigrateSection(dist.notToMigrate ?? []),
   ].join('\n');
+}
+
+/** What the elements inventory says per group: where the next batch still teaches. */
+function saturationSection(elements) {
+  const groups = elements?.groups ?? [];
+  if (!groups.length) return [];
+  const rows = groups.slice(0, TABLE_ROWS).map((g) => `| ${label(g.group)} | ${g.pages} | `
+    + `${g.types} | ${g.compositions} | ${g.saturated ? 'yes' : ''} |`);
+  const rest = groups.length - TABLE_ROWS;
+  if (rest > 0) rows.push(`| … and ${rest} more | | | | |`);
+  return [
+    '## Saturation (elements inventory)', '',
+    'A saturated group\'s last captured pages brought no new element type; `pick` skips it.',
+    '',
+    '| group | captured | types | compositions | saturated |',
+    '| --- | --- | --- | --- | --- |',
+    ...rows, '',
+  ];
 }
 
 function redirectSection(redirects) {
@@ -286,23 +306,50 @@ export async function reachableByFetch(url) {
 }
 
 /**
+ * The shape of a URL below its group: depth, extension, a query string. A group's members
+ * are visited one shape at a time, so a batch is not all the same kind of page.
+ */
+export function stratum(url, scope) {
+  const u = new URL(url);
+  const depth = relativeSegments(url, scope).length;
+  const ext = (u.pathname.match(/\.([a-z0-9]+)$/i) ?? [, ''])[1].toLowerCase();
+  return `${depth}|${ext}|${u.search ? 'q' : ''}`;
+}
+
+/** Round-robin over the strata of `urls`, keeping each stratum's own order. */
+export function stratified(urls, scope) {
+  const strata = Map.groupBy(urls, (u) => stratum(u, scope));
+  const out = [];
+  for (let i = 0; out.length < urls.length; i += 1) {
+    for (const list of strata.values()) if (list[i]) out.push(list[i]);
+  }
+  return out;
+}
+
+const rank = (url) => createHash('sha1').update(url).digest('hex');
+
+/**
  * Picks representative pages: one reachable URL from each of the largest groups (first
  * path segment below the shared scope), skipping the groups of the `exclude` URLs — the
  * homepage's, typically — so a check runs on pages that differ from what was already seen.
  *
  * @param {{url: string}[]} urls `URLExtended[]`.
- * @param {{count?: number, exclude?: string[], fill?: boolean,
- *   reachable?: (url: string) => Promise<boolean>}} [options] `fill` keeps rounding over the
- *   groups until `count` pages are picked (HTML pages only), for building a cache selection.
- * @returns {Promise<{url: string, group: string, count: number}[]>} At most `count` picks,
- *   fewer when the site has fewer groups.
+ * @param {{count?: number, exclude?: string[], fill?: boolean, saturated?: Iterable<string>,
+ *   audit?: number, reachable?: (url: string) => Promise<boolean>}} [options] `fill` keeps
+ *   rounding over the groups until `count` pages are picked (HTML pages only), for building
+ *   a cache selection; `saturated` groups (the elements inventory's) are not picked from;
+ *   `audit` adds that many never-picked pages chosen by hash from every group, saturated
+ *   or not — the check on what sampling by novelty leaves out.
+ * @returns {Promise<{url: string, group: string, count: number, audit?: true}[]>} At most
+ *   `count` + `audit` picks, fewer when the site has fewer groups.
  */
 export async function pick(urls, {
-  count = 2, exclude = [], fill = false, reachable = reachableByFetch,
+  count = 2, exclude = [], fill = false, saturated = [], audit = 0, reachable = reachableByFetch,
 } = {}) {
   const scope = scopeOf(urls);
   const groupOf = (url) => relativeSegments(url, scope)[0] ?? '';
   const skip = new Set(exclude.map(groupOf));
+  const done = new Set(saturated);
   const byGroup = new Map();
   // Already-cached URLs are not picked: a pick serves the next selection or a fresh look.
   for (const record of urls.filter((r) => isCandidate(r) && !r.cache?.path)) {
@@ -312,12 +359,16 @@ export async function pick(urls, {
     byGroup.set(group, [...(byGroup.get(group) ?? []), url]);
   }
   // Larger groups first; on a tie by name, the scope root ('') last.
-  const ranked = [...byGroup].sort((a, b) => b[1].length - a[1].length
-    || (a[0] === '') - (b[0] === '') || a[0].localeCompare(b[0]));
-  // Pages inside the group before its landing page: they are what the group looks like.
-  const inside = (url) => (relativeSegments(url, scope).length >= 2 ? 0 : 1);
+  const ranked = [...byGroup].filter(([group]) => !done.has(group))
+    .sort((a, b) => b[1].length - a[1].length
+      || (a[0] === '') - (b[0] === '') || a[0].localeCompare(b[0]));
+  // Pages inside the group before its landing page: they are what the group looks like;
+  // then one shape at a time.
+  const inside = (url) => relativeSegments(url, scope).length >= 2;
   const queues = ranked.map(([group, members]) => ({
-    group, count: members.length, rest: [...members].sort((a, b) => inside(a) - inside(b)),
+    group,
+    count: members.length,
+    rest: [...stratified(members.filter(inside), scope), ...members.filter((u) => !inside(u))],
   }));
   const picks = [];
   let progressed = true;
@@ -335,6 +386,14 @@ export async function pick(urls, {
       }
     }
     if (!fill) break;
+  }
+  const picked = new Set(picks.map((p) => p.url));
+  const pool = [...byGroup].flatMap(([group, members]) => members
+    .filter((url) => !picked.has(url)).map((url) => ({ url, group, count: members.length })));
+  pool.sort((a, b) => rank(a.url).localeCompare(rank(b.url)));
+  for (const candidate of pool) {
+    if (picks.filter((p) => p.audit).length >= audit) break;
+    if (await reachable(candidate.url)) picks.push({ ...candidate, audit: true });
   }
   return picks;
 }
@@ -377,7 +436,9 @@ export async function refreshUrlsMd(urlsDir, { cacheAllUpTo = 500, subsets = fal
   const entries = await readInventory(urlsDir);
   const dist = distribution(entries);
   const prop = proposal(dist, { cacheAllUpTo });
-  await writeFile(path.join(urlsDir, 'urls.md'), renderUrlsMd(dist, prop));
+  const elements = await readFile(path.join(urlsDir, '..', 'elements', 'elements.json'), 'utf8')
+    .then(JSON.parse, () => null);
+  await writeFile(path.join(urlsDir, 'urls.md'), renderUrlsMd(dist, prop, elements));
   if (subsets) await writeSubsets(entries, prop, urlsDir);
   return prop;
 }

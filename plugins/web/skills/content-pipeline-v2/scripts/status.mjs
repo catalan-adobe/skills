@@ -38,9 +38,9 @@ export const COMMAND_TABLE = [
     help: 'detect preconditions; --install fixes them in project scope' },
   { name: 'urls', usage: '[import <file>]', flags: [],
     help: 'merge urls/scan.json (or a URL list) into urls/urls.json; proposal → urls/urls.md' },
-  { name: 'pick', usage: '[--count 2] [--exclude <url>]... [--write <subset>]',
-    flags: ['--count', '--exclude', '--write'],
-    help: 'one reachable, uncached page per largest group; --write fills to count into a subset' },
+  { name: 'pick', usage: '[--count 2] [--exclude <url>]... [--write <subset>] [--audit 0]',
+    flags: ['--count', '--exclude', '--write', '--audit'],
+    help: 'uncached pages by largest group, saturated groups skipped; --audit adds N from any' },
   { name: 'approve', usage: '<step> [<subset>...]', flags: [],
     help: "record the operator's yes for a gated step; subsets name urls/subsets/<name>.txt" },
   { name: 'section', usage: '<step|next> [--file body.md]', flags: ['--file'],
@@ -283,16 +283,24 @@ async function skillsSource(project, { skillsRepo, skillsRef }) {
  * groups below the shared scope, skipping the groups of the `--exclude` URLs.
  */
 export async function pickUrls(project, {
-  count, exclude, write, reachable,
+  count, exclude, write, audit = 0, reachable,
 }) {
   const entries = await readUrls(project);
   const fill = Boolean(write);
   const picks = await pick(entries, {
-    count, exclude, fill, ...(reachable ? { reachable } : {}),
+    count, exclude, fill, audit, saturated: await saturatedGroups(project),
+    ...(reachable ? { reachable } : {}),
   });
   if (!write) return picks;
   const file = await writeSubset(project.step('urls'), write, picks.map((p) => p.url));
   return { subset: write, file, count: picks.length, picks };
+}
+
+/** The groups the elements inventory calls saturated; none without an inventory. */
+async function saturatedGroups(project) {
+  const elements = await readFile(path.join(project.step('elements'), 'elements.json'), 'utf8')
+    .then(JSON.parse, () => null);
+  return (elements?.groups ?? []).filter((g) => g.saturated).map((g) => g.group);
 }
 
 /** The flags each command accepts (value-taking flags listed once; booleans too). */
@@ -382,6 +390,7 @@ const COMMANDS = {
     count: Number(flag(argv, '--count') ?? 2),
     exclude: argv.flatMap((a, i) => (a === '--exclude' ? [argv[i + 1]] : [])),
     write: flag(argv, '--write'),
+    audit: Number(flag(argv, '--audit') ?? 0),
   }),
   approve(argv, project) {
     const [id, ...subsets] = argv;

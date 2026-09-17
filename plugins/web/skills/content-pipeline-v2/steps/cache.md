@@ -7,14 +7,15 @@ assets on disk so later analysis works offline, in the background. Tier: low.
 ## Inputs
 
 - `migration/project.json` (`cacheSelection`), `urls/urls.json` or `urls/subsets/<name>.txt`,
-  `probe/playwright-config.json`, `probe/browser-recipe.json`, `prep/page-prep.json`,
-  `setup.json` — all read by the driver, none by you.
+  `probe/*.json`, `prep/page-prep.json`, `setup.json` — all read by the driver, none by you.
 - Sibling `.agents/skills/page-cache/SKILL.md`: the proxy; read only if a job `failed`.
 ## Method
 
 1. If the operator asked for a number of pages rather than a subset, build the subset first:
    `node <skill>/scripts/status.mjs pick --count <n> --write <name>` (reachable HTML pages,
-   round-robin over the URL groups, no duplicates), then `status.mjs approve cache <name>`.
+   round-robin over the URL groups, one page shape at a time; once an elements inventory
+   exists, saturated groups are skipped — `--audit 5` adds a few pages from any group as a
+   check), then `status.mjs approve cache <name>`.
 2. Queue the job — the command returns at once:
 
    ```bash
@@ -23,9 +24,8 @@ assets on disk so later analysis works offline, in the background. Tier: low.
 
    It records a job for the approved selection under `migration/.work/warm/` and starts one
    detached worker unless one is running; a second selection queues behind the first. The
-   worker visits every URL through the page-cache proxy in one browser session (hide rules,
-   lazy-content scroll), verifies each from the cache, classifies and records it in
-   `urls/urls.json` after every URL, then writes `cache/cache.md` and the report section.
+   worker visits every URL through the page-cache proxy in one browser session, verifies each
+   from the cache, records it in `urls/urls.json`, then writes `cache/cache.md` and the section.
 3. Do not wait for it, poll it in a loop, or run the worker yourself. Tell the operator the
    job is queued and stop, or continue with another `ready` step. `status.mjs` shows `cache`
    as `running` with `12/50 (blogs) · queued: ja-jp`; `warm.mjs status` lists the jobs;

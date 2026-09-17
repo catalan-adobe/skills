@@ -7,7 +7,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  distribution, pick, proposal, relativeSegments, renderUrlsMd, scopeOf, writeSubset, writeSubsets,
+  distribution, pick, proposal, relativeSegments, renderUrlsMd, scopeOf, stratified, writeSubset,
+  writeSubsets,
 } from './urls.mjs';
 
 const execFileP = promisify(execFile);

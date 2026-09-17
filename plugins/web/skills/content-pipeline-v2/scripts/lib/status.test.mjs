@@ -693,3 +693,26 @@ test('a queued or running warm job holds the cache step as running and fails its
     const partial = await cli(cwd, 'check', 'cache').catch((e) => e);
     assert.match(partial.stdout, /selection ja-jp is stopped at 0\/1 — approve it again/);
   });
+
+test('pick reads the saturated groups from elements.json and adds --audit picks', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/');
+  const project = resolveProject(cwd);
+  await mkdir(path.join(cwd, 'migration/urls'), { recursive: true });
+  await writeFile(path.join(cwd, 'migration/urls/urls.json'), JSON.stringify([
+    { url: 'https://example.com/a/1' }, { url: 'https://example.com/a/2' },
+    { url: 'https://example.com/b/1' }, { url: 'https://example.com/c/1' },
+  ]));
+  await mkdir(path.join(cwd, 'migration/elements'), { recursive: true });
+  await writeFile(path.join(cwd, 'migration/elements/elements.json'), JSON.stringify({
+    groups: [{ group: 'a', saturated: true }, { group: 'b', saturated: false }],
+  }));
+  const out = await pickUrls(project, {
+    count: 2, exclude: [], write: 'next', audit: 1, reachable: async () => true,
+  });
+  assert.deepEqual(out.picks.filter((p) => !p.audit).map((p) => p.group), ['b', 'c']);
+  assert.equal(out.picks.filter((p) => p.audit).length, 1);
+  assert.equal(out.count, 3, 'the audit pick is part of the subset');
+  const help = await cli(cwd, '--help');
+  assert.match(String(help), /--audit/);
+});
