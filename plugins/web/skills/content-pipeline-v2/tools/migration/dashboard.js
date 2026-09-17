@@ -77,7 +77,7 @@ function renderSteps(status, progress) {
   $('#steps .panel').innerHTML = status
     ? table(['step', 'state', 'tier', 'blocked by', 'via'], steps.map((s) => [
       `<strong>${esc(s.id)}</strong>`,
-      chip(s.state, s.state) + (s.running ? ` ${esc(s.running)}` : ''),
+      chip(s.state, s.state) + (s.running ? ` ${esc(s.running)}` : s.note ? ` ${esc(s.note)}` : ''),
       esc(s.tier),
       esc(s.blockedBy.join(', ')), esc(s.skill ?? 'runner'),
     ]))

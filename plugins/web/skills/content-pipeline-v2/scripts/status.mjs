@@ -83,7 +83,7 @@ const flag = (argv, name) => {
 function renderText(states) {
   const rows = states.map((s) => {
     const via = s.skill ? `via ${s.skill}` : 'runner';
-    const why = s.running ? ` ${s.running}`
+    const why = s.running ? ` ${s.running}` : s.note ? ` ${s.note}`
       : s.blockedBy.length ? ` (by ${s.blockedBy.join(', ')})` : '';
     return `${s.id.padEnd(12)} ${s.state.padEnd(17)}${why.padEnd(20)} ${s.tier.padEnd(7)} ${via}`;
   });
@@ -101,7 +101,7 @@ export async function status(project) {
   if (!data) {
     throw new Error(`No project at ${project.projectFile}; run status.mjs init --origin <url>`);
   }
-  const { done, running } = await runAllChecks(project);
+  const { done, running, notes } = await runAllChecks(project);
   const approved = data.approved ?? {};
   const server = await cacheServerStatus(project);
   const result = {
@@ -111,7 +111,7 @@ export async function status(project) {
     cacheServer: server
       ? { running: true, port: server.port, url: server.url, cached: server.cached }
       : { running: false },
-    steps: stepStates(done, approved, running),
+    steps: stepStates(done, approved, running, notes),
   };
   // The dashboard (tools/migration/) reads this instead of recomputing the checks.
   // Atomic: the dashboard polls this file while jobs rewrite it.

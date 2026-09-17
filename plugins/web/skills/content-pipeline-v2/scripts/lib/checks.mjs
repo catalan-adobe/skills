@@ -520,8 +520,12 @@ async function checkCaptureOnDisk(project) {
   }
   const files = await loadFiles(project);
   if (!files['capture/captures.md']) reasons.push('capture: capture/captures.md missing');
-  return { pass: !reasons.length, reasons };
+  const behind = store.missing.length + store.stale.length;
+  return { pass: !reasons.length, reasons, ...(behind ? { note: storeNote(store) } : {}) };
 }
+
+const storeNote = (store) => `${store.missing.length + store.stale.length} pages behind the cache`;
+
 
 /** `chrome` on disk: the run's phase while it is open, else the content check. */
 async function checkChromeOnDisk(project) {
@@ -530,6 +534,9 @@ async function checkChromeOnDisk(project) {
     const label = 'detecting and screenshotting';
     return { pass: false, running: label, reasons: [`chrome: ${label}; chrome.mjs status`] };
   }
+  const store = await storeStatus(project, (await readRun(project))?.minWidth ?? undefined);
+  const behind = store.missing.length + store.stale.length
+    ? [`chrome: the store is ${storeNote(store)} — run capture.mjs, then chrome.mjs`] : [];
   const files = await loadFiles(project);
   const shots = (await listDir(path.join(project.step('chrome'), 'screenshots'), 'screenshots'));
   const selectors = {};
@@ -542,7 +549,8 @@ async function checkChromeOnDisk(project) {
   }
   const result = checkChrome(files, { screenshots: shots, selectors });
   if (run?.state === 'failed') result.reasons.push(`chrome: the last run failed — ${run.error}`);
-  return { ...result, pass: result.pass && run?.state !== 'failed' };
+  result.reasons.push(...behind);
+  return { ...result, pass: result.pass && run?.state !== 'failed' && !behind.length };
 }
 
 export async function runCheck(id, project) {
@@ -560,5 +568,7 @@ export async function runAllChecks(project) {
   const done = Object.fromEntries(results.map(([id, r]) => [id, r.pass]));
   const running = Object.fromEntries(results.filter(([, r]) => r.running)
     .map(([id, r]) => [id, r.running]));
-  return { done, running };
+  const notes = Object.fromEntries(results.filter(([, r]) => r.note)
+    .map(([id, r]) => [id, r.note]));
+  return { done, running, notes };
 }

@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolveProject, writeProject } from './project.mjs';
 import { writeInventory } from './inventory.mjs';
+import { runCheck } from './checks.mjs';
+import { stepStates } from './steps.mjs';
 import {
   MAX_CONSECUTIVE_FAILURES, MIN_WIDTH, captureAll, captureFile, capturesDir, pagesToCapture,
   readRun, runFile, startCapture, startWorker, storeStatus, writeCaptureConfig,
@@ -219,4 +221,23 @@ test('--min-width reaches the worker and the capture; the capture records it', a
   await captureAll(p, { browser, origin: ORIGIN, port: 1, minWidth: 300 }, { urls: [page(1)] });
   assert.match(evals[0], /captureVisualTree\(300\)/);
   assert.equal(JSON.parse(await readFile(captureFile(p, page(1)), 'utf8')).minWidth, 300);
+});
+
+test('a store behind the cache: capture notes it, chrome fails on it', async () => {
+  const p = await project(3);
+  await mkdir(capturesDir(p), { recursive: true });
+  await writeFile(captureFile(p, page(1)), JSON.stringify({ url: page(1), minWidth: MIN_WIDTH }));
+  await writeFile(path.join(capturesDir(p), 'captures.md'), '# store\n');
+  await mkdir(p.step('chrome'), { recursive: true });
+  const capture = await runCheck('capture', p);
+  assert.equal(capture.pass, false);
+  assert.equal(capture.note, '2 pages behind the cache');
+  assert.match(capture.reasons[0], /2 verified pages without a capture — the store is behind/);
+  const chrome = await runCheck('chrome', p);
+  const behind = /store is 2 pages behind the cache — run capture.mjs/;
+  assert.ok(chrome.reasons.some((r) => behind.test(r)), chrome.reasons.join('; '));
+  const states = stepStates({ capture: false, cache: true }, {}, {}, { capture: capture.note });
+  assert.equal(states.find((s) => s.id === 'capture').note, '2 pages behind the cache');
+  assert.equal(stepStates({ capture: true }, {}, {}, { capture: 'x' })
+    .find((s) => s.id === 'capture').note, undefined, 'a done step carries no note');
 });
