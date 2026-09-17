@@ -8,6 +8,7 @@ import {
 } from './lib/cache-server.mjs';
 import { dashboard, stopDashboard } from './lib/dashboard.mjs';
 import { setupPaths } from './lib/warm-cli.mjs';
+import { elementsJson } from './lib/elements-report.mjs';
 import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
 import {
@@ -40,7 +41,7 @@ export const COMMAND_TABLE = [
     help: 'merge urls/scan.json (or a URL list) into urls/urls.json; proposal → urls/urls.md' },
   { name: 'pick', usage: '[--count 2] [--exclude <url>]... [--write <subset>] [--audit 0]',
     flags: ['--count', '--exclude', '--write', '--audit'],
-    help: 'uncached pages by largest group, saturated groups skipped; --audit adds N from any' },
+    help: 'uncached pages by largest group, saturated groups skipped; --audit adds N from them' },
   { name: 'approve', usage: '<step> [<subset>...]', flags: [],
     help: "record the operator's yes for a gated step; subsets name urls/subsets/<name>.txt" },
   { name: 'section', usage: '<step|next> [--file body.md]', flags: ['--file'],
@@ -287,20 +288,23 @@ export async function pickUrls(project, {
 }) {
   const entries = await readUrls(project);
   const fill = Boolean(write);
+  const saturated = await saturatedGroups(project);
   const picks = await pick(entries, {
-    count, exclude, fill, audit, saturated: await saturatedGroups(project),
-    ...(reachable ? { reachable } : {}),
+    count, exclude, fill, audit, saturated, ...(reachable ? { reachable } : {}),
   });
-  if (!write) return picks;
+  if (!write) return { picks, skipped: saturated };
   const file = await writeSubset(project.step('urls'), write, picks.map((p) => p.url));
-  return { subset: write, file, count: picks.length, picks };
+  return { subset: write, file, count: picks.length, picks, skipped: saturated };
 }
 
-/** The groups the elements inventory calls saturated; none without an inventory. */
+/**
+ * The groups the elements inventory calls saturated; none without an inventory. The
+ * inventory spells the root group '/', pick spells it ''.
+ */
 async function saturatedGroups(project) {
-  const elements = await readFile(path.join(project.step('elements'), 'elements.json'), 'utf8')
-    .then(JSON.parse, () => null);
-  return (elements?.groups ?? []).filter((g) => g.saturated).map((g) => g.group);
+  const elements = await readFile(elementsJson(project), 'utf8').then(JSON.parse, () => null);
+  return (elements?.groups ?? []).filter((g) => g.saturated)
+    .map((g) => (g.group === '/' ? '' : g.group));
 }
 
 /** The flags each command accepts (value-taking flags listed once; booleans too). */

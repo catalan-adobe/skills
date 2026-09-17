@@ -468,3 +468,69 @@ test('pick leaves out URLs that already have a stored body', async () => {
     ['https://x.example/g0/b.html', 'https://x.example/g1/c.html'],
     'a failed visit (no path) is still a candidate');
 });
+
+const shapes = [
+  ...['1', '2', '3', '4'].map((n) => ({ url: `https://x.example/blog/${n}.html` })),
+  { url: 'https://x.example/blog/2024/deep.html' },
+  { url: 'https://x.example/blog/search.html?q=1' },
+  { url: 'https://x.example/blog/brochure.pdf' },
+  ...['a', 'b'].map((n) => ({ url: `https://x.example/docs/${n}.html` })),
+  { url: 'https://x.example/legal/terms.html' },
+];
+const yes = async () => true;
+const short = (p) => p.url.replace('https://x.example/', '');
+
+test('stratified: one URL shape at a time, each shape in its own order; empty stays empty', () => {
+  const scope = 'https://x.example/';
+  assert.deepEqual(stratified([], scope), []);
+  assert.deepEqual(stratified(['https://x.example/a/1.html', 'https://x.example/a/2.html',
+    'https://x.example/a/x.pdf', 'https://x.example/a/1.html?p=2', 'https://x.example/a/3.html'],
+  scope).map((u) => u.replace('https://x.example/a/', '')),
+  ['1.html', 'x.pdf', '1.html?p=2', '2.html', '3.html']);
+});
+
+test('pick fills a group one shape at a time, inside pages before its landing page', async () => {
+  const got = await pick(shapes, { count: 9, fill: true, reachable: yes });
+  assert.deepEqual(got.filter((p) => p.group === 'blog').map(short),
+    ['blog/1.html', 'blog/2024/deep.html', 'blog/search.html?q=1', 'blog/2.html', 'blog/3.html',
+      'blog/4.html'], 'each shape once before the dominant shape continues; no pdf');
+  const landing = await pick([{ url: 'https://x.example/blog' }, ...shapes],
+    { count: 8, fill: true, saturated: ['docs', 'legal'], reachable: yes });
+  assert.equal(short(landing.at(-1)), 'blog', 'the landing page last');
+});
+
+test('pick never picks from a saturated group and still fills from the others', async () => {
+  const got = await pick(shapes, { count: 4, fill: true, saturated: ['blog'], reachable: yes });
+  assert.deepEqual(got.map((p) => p.group), ['docs', 'legal', 'docs']);
+  const all = await pick(shapes, {
+    count: 3, fill: true, saturated: ['blog', 'docs', 'legal'], audit: 2, reachable: yes,
+  });
+  assert.deepEqual(all.filter((p) => !p.audit), [], 'every group saturated: nothing to pick');
+  assert.equal(all.filter((p) => p.audit).length, 2, 'the audit still answers');
+});
+
+test('audit picks: from the saturated groups, pages only, disjoint, capped, deterministic',
+  async () => {
+    const opts = { count: 3, fill: true, saturated: ['blog'], audit: 3, reachable: yes };
+    const got = await pick(shapes, opts);
+    const audits = got.filter((p) => p.audit);
+    assert.equal(audits.length, 3);
+    assert.ok(audits.every((a) => a.group === 'blog'), 'from the saturated group');
+    assert.ok(audits.every((a) => !a.url.endsWith('.pdf')), 'pages only');
+    const main = new Set(got.filter((p) => !p.audit).map((p) => p.url));
+    assert.ok(audits.every((a) => !main.has(a.url)), 'never a page already picked');
+    assert.deepEqual(await pick(shapes, opts), got, 'deterministic');
+    const order = await pick(shapes, { ...opts, count: 0 });
+    assert.notDeepEqual(order.map(short), ['blog/1.html', 'blog/2.html', 'blog/3.html'],
+      'the order comes from the hash, not from the inventory');
+    const reversed = await pick([...shapes].reverse(), { ...opts, count: 0 });
+    assert.deepEqual(reversed.map(short), order.map(short), 'and not from the input order');
+    const capped = await pick(shapes, { ...opts, audit: 50 });
+    assert.equal(capped.filter((p) => p.audit).length, 6, 'capped by the pool (6 blog pages)');
+    const excluded = await pick(shapes, { ...opts, exclude: ['https://x.example/blog/1.html'] });
+    assert.deepEqual(excluded.filter((p) => p.audit), [], 'exclude removes the group entirely');
+    const none = await pick(shapes, { count: 3, fill: true, audit: 20, reachable: yes });
+    assert.equal(none.filter((p) => p.audit).length, 6, 'no saturated group: any group, the '
+      + 'nine pages minus the three main picks');
+    assert.equal(new Set(none.map((p) => p.url)).size, none.length, 'no page twice');
+  });

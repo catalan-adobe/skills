@@ -14,8 +14,8 @@ assets on disk so later analysis works offline, in the background. Tier: low.
 1. If the operator asked for a number of pages rather than a subset, build the subset first:
    `node <skill>/scripts/status.mjs pick --count <n> --write <name>` (reachable HTML pages,
    round-robin over the URL groups, one page shape at a time; once an elements inventory
-   exists, saturated groups are skipped — `--audit 5` adds a few pages from any group as a
-   check), then `status.mjs approve cache <name>`.
+   exists, saturated groups are skipped and `--audit 5` adds a few pages from them as the
+   check; the output names the skipped groups), then `status.mjs approve cache <name>`.
 2. Queue the job — the command returns at once:
 
    ```bash

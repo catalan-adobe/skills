@@ -383,10 +383,11 @@ test('pick answers from urls.json through the CLI with the reachability check in
       { url: 'https://example.com/a/1' }, { url: 'https://example.com/a/2' },
       { url: 'https://example.com/b/1' },
     ]));
-    const picks = await pickUrls(project, {
+    const { picks, skipped } = await pickUrls(project, {
       count: 2, exclude: ['https://example.com/'], reachable: async () => true,
     });
     assert.deepEqual(picks.map((p) => [p.group, p.count]), [['a', 2], ['b', 1]]);
+    assert.deepEqual(skipped, [], 'no inventory, no saturated group');
     const empty = await fresh();
     await cli(empty, 'init', '--origin', 'https://example.com/');
     const noList = await cli(empty, 'pick', '--count', '1').catch((e) => e);
@@ -711,8 +712,9 @@ test('pick reads the saturated groups from elements.json and adds --audit picks'
     count: 2, exclude: [], write: 'next', audit: 1, reachable: async () => true,
   });
   assert.deepEqual(out.picks.filter((p) => !p.audit).map((p) => p.group), ['b', 'c']);
-  assert.equal(out.picks.filter((p) => p.audit).length, 1);
-  assert.equal(out.count, 3, 'the audit pick is part of the subset');
+  assert.deepEqual(out.picks.filter((p) => p.audit).map((p) => p.group), ['a'],
+    'the audit comes from the saturated group');
+  assert.deepEqual([out.count, out.skipped], [3, ['a']], 'the audit pick is in the subset');
   const help = await cli(cwd, '--help');
   assert.match(String(help), /--audit/);
 });
