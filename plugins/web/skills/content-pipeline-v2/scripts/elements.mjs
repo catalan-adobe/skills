@@ -5,7 +5,7 @@
 // migration/elements/, then returns at once.
 // Usage: node elements.mjs | status | stop   (from the project root)
 import { mkdir } from 'node:fs/promises';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { projectOrigin, proxiedUrl, serveCache } from './lib/cache-server.mjs';
 import { prepExpression, readRun, runFile, startWorker } from './lib/capture.mjs';
 import { writeEvaluation } from './lib/elements-evaluation.mjs';
@@ -16,7 +16,7 @@ import { seedRules } from './lib/elements-rules.mjs';
 import { screenshotTypes } from './lib/elements-shots.mjs';
 import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
-import { resolveProject } from './lib/project.mjs';
+import { isMain, resolveProject } from './lib/project.mjs';
 import { defaultIo, playwright, sessionName, setupPaths } from './lib/warm-cli.mjs';
 
 export const HELP = `elements.mjs
@@ -100,7 +100,7 @@ export async function main(argv, project, io = defaultIo) {
   return startWorker(project, KIND, WORKER_SCRIPT, [], {}, io);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2), resolveProject())
     .then((out) => console.log(typeof out === 'string' ? out : JSON.stringify(out, null, 2)))
     .catch((err) => {

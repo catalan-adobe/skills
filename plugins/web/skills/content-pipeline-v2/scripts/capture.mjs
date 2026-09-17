@@ -4,7 +4,7 @@
 // under migration/capture/ — the project's visual-tree store — then returns at once.
 // Usage: node capture.mjs [--force] [--min-width 300] | status | stop   (from the project root)
 // A rerun captures only the pages without a capture at that width; --force recaptures all.
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { projectOrigin, proxiedUrl, serveCache } from './lib/cache-server.mjs';
 import {
   MIN_WIDTH, bundlePath, captureAll, pagesToCapture, prepExpression, readRun, runFile,
@@ -12,7 +12,7 @@ import {
 } from './lib/capture.mjs';
 import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
-import { resolveProject } from './lib/project.mjs';
+import { isMain, resolveProject } from './lib/project.mjs';
 import { defaultIo, playwright, sessionName, setupPaths } from './lib/warm-cli.mjs';
 
 export const HELP = `capture.mjs [--force] [--min-width ${MIN_WIDTH}]
@@ -74,7 +74,7 @@ export async function main(argv, project, io = defaultIo) {
     { force: argv.includes('--force'), minWidth: minWidthArg(argv) }, io);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2), resolveProject())
     .then((out) => console.log(typeof out === 'string' ? out : JSON.stringify(out, null, 2)))
     .catch((err) => {

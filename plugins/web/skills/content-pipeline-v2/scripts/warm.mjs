@@ -4,11 +4,10 @@
 // (`--worker`) takes jobs in order: proxy + browser + offline verification + cache.md.
 // Usage: node warm.mjs [--pace <ms>] [--force] | status | stop   (from the project root)
 // A rerun visits only the URLs not yet cached; --force visits all. See lib/warm-cli.mjs.
-import { pathToFileURL } from 'node:url';
-import { resolveProject } from './lib/project.mjs';
+import { isMain, resolveProject } from './lib/project.mjs';
 import { main } from './lib/warm-cli.mjs';
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2), resolveProject())
     .then((out) => console.log(typeof out === 'string' ? out : JSON.stringify(out, null, 2)))
     .catch((err) => {

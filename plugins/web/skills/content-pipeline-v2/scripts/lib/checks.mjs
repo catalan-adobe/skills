@@ -460,8 +460,9 @@ export function checkElements(files, { captured = [], selectors = {}, storeCaptu
       }
     }
     for (const e of t.screenshotError ?? []) {
-      reasons.push(`type ${t.id}: ${e} — rerun elements.mjs; if it persists, reject the `
-        + 'selector in rules.json');
+      reasons.push(`type ${t.id}: ${e} — rerun elements.mjs; if it persists the element is `
+        + 'probably hidden: a header or footer goes under `chrome` in rules.json, noise under '
+        + '`reject`; content that cannot be cropped is reported, not rejected');
     }
   }
   return { pass: reasons.length === 0, reasons };

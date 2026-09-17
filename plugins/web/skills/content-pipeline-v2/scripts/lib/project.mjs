@@ -2,7 +2,8 @@ import {
   access, cp, mkdir, readFile, writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const DEFAULTS = { cacheAllUpTo: 500 };
 
@@ -74,6 +75,14 @@ export async function init({
     project: project.dir, created: !existing, data, dashboard,
   };
 }
+
+/**
+ * Whether this module is the script Node was started with — through a symlink too: the
+ * entry path is resolved before the comparison, or a skill invoked via a symlinked
+ * directory would silently do nothing.
+ */
+export const isMain = (importMetaUrl) => Boolean(process.argv[1])
+  && importMetaUrl === pathToFileURL(realpathSync(process.argv[1])).href;
 
 const DASHBOARD_SRC = fileURLToPath(new URL('../../tools/migration/', import.meta.url));
 const exists = (file) => access(file).then(() => true, () => false);

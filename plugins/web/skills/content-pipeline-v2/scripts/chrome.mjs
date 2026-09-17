@@ -4,7 +4,7 @@
 // representative page and writes chrome/, then returns at once.
 // Usage: node chrome.mjs | status | stop | candidates   (from the project root)
 import { readdir } from 'node:fs/promises';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { projectOrigin, proxiedUrl, serveCache } from './lib/cache-server.mjs';
 import {
   capturesDir, prepExpression, readCaptures, readRun, runFile, startWorker,
@@ -13,7 +13,7 @@ import { candidates, chromeCandidates } from './lib/chrome.mjs';
 import { analyse } from './lib/chrome-report.mjs';
 import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
-import { resolveProject } from './lib/project.mjs';
+import { isMain, resolveProject } from './lib/project.mjs';
 import { defaultIo, playwright, sessionName, setupPaths } from './lib/warm-cli.mjs';
 
 export const HELP = `chrome.mjs
@@ -94,7 +94,7 @@ export async function main(argv, project, io = defaultIo) {
   return startWorker(project, KIND, WORKER_SCRIPT, [], {}, io);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2), resolveProject())
     .then((out) => console.log(typeof out === 'string' ? out : JSON.stringify(out, null, 2)))
     .catch((err) => {

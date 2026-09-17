@@ -52,6 +52,7 @@ test('flags: height spread on quantiles, leaks without a support gate, base clas
       ['t-1', 'base class'], [undefined, 'one-section pages'], [undefined, 'empty pages'],
     ]);
     assert.match(got[4].detail, /2 pages have a single section \(t-1 ×2\)/);
+    assert.match(got[5].detail, /1 pages have no section: their capture holds nothing/);
     const few = flags({ ...result, types: [t('t-lead', 'DIV#.lead', { pages: 3, instances: 3 })],
       pages: many.slice(0, 3) });
     assert.deepEqual(few, [], 'a habit on three pages is not a flag');

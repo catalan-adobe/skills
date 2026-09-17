@@ -230,7 +230,7 @@ test('checkElements: a listed crop absent on disk, a crop error, a failed run', 
   broken.types[0].screenshotError = ['s on u: gone'];
   await writeFile(file, JSON.stringify(broken));
   assert.match((await runCheck('elements', p)).reasons[0],
-    /s on u: gone — rerun elements.mjs; if it persists, reject the selector/);
+    /s on u: gone — rerun elements.mjs; if it persists the element is probably hidden/);
   await writeFile(file, JSON.stringify(good));
   await writeJson(runFile(p, 'elements'), { state: 'failed', error: 'boom' });
   assert.deepEqual((await runCheck('elements', p)).reasons,

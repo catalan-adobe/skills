@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { runAllChecks, runCheck } from './lib/checks.mjs';
 import {
   cacheGet, cacheHas, cacheLs, cacheServerStatus, projectOrigin, proxiedUrl, serveCache,
@@ -12,7 +11,7 @@ import { setupPaths } from './lib/warm-cli.mjs';
 import { writeJson } from './lib/jobs.mjs';
 import { freePort } from './lib/ports.mjs';
 import {
-  init, readProject, resolveProject, upsertSection, writeProject,
+  init, isMain, readProject, resolveProject, upsertSection, writeProject,
 } from './lib/project.mjs';
 import {
   fromList, mergeScan, normalise, readInventory, writeInventory,
@@ -426,7 +425,7 @@ export async function cli(argv, project = resolveProject()) {
   return command(args, project);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMain(import.meta.url)) {
   cli(process.argv.slice(2))
     .then((out) => console.log(typeof out === 'string' ? out : JSON.stringify(out, null, 2)))
     .catch((err) => {

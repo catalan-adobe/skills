@@ -84,7 +84,9 @@ export function flags(result) {
       out.push({
         type: t.id, flag: 'chrome leak?',
         detail: `once per page, ${habit.first >= HABIT_SHARE ? 'first' : 'last'} on ${pct(
-          Math.max(habit.first, habit.last))} of ${t.pages} pages — chrome or a page frame`,
+          Math.max(habit.first, habit.last))} of ${t.pages} pages — a header or footer the`
+          + ' chrome step missed (→ `chrome`), or a page-frame element such as a breadcrumb or'
+          + ' a title, which is content and stays a type',
       });
     }
     if (t.screenshotError?.length) {
@@ -109,7 +111,10 @@ export function flags(result) {
   }
   if (empty) {
     out.push({
-      flag: 'empty pages', detail: `${empty} pages have no section after chrome removal`,
+      flag: 'empty pages',
+      detail: `${empty} pages have no section: their capture holds nothing between the chrome`
+        + ' — content that did not render offline (a gated form, script-built content). Not a'
+        + ' rules matter; note the pages in the report',
     });
   }
   return out;
