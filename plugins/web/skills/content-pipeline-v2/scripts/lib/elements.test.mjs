@@ -93,6 +93,10 @@ test('pages carry what decomposition dropped; medianHeight is the middle of an e
       text('s3', 500)])], { rules });
   assert.deepEqual(out.pages[0].rejected, [{ selector: 'x', reason: 'rules.reject' }]);
   assert.equal(out.types[0].medianHeight, 450);
+  assert.deepEqual(out.warnings, []);
+  const css = inventory([page('u1', [text('s2', 0), promo])],
+    { rules: mergeRules({ chrome: ['div.promo'] }) });
+  assert.match(css.warnings[0], /^chrome: div.promo matched no node .* not a CSS rule$/);
 });
 
 test('recurrence counts pages, not instances; a page of unique sections has no coverage', () => {

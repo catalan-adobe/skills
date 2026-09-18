@@ -86,6 +86,14 @@ test('rules: a chrome selector the chrome step missed, and a rejected selector',
     ['body > div.cookie-bar', 'body > div.promo', 'body > div.a', 'body > div.b']);
   const rules = mergeRules({ chrome: ['body > div.cookie-bar'], reject: ['body > div.promo'] });
   assert.deepEqual(ids(sections(cap, { rules })), ['body > div.a', 'body > div.b']);
+  const orphan = node('body > footer > div > div.links', 3000, 300);
+  const stray = capture([a, b, orphan]);
+  assert.deepEqual(ids(sections(stray, { chromeSelectors: ['body > footer'] })),
+    ['body > div.a', 'body > div.b'], 'a node under a chrome member is chrome, wrapper or not');
+  const seen = new Set();
+  const byRule = mergeRules({ chrome: ['body > footer'], reject: ['div.nothing'] });
+  assert.deepEqual(ids(sections(stray, { rules: byRule, seen })), ['body > div.a', 'body > div.b']);
+  assert.deepEqual([seen.has('body > footer'), seen.has('div.nothing')], [true, false]);
 });
 
 test('rules: defaults without a file, overrides on top, unknown keys refused', async () => {

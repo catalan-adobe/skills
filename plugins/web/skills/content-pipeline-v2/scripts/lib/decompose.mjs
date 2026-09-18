@@ -48,11 +48,19 @@ export function decompose(capture,
     rejected.push({ selector: n.selector, reason, ...(of ? { of } : {}) });
     return false;
   };
+  // A node is under a selector when it is that node or one of its descendants (page-tree
+  // sometimes keeps a wrapper's children without the wrapper); a rule that matched is
+  // recorded in `seen` so an unmatched one can be reported.
+  const under = (own, set, record = false) => {
+    const hit = [...set].find((m) => own.some((s) => s === m || s.startsWith(`${m} > `)));
+    if (hit && record) seen?.add(hit);
+    return hit !== undefined;
+  };
   const dropReason = (n) => {
     const own = selectorsOf(n);
-    if (own.some((s) => stepChrome.has(s))) return 'chrome';
-    if (own.some((s) => rules.chrome.has(s))) return 'rules.chrome';
-    if (own.some((s) => rules.reject.has(s))) return 'rules.reject';
+    if (under(own, stepChrome)) return 'chrome';
+    if (under(own, rules.chrome, true)) return 'rules.chrome';
+    if (under(own, rules.reject, true)) return 'rules.reject';
     return null;
   };
   const isChrome = (n) => dropReason(n) !== null;

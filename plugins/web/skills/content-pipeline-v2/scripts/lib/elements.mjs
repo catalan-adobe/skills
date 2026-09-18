@@ -105,6 +105,14 @@ export function inventory(captures, { chromeSelectors = [], rules = mergeRules()
       }
     }
   }
+  for (const key of ['chrome', 'reject']) {
+    for (const selector of rules[key]) {
+      if (!seen.has(selector)) {
+        warnings.push(`${key}: ${selector} matched no node in this run — copy the selector as `
+          + 'printed in the check or the type sample (a node under it counts), not a CSS rule');
+      }
+    }
+  }
   const typeList = [...types.values()].map((t) => ({
     id: t.id,
     identity: t.identity,
