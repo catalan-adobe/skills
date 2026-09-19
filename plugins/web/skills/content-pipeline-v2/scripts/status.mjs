@@ -280,18 +280,16 @@ async function skillsSource(project, { skillsRepo, skillsRef }) {
 }
 
 /**
- * Representative pages for a check: one reachable URL from each of the `count` largest
+ * Representative pages for a check: one URL from each of the `count` largest
  * groups below the shared scope, skipping the groups of the `--exclude` URLs.
  */
 export async function pickUrls(project, {
-  count, exclude, write, audit = 0, reachable,
+  count, exclude, write, audit = 0,
 }) {
   const entries = await readUrls(project);
   const fill = Boolean(write);
   const saturated = await saturatedGroups(project);
-  const picks = await pick(entries, {
-    count, exclude, fill, audit, saturated, ...(reachable ? { reachable } : {}),
-  });
+  const picks = pick(entries, { count, exclude, fill, audit, saturated });
   if (!write) return { picks, skipped: saturated };
   const file = await writeSubset(project.step('urls'), write, picks.map((p) => p.url));
   return { subset: write, file, count: picks.length, picks, skipped: saturated };

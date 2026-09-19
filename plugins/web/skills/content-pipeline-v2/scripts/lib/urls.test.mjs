@@ -248,31 +248,32 @@ test('subsets over a scoped site are cut by the relative first segment', async (
   assert.equal(files.length, 2);
 });
 
-test('pick returns one reachable URL per largest group, skipping excluded groups', async () => {
-  const urls = [
-    { url: 'https://x.example/en/section.html' },
-    { url: 'https://x.example/en/section/diseases.html' },
-    { url: 'https://x.example/en/section/diseases/gone.html' },
-    { url: 'https://x.example/en/section/diseases/asthma.html' },
-    { url: 'https://x.example/en/section/diseases/gout.html' },
-    { url: 'https://x.example/en/section/clinics/one.html' },
-    { url: 'https://x.example/en/section/clinics/two.html' },
-    { url: 'https://x.example/en/section/about/team.html' },
-  ];
-  const probed = [];
-  const reachable = async (url) => { probed.push(url); return !url.includes('gone'); };
-  const picked = await pick(urls, {
-    count: 2, exclude: ['https://x.example/en/section.html'], reachable,
+test('pick returns one URL per largest group, skipping excluded groups, fetching nothing',
+  async () => {
+    const urls = [
+      { url: 'https://x.example/en/section.html' },
+      { url: 'https://x.example/en/section/diseases.html' },
+      { url: 'https://x.example/en/section/diseases/asthma.html' },
+      { url: 'https://x.example/en/section/diseases/gout.html' },
+      { url: 'https://x.example/en/section/clinics/one.html' },
+      { url: 'https://x.example/en/section/clinics/two.html' },
+      { url: 'https://x.example/en/section/about/team.html' },
+    ];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = () => { throw new Error('pick must not fetch'); };
+    try {
+      const picked = pick(urls, { count: 2, exclude: ['https://x.example/en/section.html'] });
+      assert.deepEqual(picked, [
+        { url: 'https://x.example/en/section/diseases/asthma.html', group: 'diseases', count: 3 },
+        { url: 'https://x.example/en/section/clinics/one.html', group: 'clinics', count: 2 },
+      ]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    const few = pick(urls, { count: 5, exclude: [] });
+    assert.deepEqual(few.map((p) => p.group), ['diseases', 'clinics', 'about', '']);
+    assert.equal(few.length, 4, 'no more picks than groups');
   });
-  assert.deepEqual(picked, [
-    { url: 'https://x.example/en/section/diseases/asthma.html', group: 'diseases', count: 4 },
-    { url: 'https://x.example/en/section/clinics/one.html', group: 'clinics', count: 2 },
-  ]);
-  assert.ok(probed.includes('https://x.example/en/section/diseases/gone.html'), 'skipped 404');
-  const few = await pick(urls, { count: 5, exclude: [], reachable });
-  assert.deepEqual(few.map((p) => p.group), ['diseases', 'clinics', 'about', '']);
-  assert.equal(few.length, 4, 'no more picks than groups');
-});
 
 test('urls.md opens with the proposal and caps every table at 25 rows', () => {
   const many = Array.from({ length: 40 }, (_, i) => ({
@@ -299,13 +300,12 @@ test('pick with fill rounds over the groups until count, HTML pages only, no dup
       { url: 'https://x.example/b/1.html' }, { url: 'https://x.example/b/tool.php' },
       { url: 'https://x.example/c/1.html' },
     ];
-    const reachable = async () => true;
-    const five = await pick(urls, { count: 5, fill: true, reachable });
+    const five = await pick(urls, { count: 5, fill: true });
     assert.deepEqual(five.map((p) => p.url), [
       'https://x.example/a/1.html', 'https://x.example/b/1.html', 'https://x.example/c/1.html',
       'https://x.example/', 'https://x.example/a/2.html',
     ]);
-    const everything = await pick(urls, { count: 50, fill: true, reachable });
+    const everything = await pick(urls, { count: 50, fill: true });
     assert.equal(everything.length, 6, 'pdf and php are never picked, no duplicates');
     const dir = await fresh();
     const written = await writeSubset(dir, 'sample', five.map((p) => p.url));
@@ -344,7 +344,7 @@ test('proposal and pick leave known non-pages out', async () => {
   const dist = distribution(classified);
   const prop = proposal(dist, { cacheAllUpTo: 2 });
   assert.equal(prop.total, 3, 'pages and unclassified URLs are candidates, the rest are not');
-  const picks = await pick(classified, { count: 5, fill: true, reachable: async () => true });
+  const picks = await pick(classified, { count: 5, fill: true });
   assert.deepEqual(picks.map((p) => p.url).sort(), [
     'https://x.example/a/1.html', 'https://x.example/a/2.html', 'https://x.example/b/3.html',
   ]);
@@ -421,9 +421,9 @@ test('subset files hold only entries with a non-empty url string', async () => {
 test('pick returns exactly the requested count and rejects bad subset names', async () => {
   const urls = [];
   for (let i = 0; i < 9; i += 1) urls.push({ url: `https://x.example/g${i % 3}/p${i}.html` });
-  const onePass = await pick(urls, { count: 4, reachable: async () => true });
+  const onePass = await pick(urls, { count: 4 });
   assert.equal(onePass.length, 3, 'without fill: one URL per group, one pass');
-  const picks = await pick(urls, { count: 4, fill: true, reachable: async () => true });
+  const picks = await pick(urls, { count: 4, fill: true });
   assert.equal(picks.length, 4);
   assert.equal(new Set(picks.map((p) => p.url)).size, 4);
   assert.deepEqual(picks.map((p) => p.group).sort(), ['g0', 'g0', 'g1', 'g2']);
@@ -463,7 +463,7 @@ test('pick leaves out URLs that already have a stored body', async () => {
     { url: 'https://x.example/g0/b.html' },
     { url: 'https://x.example/g1/c.html', cache: { path: null } },
   ];
-  const picks = await pick(urls, { count: 3, fill: true, reachable: async () => true });
+  const picks = await pick(urls, { count: 3, fill: true });
   assert.deepEqual(picks.map((p) => p.url).sort(),
     ['https://x.example/g0/b.html', 'https://x.example/g1/c.html'],
     'a failed visit (no path) is still a candidate');
@@ -477,7 +477,6 @@ const shapes = [
   ...['a', 'b'].map((n) => ({ url: `https://x.example/docs/${n}.html` })),
   { url: 'https://x.example/legal/terms.html' },
 ];
-const yes = async () => true;
 const short = (p) => p.url.replace('https://x.example/', '');
 
 test('stratified: one URL shape at a time, each shape in its own order; empty stays empty', () => {
@@ -490,20 +489,20 @@ test('stratified: one URL shape at a time, each shape in its own order; empty st
 });
 
 test('pick fills a group one shape at a time, inside pages before its landing page', async () => {
-  const got = await pick(shapes, { count: 9, fill: true, reachable: yes });
+  const got = await pick(shapes, { count: 9, fill: true });
   assert.deepEqual(got.filter((p) => p.group === 'blog').map(short),
     ['blog/1.html', 'blog/2024/deep.html', 'blog/search.html?q=1', 'blog/2.html', 'blog/3.html',
       'blog/4.html'], 'each shape once before the dominant shape continues; no pdf');
   const landing = await pick([{ url: 'https://x.example/blog' }, ...shapes],
-    { count: 8, fill: true, saturated: ['docs', 'legal'], reachable: yes });
+    { count: 8, fill: true, saturated: ['docs', 'legal'] });
   assert.equal(short(landing.at(-1)), 'blog', 'the landing page last');
 });
 
 test('pick never picks from a saturated group and still fills from the others', async () => {
-  const got = await pick(shapes, { count: 4, fill: true, saturated: ['blog'], reachable: yes });
+  const got = await pick(shapes, { count: 4, fill: true, saturated: ['blog'] });
   assert.deepEqual(got.map((p) => p.group), ['docs', 'legal', 'docs']);
   const all = await pick(shapes, {
-    count: 3, fill: true, saturated: ['blog', 'docs', 'legal'], audit: 2, reachable: yes,
+    count: 3, fill: true, saturated: ['blog', 'docs', 'legal'], audit: 2,
   });
   assert.deepEqual(all.filter((p) => !p.audit), [], 'every group saturated: nothing to pick');
   assert.equal(all.filter((p) => p.audit).length, 2, 'the audit still answers');
@@ -511,7 +510,7 @@ test('pick never picks from a saturated group and still fills from the others', 
 
 test('audit picks: from the saturated groups, pages only, disjoint, capped, deterministic',
   async () => {
-    const opts = { count: 3, fill: true, saturated: ['blog'], audit: 3, reachable: yes };
+    const opts = { count: 3, fill: true, saturated: ['blog'], audit: 3 };
     const got = await pick(shapes, opts);
     const audits = got.filter((p) => p.audit);
     assert.equal(audits.length, 3);
@@ -532,7 +531,7 @@ test('audit picks: from the saturated groups, pages only, disjoint, capped, dete
     assert.equal(capped.filter((p) => p.audit).length, 6, 'capped by the pool (6 blog pages)');
     const excluded = await pick(shapes, { ...opts, exclude: ['https://x.example/blog/1.html'] });
     assert.deepEqual(excluded.filter((p) => p.audit), [], 'exclude removes the group entirely');
-    const none = await pick(shapes, { count: 3, fill: true, audit: 20, reachable: yes });
+    const none = await pick(shapes, { count: 3, fill: true, audit: 20 });
     assert.equal(none.filter((p) => p.audit).length, 6, 'no saturated group: any group, the '
       + 'nine pages minus the three main picks');
     assert.equal(new Set(none.map((p) => p.url)).size, none.length, 'no page twice');

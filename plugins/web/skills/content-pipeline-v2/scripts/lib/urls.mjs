@@ -294,17 +294,6 @@ export async function writeSubsets(urls, prop, dir) {
   return files;
 }
 
-/** True when a GET to `url` answers 2xx (the response body is discarded). */
-export async function reachableByFetch(url) {
-  try {
-    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15000) });
-    await res.arrayBuffer().catch(() => {});
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * The shape of a URL below its group: depth, extension, a query string. A group's members
  * are visited one shape at a time, so a batch is not all the same kind of page.
@@ -335,23 +324,24 @@ const rank = (url) => createHash('sha1').update(url).digest('hex');
 const byRank = (a, b) => rank(a.url).localeCompare(rank(b.url));
 
 /**
- * Picks representative pages: one reachable URL from each of the largest groups (first
- * path segment below the shared scope), skipping the groups of the `exclude` URLs — the
- * homepage's, typically — so a check runs on pages that differ from what was already seen.
+ * Picks representative pages: one URL from each of the largest groups (first path segment
+ * below the shared scope), skipping the groups of the `exclude` URLs — the homepage's,
+ * typically — so a check runs on pages that differ from what was already seen. Nothing is
+ * fetched: whether a page answers is the cache step's finding, recorded on the inventory.
  *
  * @param {{url: string}[]} urls `URLExtended[]`.
  * @param {{count?: number, exclude?: string[], fill?: boolean, saturated?: Iterable<string>,
- *   audit?: number, reachable?: (url: string) => Promise<boolean>}} [options] `fill` keeps
+ *   audit?: number}} [options] `fill` keeps
  *   rounding over the groups until `count` pages are picked (HTML pages only), for building
  *   a cache selection; `saturated` groups (the elements inventory's) are not picked from;
  *   `audit` adds that many pages from the saturated groups (from every group when none is
  *   saturated), one group at a time, by hash within a group — the check on what sampling by
  *   novelty leaves out.
- * @returns {Promise<{url: string, group: string, count: number, audit?: true}[]>} At most
+ * @returns {{url: string, group: string, count: number, audit?: true}[]} At most
  *   `count` + `audit` picks, fewer when the site has fewer groups.
  */
-export async function pick(urls, {
-  count = 2, exclude = [], fill = false, saturated = [], audit = 0, reachable = reachableByFetch,
+export function pick(urls, {
+  count = 2, exclude = [], fill = false, saturated = [], audit = 0,
 } = {}) {
   const scope = scopeOf(urls);
   const groupOf = (url) => relativeSegments(url, scope)[0] ?? '';
@@ -383,14 +373,9 @@ export async function pick(urls, {
     progressed = false;
     for (const q of queues) {
       if (picks.length >= count) break;
-      while (q.rest.length) {
-        const url = q.rest.shift();
-        if (await reachable(url)) {
-          picks.push({ url, group: q.group, count: q.count });
-          progressed = true;
-          break;
-        }
-      }
+      if (!q.rest.length) continue;
+      picks.push({ url: q.rest.shift(), group: q.group, count: q.count });
+      progressed = true;
     }
     if (!fill) break;
   }
@@ -399,11 +384,7 @@ export async function pick(urls, {
   const pool = interleave(auditable.map(([group, members]) => members
     .filter((url) => !picked.has(url) && isPage(url))
     .map((url) => ({ url, group, count: members.length })).sort(byRank)));
-  for (const candidate of pool) {
-    if (picks.filter((p) => p.audit).length >= audit) break;
-    if (await reachable(candidate.url)) picks.push({ ...candidate, audit: true });
-  }
-  return picks;
+  return [...picks, ...pool.slice(0, audit).map((candidate) => ({ ...candidate, audit: true }))];
 }
 
 const NOT_A_PAGE = /\.(pdf|xml|txt|php|json|csv|zip|jpe?g|png|gif|svg|mp4|css|js)$/i;

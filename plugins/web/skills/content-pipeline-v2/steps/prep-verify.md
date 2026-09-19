@@ -17,9 +17,10 @@ quick mode is enough unless a new overlay appears.
 
 ## Method
 
-1. `node <skill>/scripts/status.mjs pick --count 2 --exclude <checked[0]>` returns one
-   reachable URL from each of the two largest groups outside the homepage's. Use those two;
-   when it returns fewer (a site with one group), say so in the report and take what it gives.
+1. `node <skill>/scripts/status.mjs pick --count 2 --exclude <checked[0]>` returns one URL
+   from each of the two largest groups outside the homepage's. Use those two; when it returns
+   fewer (a site with one group), say so in the report and take what it gives; a page that
+   does not answer in the browser: pick again with `--exclude` for it.
 2. For each URL: open it with the probe configuration, apply every `hide` rule from
    `page-prep.json` in one `eval` (an expression — wrap statements in `(() => { … })()`),
    then run the skill's residual check and save a screenshot under `migration/prep/`

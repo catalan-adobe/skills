@@ -384,7 +384,7 @@ test('pick answers from urls.json through the CLI with the reachability check in
       { url: 'https://example.com/b/1' },
     ]));
     const { picks, skipped } = await pickUrls(project, {
-      count: 2, exclude: ['https://example.com/'], reachable: async () => true,
+      count: 2, exclude: ['https://example.com/'],
     });
     assert.deepEqual(picks.map((p) => [p.group, p.count]), [['a', 2], ['b', 1]]);
     assert.deepEqual(skipped, [], 'no inventory, no saturated group');
@@ -494,7 +494,7 @@ test('pick --write builds a subset file of N pages that approve cache accepts', 
     { url: 'https://example.com/b/1' }, { url: 'https://example.com/b/doc.pdf' },
   ]));
   const out = await pickUrls(project, {
-    count: 3, exclude: [], write: 'sample', reachable: async () => true,
+    count: 3, exclude: [], write: 'sample',
   });
   assert.equal(out.count, 3);
   const text = await readFile(path.join(cwd, 'migration/urls/subsets/sample.txt'), 'utf8');
@@ -710,7 +710,7 @@ test('pick reads the saturated groups from elements.json and adds --audit picks'
       { group: '/', saturated: true }],
   }));
   const out = await pickUrls(project, {
-    count: 2, exclude: [], write: 'next', audit: 1, reachable: async () => true,
+    count: 2, exclude: [], write: 'next', audit: 1,
   });
   assert.deepEqual(out.picks.filter((p) => !p.audit).map((p) => p.group), ['b', 'c']);
   assert.deepEqual(out.picks.filter((p) => p.audit).map((p) => p.group), ['a'],
