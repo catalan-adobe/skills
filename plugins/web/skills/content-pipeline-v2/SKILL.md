@@ -88,18 +88,23 @@ serves it.
 
 Each step has a brief in `steps/<id>.md`: hand that one file to whoever runs the step.
 
-| id | tier | sibling skill | writes |
-| --- | --- | --- | --- |
-| `setup` | low | — (runner) | `setup.json` |
-| `probe` | low | browser-probe | `probe/browser-recipe.json`, `probe/probe.md` |
-| `prep` | medium | page-prep | `prep/page-prep.json`, `prep/prep.md` |
-| `scan` | low* | site-scan | `urls/scan.json` → `urls/urls.json`, `urls/urls.md` |
-| `prep-verify` | medium | page-prep | `prep/page-prep.json`, `prep/prep.md` |
-| `cache` | low | page-cache (via `warm.mjs`) | `cache/cache.md`, `cache/.page-cache/` |
-| `capture` | low | page-tree (via `capture.mjs`) | `capture/captures.md` + the store |
-| `chrome` | medium | — (`chrome.mjs`) | `chrome/chrome.json`, `chrome/chrome.md` |
-| `elements` | medium | — (`elements.mjs`) | `elements/elements.json`, `elements/elements.md` |
-| `report` | medium | — | `REPORT.md` |
+| id | tier | sibling skill | writes | takes |
+| --- | --- | --- | --- | --- |
+| `setup` | low | — (runner) | `setup.json` | 1–3 min (installs) |
+| `probe` | low | browser-probe | `probe/browser-recipe.json`, `probe/probe.md` | ~1 min |
+| `prep` | medium | page-prep | `prep/page-prep.json`, `prep/prep.md` | 5–15 min |
+| `scan` | low* | site-scan | `urls/scan.json` → `urls/urls.json`, `urls/urls.md` | ~1 min† |
+| `prep-verify` | medium | page-prep | `prep/page-prep.json`, `prep/prep.md` | 1–3 min |
+| `cache` | low | page-cache (`warm.mjs`) | `cache/cache.md`, `cache/.page-cache/` | 6 min/50 pp |
+| `capture` | low | page-tree (`capture.mjs`) | `capture/captures.md` + the store | 2 min/100 pp |
+| `chrome` | medium | — (`chrome.mjs`) | `chrome/chrome.json`, `chrome/chrome.md` | < 1 min |
+| `elements` | medium | — (`elements.mjs`) | `elements/elements.json`, `.md` | 3 min a run |
+| `report` | medium | — | `REPORT.md` | 1–2 min |
+
+Takes: wall time measured on a 50-page run at a 1500 ms pace, the agent's reading included
+(pp = pages); `cache`, `capture` and `elements` scale with the pages. An orchestrator setting
+a timeout allows twice that, and never redoes a step a timeout cut short without
+`status.mjs --text` first. † an hour or more when the site has no sitemap and must be crawled.
 
 \* medium when the site has no usable sitemap. `cache` also needs the operator's yes
 (`status.mjs approve cache <subset>...|all`) and runs in the background: `scripts/warm.mjs`
