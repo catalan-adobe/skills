@@ -28,7 +28,8 @@ Decomposition only; mapping a type to an EDS block is the mapping expert's work.
    six). A wrapper that delivers another document's content — its class or id says
    fragment, xf, include, embed — is a **fragment** (`fragments`); two identities of one
    element → `merge` (type ids); a header or footer leak → `chrome`; noise → `reject`
-   (both: the selector as printed in the check or the type sample; a node under it counts).
+   (the selector as printed in the check or type sample, a node under it counts; `reject`
+   also takes an identity: generated noise has one identity and a selector per page).
    `containers` and `fragments` take the **identity** as printed in the type table of
    `elements.md`, never a selector; a rule that matches nothing is a warning next run. Rerun
    `elements.mjs` and read the runs table: it says how far a change reached (types added,

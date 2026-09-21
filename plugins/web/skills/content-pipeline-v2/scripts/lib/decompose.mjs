@@ -56,11 +56,18 @@ export function decompose(capture,
     if (hit && record) seen?.add(hit);
     return hit !== undefined;
   };
+  // `reject` takes a selector (a node under it counts) or an identity as printed in the
+  // type table: generated noise has a different selector on every page and one identity.
   const dropReason = (n) => {
     const own = selectorsOf(n);
     if (under(own, stepChrome)) return 'chrome';
     if (under(own, rules.chrome, true)) return 'rules.chrome';
     if (under(own, rules.reject, true)) return 'rules.reject';
+    const id = identity(n, rules);
+    if (rules.reject.has(id)) {
+      seen?.add(id);
+      return 'rules.reject';
+    }
     return null;
   };
   const isChrome = (n) => dropReason(n) !== null;

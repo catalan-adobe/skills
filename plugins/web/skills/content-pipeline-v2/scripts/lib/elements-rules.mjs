@@ -31,7 +31,7 @@ export const DEFAULT_RULES = {
   merge: {},
   // Selectors that are chrome after all (the chrome step missed them).
   chrome: [],
-  // Selectors dropped before anything else.
+  // Selectors (a node under one counts) or identities dropped before anything else.
   reject: [],
 };
 

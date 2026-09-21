@@ -94,6 +94,20 @@ test('rules: a chrome selector the chrome step missed, and a rejected selector',
   const byRule = mergeRules({ chrome: ['body > footer'], reject: ['div.nothing'] });
   assert.deepEqual(ids(sections(stray, { rules: byRule, seen })), ['body > div.a', 'body > div.b']);
   assert.deepEqual([seen.has('body > footer'), seen.has('div.nothing')], [true, false]);
+  // Generated noise: one identity, another selector on every page — reject by identity.
+  const top1 = node('body > div.c > p:nth-child(9) > a', 3200, 60,
+    [], { tag: 'A', className: 'cmp-toc__scroll-to-top' });
+  const top2 = node('body > div.d > p:nth-child(3) > a', 3200, 60,
+    [], { tag: 'A', className: 'cmp-toc__scroll-to-top' });
+  const byIdentity = mergeRules({ reject: ['A#.cmp-toc__scroll-to-top'] });
+  const seen2 = new Set();
+  for (const top of [top1, top2]) {
+    const { sections: got, rejected } = decompose(capture([a, b, top]),
+      { rules: byIdentity, seen: seen2 });
+    assert.deepEqual(ids(got), ['body > div.a', 'body > div.b']);
+    assert.deepEqual(rejected, [{ selector: top.selector, reason: 'rules.reject' }]);
+  }
+  assert.ok(seen2.has('A#.cmp-toc__scroll-to-top'), 'the identity counts as matched');
 });
 
 test('rules: defaults without a file, overrides on top, unknown keys refused', async () => {
