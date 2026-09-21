@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  deriveInventory, mappableTypes, renderMappingMd, seedMapping, validateMapping,
+  containerLeafTypes, deriveInventory, mappableTypes, renderMappingMd, seedMapping,
+  validateMapping,
 } from './mapping.mjs';
 
 const type = (id, identity, extra = {}) => ({
@@ -91,8 +92,9 @@ test('the inventory: blocks with their numbers, coverage per page, undecided and
   assert.deepEqual(inv.undecided, ['t-odd']);
   assert.deepEqual(inv.orphaned, ['t-gone']);
   assert.deepEqual(inv.coverage, { pages: 3, covered: 2, uncovered: [
-    { url: 'https://x.example/b', types: ['t-odd'] },
+    { url: 'https://x.example/b', types: ['t-odd'], leaves: [] },
   ] }, 'the fragment section on page c does not count against it');
+  assert.deepEqual(inv.containerLeaves, []);
   const skipped = deriveInventory(elements, {
     types: { ...mapping.types, 't-odd': { kind: 'skip', notes: 'tree split' } },
   });
@@ -124,3 +126,40 @@ test('the report has every section and stays within the line limit', () => {
   assert.match(md, /`TR#\.row` \(t-odd\): 2 pages, 3 instances — rows/);
   md.split('\n').forEach((l) => assert.ok(l.length <= 100, l));
 });
+
+test('a container whose instances are all leaves is nothing to decide, and keeps pages open',
+  () => {
+    const leafy = {
+      ...elements,
+      types: [...elements.types,
+        type('t-col', 'DIV#.column', { variants: [{ children: [] }, { children: [] }] }),
+        type('t-row', 'DIV#.row', { variants: [{ children: [] }, { children: ['DIV#.x'] }] })],
+      pages: [...elements.pages,
+        { url: 'https://x.example/d', sections: [section('t-text'), section('t-col')] }],
+    };
+    const containers = new Set(['DIV#.column', 'DIV#.row']);
+    assert.deepEqual(containerLeafTypes(leafy, containers).map((t) => t.id), ['t-col'],
+      'a container with any child anywhere is not a leaf type');
+    assert.ok(!mappableTypes(leafy, containers).some((t) => t.id === 't-col'));
+    assert.ok(mappableTypes(leafy, containers).some((t) => t.id === 't-row'));
+    assert.equal(seedMapping(leafy, undefined, containers).types['t-col'], undefined);
+    const inv = deriveInventory(leafy, { types: {
+      't-hero': { kind: 'block', block: 'hero' }, 't-cards': { kind: 'block', block: 'cards' },
+      't-text': { kind: 'default-content' }, 't-odd': { kind: 'skip' },
+      't-row': { kind: 'block', block: 'columns' },
+    } }, containers);
+    assert.deepEqual(inv.containerLeaves,
+      [{ id: 't-col', identity: 'DIV#.column', pages: 2, instances: 3 }]);
+    assert.deepEqual(inv.coverage.uncovered.find((u) => u.url.endsWith('/d')),
+      { url: 'https://x.example/d', types: [], leaves: ['t-col'] }, 'unseen content keeps d open');
+    const stale = deriveInventory(leafy, { types: { 't-text': { kind: 'default-content' },
+      't-col': { kind: 'default-content' } } }, containers);
+    assert.ok(stale.coverage.uncovered.some((u) => u.url.endsWith('/d')),
+      'a stale decision on a leaf covers nothing');
+    assert.deepEqual(stale.orphaned, ['t-col']);
+    const md = renderMappingMd(inv, leafy);
+    assert.match(md, /## Container leaves\n\n[^\n]+\n\n- `DIV#\.column` \(t-col\): 2 pages/);
+    assert.match(md, /\| https:\/\/x\.example\/d \|  \| `DIV#\.column` \|/);
+    assert.equal(deriveInventory(leafy, { types: {} }).containerLeaves.length, 0,
+      'without the rules, no type is a container leaf');
+  });

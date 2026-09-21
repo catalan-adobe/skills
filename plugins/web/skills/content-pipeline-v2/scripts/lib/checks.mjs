@@ -490,7 +490,7 @@ const CONTENT_CHECKS = {
  * hashes match) — else "rerun mapping.mjs". Orphaned decisions are the report's, not a
  * failure.
  */
-export function checkMapping(files) {
+export function checkMapping(files, { containers = new Set() } = {}) {
   const reasons = [];
   for (const f of ['mapping/mapping.json', 'mapping/inventory.json', 'mapping/mapping.md']) {
     if (files[f] === undefined) reasons.push(`missing migration/${f}; run mapping.mjs`);
@@ -514,7 +514,7 @@ export function checkMapping(files) {
     reasons.push('mapping: inventory.json is not derived from the current mapping.json and '
       + 'elements.json — rerun mapping.mjs');
   }
-  const { undecided } = deriveInventory(elements, mapping);
+  const { undecided } = deriveInventory(elements, mapping, containers);
   if (undecided.length) {
     reasons.push(`mapping: ${undecided.length} recurring types undecided (kind null) — decide`
       + ' them in mapping/mapping.json and rerun mapping.mjs');
@@ -620,7 +620,11 @@ export const CHECKS = Object.fromEntries(
           return { pass: false, reasons: ['mapping: the elements check fails first —',
             ...elements.reasons] };
         }
-        return contentCheck(await loadFiles(project));
+        let containers;
+        try { ({ containers } = await readRules(project)); } catch (err) {
+          return { pass: false, reasons: [`mapping: ${err.message}`] };
+        }
+        return checkMapping(await loadFiles(project), { containers });
       }];
     }
     if (step.id === 'prep' || step.id === 'prep-verify') {

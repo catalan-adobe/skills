@@ -36,7 +36,8 @@ test('mapping.mjs seeds, refuses a bad decision, derives the inventory and the s
     const p = await project();
     const first = await main([], p);
     assert.deepEqual(first, {
-      blocks: 0, defaultContent: 0, skipped: 0, undecided: 2, orphaned: 0, coverage: 0, pages: 2,
+      blocks: 0, defaultContent: 0, skipped: 0, undecided: 2, orphaned: 0, containerLeaves: 0,
+      coverage: 0, pages: 2,
     });
     const seeded = await json(mappingFile(p));
     assert.deepEqual(seeded, { types: { 't-hero': { kind: null }, 't-text': { kind: null } } },
@@ -53,13 +54,15 @@ test('mapping.mjs seeds, refuses a bad decision, derives the inventory and the s
     } }));
     const done = await main([], p);
     assert.deepEqual(done, {
-      blocks: 1, defaultContent: 1, skipped: 0, undecided: 0, orphaned: 1, coverage: 1, pages: 2,
+      blocks: 1, defaultContent: 1, skipped: 0, undecided: 0, orphaned: 1, containerLeaves: 0,
+      coverage: 1, pages: 2,
     });
     const inventory = await json(inventoryFile(p));
     assert.deepEqual(inventory.blocks.map((b) => [b.name, b.pages, b.notes]),
       [['hero', 1, ['image left']]]);
     assert.deepEqual(inventory.coverage.uncovered,
-      [{ url: 'https://site.example/b.html', types: ['t-one'] }], 'the one-off keeps b open');
+      [{ url: 'https://site.example/b.html', types: ['t-one'], leaves: [] }],
+      'the one-off keeps b open');
     assert.ok(inventory.mappingHash && inventory.elementsHash);
     const report = await readFile(p.report, 'utf8');
     assert.match(report, /## mapping\n\n1 blocks from 1 types; 1 default content types/);

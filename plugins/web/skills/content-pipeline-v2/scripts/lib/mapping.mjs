@@ -16,10 +16,21 @@ export function fragmentContentTypes(elements) {
   return new Set((elements.fragments ?? []).flatMap((f) => f.contents.flatMap((c) => c.types)));
 }
 
-/** The types to decide on: recurring, and not a fragment's content. */
-export function mappableTypes(elements) {
+/**
+ * A container whose instances have no children in the tree: the capture could not see
+ * inside (the min-width pruned them), so decomposition kept the wrapper as a section. It
+ * is nothing to decide — its content is unknown — and the inventory reports it as such.
+ */
+export function containerLeafTypes(elements, containers = new Set()) {
+  return elements.types.filter((t) => t.recurring && containers.has(t.identity)
+    && (t.variants ?? []).every((v) => !v.children?.length));
+}
+
+/** The types to decide on: recurring, not a fragment's content, not a container leaf. */
+export function mappableTypes(elements, containers = new Set()) {
   const inside = fragmentContentTypes(elements);
-  return elements.types.filter((t) => t.recurring && !inside.has(t.id));
+  const leaves = new Set(containerLeafTypes(elements, containers).map((t) => t.id));
+  return elements.types.filter((t) => t.recurring && !inside.has(t.id) && !leaves.has(t.id));
 }
 
 /**
@@ -28,8 +39,8 @@ export function mappableTypes(elements) {
  * change) and reported as orphaned by `deriveInventory` — an undecided one is not a
  * decision and goes.
  */
-export function seedMapping(elements, previous = { types: {} }) {
-  const mappable = new Set(mappableTypes(elements).map((t) => t.id));
+export function seedMapping(elements, previous = { types: {} }, containers = new Set()) {
+  const mappable = new Set(mappableTypes(elements, containers).map((t) => t.id));
   const types = Object.fromEntries(Object.entries(previous.types ?? {})
     .filter(([id, d]) => mappable.has(id) || d?.kind));
   for (const id of mappable) types[id] ??= { kind: null };
@@ -76,14 +87,18 @@ const byPages = (a, b) => b.pages - a.pages || a.name.localeCompare(b.name);
 /**
  * The block inventory the mapping makes of the elements inventory.
  *
+ * @param {Set<string>} [containers] The rules' container identities, for the leaves.
  * @returns {{blocks: object[], defaultContent: object, skipped: object[], undecided:
- *   string[], orphaned: string[], coverage: {pages: number, covered: number,
- *   uncovered: {url: string, types: string[]}[]}}} A page is covered when every section
- *   is a block or default content; sections inside a fragment do not count against it.
+ *   string[], orphaned: string[], containerLeaves: object[], coverage: {pages: number,
+ *   covered: number, uncovered: {url: string, types: string[], leaves: string[]}[]}}} A
+ *   page is covered when every section is a block or default content; sections inside a
+ *   fragment do not count against it; a container leaf keeps it open (unseen content).
  */
-export function deriveInventory(elements, mapping) {
+export function deriveInventory(elements, mapping, containers = new Set()) {
   const typeById = new Map(elements.types.map((t) => [t.id, t]));
-  const mappable = new Set(mappableTypes(elements).map((t) => t.id));
+  const mappable = new Set(mappableTypes(elements, containers).map((t) => t.id));
+  const leaves = containerLeafTypes(elements, containers);
+  const leafIds = new Set(leaves.map((t) => t.id));
   const decisions = mapping.types ?? {};
   const kindOf = (id) => decisions[id]?.kind ?? null;
   const groups = new Map();
@@ -110,16 +125,26 @@ export function deriveInventory(elements, mapping) {
   }));
   const undecided = [...mappable].filter((id) => kindOf(id) === null);
   const orphaned = Object.keys(decisions).filter((id) => !mappable.has(id));
-  const covering = (id) => ['block', 'default-content'].includes(kindOf(id));
+  // Only a decision on a type still to decide covers: a leaf's or an orphan's does not.
+  const covering = (id) => mappable.has(id) && ['block', 'default-content'].includes(kindOf(id));
   const uncovered = elements.pages.flatMap((p) => {
     const open = p.sections.filter((s) => !s.within?.length && !covering(s.type))
       .map((s) => s.type);
-    return open.length ? [{ url: p.url, types: [...new Set(open)] }] : [];
+    if (!open.length) return [];
+    const distinct = [...new Set(open)];
+    return [{
+      url: p.url,
+      types: distinct.filter((id) => !leafIds.has(id)),
+      leaves: distinct.filter((id) => leafIds.has(id)),
+    }];
   });
   const coverage = {
     pages: elements.pages.length, covered: elements.pages.length - uncovered.length, uncovered,
   };
-  return { blocks, defaultContent, skipped, undecided, orphaned, coverage };
+  const containerLeaves = leaves.map((t) => ({
+    id: t.id, identity: t.identity, pages: t.pages, instances: t.instances,
+  }));
+  return { blocks, defaultContent, skipped, undecided, orphaned, containerLeaves, coverage };
 }
 
 function pagesWith(pages, ids) {
@@ -174,22 +199,31 @@ export function renderMappingMd(inventory, elements) {
     ? inventory.skipped.map((s) => `- \`${s.identity}\` (${s.id}): ${s.pages} pages, `
       + `${s.instances} instances${s.notes ? ` — ${s.notes}` : ''}`)
     : ['None.']));
+  const leaves = inventory.containerLeaves ?? [];
+  if (leaves.length) {
+    out.push('', '## Container leaves', '', 'Containers whose instances have no children in'
+      + ' the tree: the capture could not see inside (content narrower than the capture'
+      + ' width). Nothing to decide; a capture matter, reported.', '',
+    ...leaves.map((l) => `- \`${l.identity}\` (${l.id}): ${l.pages} pages, ${l.instances}`
+      + ' instances'));
+  }
   out.push('', '## Coverage', '', `${inventory.coverage.covered} of ${total} pages have every`
     + ' section mapped to a block or default content', '(sections inside a fragment aside).');
   if (inventory.coverage.uncovered.length) {
-    out.push('', '| page | open types |', '|---|---|');
+    out.push('', '| page | open types | container leaves |', '|---|---|---|');
+    const names = (ids) => ids.map((id) => `\`${identity(id)}\``).join(', ');
     for (const u of inventory.coverage.uncovered.slice(0, 25)) {
-      out.push(`| ${u.url} | ${u.types.map((id) => `\`${identity(id)}\``).join(', ')} |`);
+      out.push(`| ${u.url} | ${names(u.types)} | ${names(u.leaves ?? [])} |`);
     }
     const rest = inventory.coverage.uncovered.length - 25;
-    if (rest > 0) out.push(`| … and ${rest} more | |`);
+    if (rest > 0) out.push(`| … and ${rest} more | | |`);
   }
   out.push('', '## Undecided', '', ...(inventory.undecided.length
     ? inventory.undecided.map((id) => `- \`${identity(id)}\` (${id})`)
     : ['None — every recurring type has a kind.']));
   if (inventory.orphaned.length) {
-    out.push('', '## Orphaned decisions', '', 'Types no longer recurring (a rules change,'
-      + ' more pages); the decision is kept in case they return.', '',
+    out.push('', '## Orphaned decisions', '', 'Types no longer to decide (a rules change, more'
+      + ' pages, a container leaf); kept in case they return.', '',
     ...inventory.orphaned.map((id) => `- ${id}`));
   }
   return `${out.join('\n')}\n`;

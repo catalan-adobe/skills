@@ -6,6 +6,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { elementsJson } from './lib/elements-report.mjs';
+import { readRules } from './lib/elements-rules.mjs';
 import {
   deriveInventory, renderMappingMd, seedMapping, shortHash, validateMapping,
 } from './lib/mapping.mjs';
@@ -37,7 +38,8 @@ export async function main(argv, project) {
   }
   const elements = JSON.parse(elementsText);
   await mkdir(project.step('mapping'), { recursive: true });
-  const mapping = seedMapping(elements, await readMapping(mappingFile(project)));
+  const { containers } = await readRules(project);
+  const mapping = seedMapping(elements, await readMapping(mappingFile(project)), containers);
   const reasons = validateMapping(mapping);
   if (reasons.length) {
     throw new Error(`mapping/mapping.json:\n- ${reasons.join('\n- ')}`);
@@ -45,7 +47,7 @@ export async function main(argv, project) {
   const mappingText = `${JSON.stringify(mapping, null, 2)}\n`;
   await writeFile(mappingFile(project), mappingText);
   const inventory = {
-    ...deriveInventory(elements, mapping),
+    ...deriveInventory(elements, mapping, containers),
     mappingHash: shortHash(mappingText), elementsHash: shortHash(elementsText),
   };
   await writeFile(inventoryFile(project), `${JSON.stringify(inventory, null, 2)}\n`);
@@ -55,8 +57,8 @@ export async function main(argv, project) {
   return {
     blocks: inventory.blocks.length, defaultContent: inventory.defaultContent.types.length,
     skipped: inventory.skipped.length, undecided: inventory.undecided.length,
-    orphaned: inventory.orphaned.length, coverage: inventory.coverage.covered,
-    pages: inventory.coverage.pages,
+    orphaned: inventory.orphaned.length, containerLeaves: inventory.containerLeaves.length,
+    coverage: inventory.coverage.covered, pages: inventory.coverage.pages,
   };
 }
 
@@ -69,7 +71,9 @@ export function renderSection(inv) {
       + ` (${inv.defaultContent.instances} instances); ${inv.skipped.length} skipped.`,
     `Coverage: ${inv.coverage.covered} of ${inv.coverage.pages} pages have every section`
       + ' mapped.' + (inv.undecided.length ? ` ${inv.undecided.length} types undecided.` : '')
-      + (inv.orphaned.length ? ` ${inv.orphaned.length} orphaned decisions.` : ''),
+      + (inv.orphaned.length ? ` ${inv.orphaned.length} orphaned decisions.` : '')
+      + (inv.containerLeaves.length ? ` ${inv.containerLeaves.length} container leaf types`
+        + ' (content below the capture width).' : ''),
     top ? `Blocks by pages: ${top}.` : 'No block yet.',
   ].join('\n');
 }
