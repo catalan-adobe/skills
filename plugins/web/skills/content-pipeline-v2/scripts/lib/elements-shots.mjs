@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { access, mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { proxiedUrl } from './cache-server.mjs';
+import { preparedAtTop } from './capture.mjs';
 import { variantId } from './elements.mjs';
 
 export const shotsDir = (project) => path.join(project.step('elements'), 'screenshots');
@@ -91,7 +92,7 @@ export async function screenshotTypes(project, result,
   for (const [url, shots] of byPage) {
     try {
       await browser.goto(proxiedUrl(origin, url, port));
-      if (prepare) await browser.eval(`${prepare}, window.scrollTo(0, 0)`);
+      if (prepare) await browser.eval(preparedAtTop(prepare));
       await browser.eval(prepareExpression(hide));
       for (const s of shots) {
         try {

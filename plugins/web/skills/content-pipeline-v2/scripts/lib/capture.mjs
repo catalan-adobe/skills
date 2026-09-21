@@ -83,6 +83,15 @@ export async function bundlePath(project) {
 }
 
 /** The prep step's recipe as one expression: hide rules and scroll fix; null without one. */
+/**
+ * The prep expression, then the top of the page: the expression scrolls through the page
+ * (lazy content) and ends at the bottom, and it is asynchronous — a measurement taken
+ * before it settles, or with the page left at the bottom, records a sticky nav where it
+ * stuck. One expression for `playwright-cli eval`, awaited by the browser.
+ */
+export const preparedAtTop = (prepare) => (
+  `(async () => { await (${prepare}); window.scrollTo(0, 0); return "top"; })()`);
+
 export async function prepExpression(project) {
   const recipe = await readFile(path.join(project.step('prep'), 'page-prep.json'), 'utf8')
     .then(JSON.parse, () => null);
@@ -129,9 +138,7 @@ export async function captureAll(project,
     await record({ current: url });
     try {
       await browser.goto(proxiedUrl(origin, url, port));
-      // The prep expression scrolls to the bottom (lazy content); back to the top before
-      // capturing, or a sticky nav is recorded where it stuck.
-      if (prepare) await browser.eval(`${prepare}, window.scrollTo(0, 0)`);
+      if (prepare) await browser.eval(preparedAtTop(prepare));
       const captured = parseEval(await browser.eval(captureExpression(minWidth)));
       if (!captured?.data?.tag) {
         throw new Error('the page-tree bundle returned no tree (was it injected?)');

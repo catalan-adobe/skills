@@ -205,7 +205,15 @@ test('the prep expression runs before the capture and the page is scrolled back 
   await captureAll(p, { browser, origin: ORIGIN, port: 1, prepare: '(() => "prep")()' },
     { urls: [page(1)] });
   assert.equal(evals.length, 2);
-  assert.match(evals[0], /^\(\(\) => "prep"\)\(\), window\.scrollTo\(0, 0\)$/);
+  assert.match(evals[0], /^\(async \(\) => \{ await \(\(\(\) => "prep"\)\(\)\); window\.scrollTo/,
+    'the prep expression is awaited, then the page goes back to the top — not the other way');
+  const order = [];
+  const window = { scrollTo: (x, y) => order.push(`scroll ${y}`) };
+  const slow = '(async () => { await new Promise((r) => setTimeout(r, 20));'
+    + ' order.push("prep") })()';
+  const expr = evals[0].replace('(() => "prep")()', slow);
+  assert.equal(await new Function('window', 'order', `return ${expr}`)(window, order), 'top');
+  assert.deepEqual(order, ['prep', 'scroll 0'], 'the scroll to the top waits for the prep');
 });
 
 test('--min-width reaches the worker and the capture; the capture records it', async () => {
