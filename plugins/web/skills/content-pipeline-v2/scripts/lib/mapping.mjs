@@ -25,11 +25,14 @@ export function mappableTypes(elements) {
 /**
  * Every mappable type present, with its previous decision or `kind: null`; previous
  * decisions for types no longer mappable are kept (they may come back after a rules
- * change) and reported as orphaned by `deriveInventory`.
+ * change) and reported as orphaned by `deriveInventory` — an undecided one is not a
+ * decision and goes.
  */
 export function seedMapping(elements, previous = { types: {} }) {
-  const types = { ...(previous.types ?? {}) };
-  for (const t of mappableTypes(elements)) types[t.id] ??= { kind: null };
+  const mappable = new Set(mappableTypes(elements).map((t) => t.id));
+  const types = Object.fromEntries(Object.entries(previous.types ?? {})
+    .filter(([id, d]) => mappable.has(id) || d?.kind));
+  for (const id of mappable) types[id] ??= { kind: null };
   return { types };
 }
 

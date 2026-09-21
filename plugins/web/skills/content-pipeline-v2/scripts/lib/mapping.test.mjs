@@ -41,10 +41,12 @@ test('mappable types are the recurring ones outside fragments; seeding keeps dec
   } });
   const previous = { types: {
     't-hero': { kind: 'block', block: 'hero' }, 't-gone': { kind: 'skip' },
+    't-null': { kind: null },
   } };
   const again = seedMapping(elements, previous);
   assert.deepEqual(again.types['t-hero'], { kind: 'block', block: 'hero' }, 'a decision stays');
-  assert.deepEqual(again.types['t-gone'], { kind: 'skip' }, 'an orphan stays too');
+  assert.deepEqual(again.types['t-gone'], { kind: 'skip' }, 'a decided orphan stays too');
+  assert.equal(again.types['t-null'], undefined, 'an undecided orphan is no decision');
   assert.deepEqual(again.types['t-text'], { kind: null });
 });
 
