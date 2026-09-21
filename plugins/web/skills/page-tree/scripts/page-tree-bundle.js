@@ -496,9 +496,18 @@ window.__visualTree = (() => {
     });
   }
   var CONTAINMENT_TOLERANCE = 2;
+  var CONTAINED_SHARE = 0.9;
   function isContainedIn(child, parent) {
     const t = CONTAINMENT_TOLERANCE;
-    return child.x >= parent.x - t && child.y >= parent.y - t && child.x + child.width <= parent.x + parent.width + t && child.y + child.height <= parent.y + parent.height + t;
+    if (child.x >= parent.x - t && child.y >= parent.y - t && child.x + child.width <= parent.x + parent.width + t && child.y + child.height <= parent.y + parent.height + t) {
+      return true;
+    }
+    const area = child.width * child.height;
+    if (area === 0) return false;
+    const w = Math.min(child.x + child.width, parent.x + parent.width) - Math.max(child.x, parent.x);
+    const h = Math.min(child.y + child.height, parent.y + parent.height) - Math.max(child.y, parent.y);
+    if (w <= 0 || h <= 0) return false;
+    return w * h / area >= CONTAINED_SHARE;
   }
   function promoteEscapedNodes(root) {
     const promotedToRoot = /* @__PURE__ */ new Set();

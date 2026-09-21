@@ -63,6 +63,32 @@ test('a child escaping a parent that has area is not collapsed: promotion lifts 
   assert.equal(body.children.length, 3);
 });
 
+test('a row overhanging its container by a gutter is contained; a dropdown below it is not', () => {
+  // Grid systems give a row negative margins: 878 px inside an 848 px container. That is
+  // not an element rendered elsewhere, and its columns must stay its children.
+  const col = (x) => node('DIV', `div.col${x}`, box(x, 100, 439, 400), [], { className: 'col' });
+  const row = node('SECTION', 'section.row', box(348, 100, 878, 400), [col(348), col(787)],
+    { className: 'row' });
+  const container = node('DIV', 'div.container', box(363, 100, 848, 400), [row],
+    { className: 'container' });
+  const body = node('BODY', 'body', box(0, 0, 1280, 1000),
+    [container, node('DIV', 'z', box(0, 500, 1280, 400))]);
+  collapseSingleChildren(body);
+  assert.equal(body.children[0].children.length, 2, 'container collapsed into its row');
+  assert.deepEqual([...body.children[0].collapsed.map((c) => c.selector)],
+    ['div.container', 'section.row']);
+  const promoted = promoteEscapedNodes(body);
+  assert.equal(promoted.size, 0, 'nothing escaped');
+  assert.equal(body.children[0].children.length, 2, 'the columns stayed where they are');
+  const half = node('DIV', 'div.half', box(0, 300, 1280, 400), [], { className: 'half' });
+  const host = node('DIV', 'div.host', box(0, 0, 1280, 400), [half], { className: 'host' });
+  const page2 = node('BODY', 'body', box(0, 0, 1280, 1000),
+    [host, node('DIV', 'q', box(0, 700, 1280, 300))]);
+  collapseSingleChildren(page2);
+  assert.equal(page2.children[0].selector, 'div.host', 'a child three quarters outside escapes');
+  assert.deepEqual([...promoteEscapedNodes(page2)].map((n) => n.selector), ['div.half']);
+});
+
 test('a collapsed node lists every element it absorbed, whichever one owns the box', () => {
   const nav = node('DIV', '#topNav', box(0, 53, 1280, 80), [], { id: 'topNav' });
   const contained = node('DIV', 'div.wrap', box(0, 53, 1280, 80), [nav], { className: 'wrap' });
