@@ -7,8 +7,8 @@ assets on disk so later analysis works offline, in the background. Tier: low.
 ## Inputs
 
 - `migration/project.json` (`cacheSelection`), `urls/urls.json` or `urls/subsets/<name>.txt`,
-  `probe/*.json`, `prep/page-prep.json`, `setup.json` — all read by the driver, none by you.
-- Sibling `.agents/skills/page-cache/SKILL.md`: the proxy; read only if a job `failed`.
+  `probe/*.json`, `prep/page-prep.json`, `setup.json` — all read by the driver, none by you;
+  sibling `.agents/skills/page-cache/SKILL.md`: the proxy; read only if a job `failed`.
 ## Method
 
 1. If the operator asked for a number of pages rather than a subset, build the subset first:
@@ -23,9 +23,10 @@ assets on disk so later analysis works offline, in the background. Tier: low.
    ```
 
    It records a job for the approved selection under `migration/.work/warm/` and starts one
-   detached worker unless one is running; a second selection queues behind the first. The
-   worker visits every URL through the page-cache proxy in one browser session, verifies each
-   from the cache, records it in `urls/urls.json`, then writes `cache/cache.md` and the section.
+   detached worker unless one is running; a second selection queues behind it. The worker
+   visits every URL through the page-cache proxy in one browser session, scrolling through
+   each page so lazy images load, verifies each from the cache, records it in
+   `urls/urls.json`, writes `cache/cache.md` and the section.
 3. Do not wait for it, poll it in a loop, or run the worker yourself. Tell the operator the
    job is queued and stop, or continue with another `ready` step. `status.mjs` shows `cache`
    as `running` with `12/50 (blogs) · queued: ja-jp`; `warm.mjs status` lists the jobs;
@@ -37,16 +38,15 @@ assets on disk so later analysis works offline, in the background. Tier: low.
    `cache`. A source 404 is a stored response of kind `error`, not a failure; `failed` means
    no response — say so; do not retry by other means. Never fetch pages with `curl` or any
    HTTP client to "warm" the cache: only a browser requests the CSS, scripts and images.
-5. Never delete anything under `migration/cache/`; the proxy fetches only what is missing.
-   The cached HTML is the raw response; consumers apply the recipe at render time.
+5. Never delete anything under `migration/cache/`; the proxy fetches only what is missing;
+   the cached HTML is the raw response, consumers apply the recipe at render time.
 
 ## Outputs
 - `migration/cache/.page-cache/`: the proxy's cache directory (gitignored).
 - `migration/cache/cache.md`: every visited URL across all selections with `cached` or
   `failed`, its `kind` and selection, the proxy status and the settings.
-- `migration/urls/urls.json`: the visited records augmented; `urls/urls.md` refreshed.
-- `REPORT.md` `## cache`: written by the worker after each job; add with
-  `status.mjs section cache` only if the operator needs more.
+- `migration/urls/urls.json`: the visited records augmented; `urls/urls.md` refreshed;
+  `REPORT.md` `## cache`: written by the worker after each job.
 
 ## Done
 

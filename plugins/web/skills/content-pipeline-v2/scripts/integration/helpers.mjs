@@ -47,6 +47,8 @@ export async function need(t, what, locate) {
 const PAGE = (title, extra = '') => `<!DOCTYPE html><html lang="en"><head><title>${title}</title>`
   + `<link rel="stylesheet" href="/theme.css"></head><body><main><h1>${title}</h1>`
   + `<p>Body of ${title}.</p></main>${extra}</body></html>`;
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA'
+  + '60e6kgAAAABJRU5ErkJggg==', 'base64');
 const BANNER = '<div id="cmp" style="position:fixed;bottom:0;left:0;right:0;height:120px;'
   + 'background:#333;color:#fff">We use cookies <button id="accept">Accept</button></div>';
 
@@ -59,7 +61,17 @@ export async function startSite() {
   const routes = {
     '/': () => [200, 'text/html', PAGE('Home', BANNER)],
     '/a.html': () => [200, 'text/html', PAGE('Page A')],
-    '/b.html': () => [200, 'text/html', PAGE('Page B')],
+    // Lazy images far below the fold, one native and one behind a script that watches the
+    // viewport: a warm that only jumps to the bottom of a 20 000 px page loads neither.
+    '/b.html': () => [200, 'text/html', PAGE('Page B',
+      '<div style="height:5000px"></div><img loading="lazy" src="/deep.png" alt="deep">'
+      + '<div style="height:4000px"></div><img data-src="/deeper.png" alt="deeper">'
+      + '<div style="height:11000px"></div>'
+      + '<script>new IntersectionObserver((es, o) => es.forEach((e) => { if (e.isIntersecting)'
+      + ' { e.target.src = e.target.dataset.src; o.unobserve(e.target); } }))'
+      + '.observe(document.querySelector("[data-src]"))</script>')],
+    '/deep.png': () => [200, 'image/png', PNG],
+    '/deeper.png': () => [200, 'image/png', PNG],
     '/old.html': () => [301, null, '', { location: '/a.html' }],
     '/hop.html': () => [302, null, '', { location: '/old.html' }],
     '/jump.html': () => [200, 'text/html', PAGE('Jump',

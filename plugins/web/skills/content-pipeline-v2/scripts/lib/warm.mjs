@@ -23,15 +23,35 @@ async function readJson(file, fallback) {
   }
 }
 
-/** One expression for `playwright-cli eval`: hide the overlays, fix the scroll, scroll down. */
+/** Scroll steps are this share of a viewport; the settle wait after the pass, at most. */
+export const SCROLL_STEP_SHARE = 0.8;
+export const IMAGE_SETTLE_MS = 4000;
+
+/**
+ * One expression for `playwright-cli eval`: hide the overlays, fix the scroll, then bring
+ * every image in — a scroll pass through the page in viewport steps (lazy loaders watch
+ * the viewport, one jump to the bottom shows them nothing in between), `loading="lazy"`
+ * made eager, and a bounded wait for the images to decode. The proxy stores what the page
+ * fetched, so what never loaded is never cached.
+ */
 export function pageExpression(recipe) {
   const css = [
     ...(recipe.overlays ?? []).flatMap((o) => o.hide?.css ?? []),
     ...(recipe.scroll_fix ? [recipe.scroll_fix] : []),
   ].join('\n');
-  return '(() => { const s = document.createElement(\'style\');'
+  return '(async () => { const s = document.createElement(\'style\');'
     + ` s.textContent = ${JSON.stringify(css)}; document.head.appendChild(s);`
-    + ' window.scrollTo(0, document.body.scrollHeight); return "ok"; })()';
+    + ` const step = Math.max(200, window.innerHeight * ${SCROLL_STEP_SHARE});`
+    + ' for (let y = 0; y < document.body.scrollHeight; y += step) {'
+    + ' window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 120)); }'
+    + ' window.scrollTo(0, document.body.scrollHeight);'
+    + ' document.querySelectorAll(\'img[loading="lazy"]\')'
+    + '.forEach((i) => { i.loading = "eager"; });'
+    + ' const pending = [...document.images].filter((i) => !i.complete)'
+    + ' .map((i) => i.decode().catch(() => {}));'
+    + ' await Promise.race([Promise.all(pending),'
+    + ` new Promise((r) => setTimeout(r, ${IMAGE_SETTLE_MS}))]);`
+    + ' return "ok"; })()';
 }
 
 /**

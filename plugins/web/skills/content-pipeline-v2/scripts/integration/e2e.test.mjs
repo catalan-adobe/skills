@@ -119,6 +119,9 @@ test('fixture site → import → approve → cache → check → dashboard', as
     assert.equal(by['/jump.html'].kind, 'redirect', 'a client-side redirect, seen by the browser');
     assert.equal(by['/jump.html'].finalUrl, `${site.origin}/b.html`);
     assert.ok(Object.values(by).every((r) => r.cache?.at && r.http), 'every URL documented');
+    assert.ok(site.hits.includes('/deep.png') && site.hits.includes('/deeper.png'),
+      `the lazy images down page B were fetched (${site.hits.filter((h) => /deep/.test(h))}):`
+      + ' the warm scrolled through the page');
 
     const check = await runCheck('cache', project);
     assert.deepEqual(check, { step: 'cache', pass: true, reasons: [] });
