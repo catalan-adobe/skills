@@ -22,7 +22,7 @@ import {
   pick, refreshUrlsMd, writeSubset,
 } from './lib/urls.mjs';
 import {
-  commandOnPath, defaultExec, detect, install, missingReasons, writeSetupJson,
+  commandOnPath, defaultExec, detect, install, missingReasons, sourceReasons, writeSetupJson,
 } from './lib/setup.mjs';
 
 /** The command table: help text and accepted flags both come from here. */
@@ -221,17 +221,20 @@ export async function setup({
 }, project) {
   let detection = await detect({ cwd: project.root, nodeVersion });
   let installs = [];
+  const source = await skillsSource(project, { skillsRepo, skillsRef });
   if (shouldInstall) {
-    const source = await skillsSource(project, { skillsRepo, skillsRef });
     const hasUpskill = !!(await commandOnPath('upskill'));
     installs = await install(detection, {
       exec, cwd: project.root, hasUpskill, ...source,
     });
     detection = await detect({ cwd: project.root, nodeVersion });
   }
-  await writeSetupJson(project, detection);
-  const reasons = missingReasons(detection);
-  await upsertSection(project, 'setup', setupSection(detection, installs, reasons, env));
+  const written = await writeSetupJson(project, detection, {
+    installs, source: { repo: source.skillsRepo ?? 'adobe/skills', ref: source.skillsRef },
+  });
+  const reasons = [...missingReasons(detection),
+    ...sourceReasons(written, (await readProject(project))?.skills)];
+  await upsertSection(project, 'setup', setupSection(written, installs, reasons, env));
   if (reasons.length) process.exitCode = 1;
   return { detection, reasons, installs };
 }
@@ -246,8 +249,10 @@ function harnessModel(env) {
 
 /** The `## setup` body: what was found, what was installed, what is still missing. */
 function setupSection(detection, installs, reasons, env) {
+  const from = (s) => (s.source ? ` from ${s.source.repo}${s.source.ref ? `@${s.source.ref}` : ''}`
+    : '');
   const skills = Object.entries(detection.skills)
-    .map(([name, s]) => `${name} (${s.ok ? s.path : 'missing'})`).join(', ');
+    .map(([name, s]) => `${name} (${s.ok ? `${s.path}${from(s)}` : 'missing'})`).join(', ');
   const pkg = detection.packages['franklin-bulk-shared'].ok ? 'present' : 'missing';
   const lines = [
     `Node ${detection.node.version}; playwright-cli `

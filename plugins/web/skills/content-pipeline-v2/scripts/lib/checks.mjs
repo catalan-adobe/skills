@@ -6,7 +6,8 @@ import { captureFile, readCaptures, readRun, storeStatus } from './capture.mjs';
 import { readRules } from './elements-rules.mjs';
 import { INSTANCES_PER_TYPE, VARIANTS_PER_TYPE } from './elements-shots.mjs';
 import { STEPS } from './steps.mjs';
-import { detect, missingReasons } from './setup.mjs';
+import { readProject } from './project.mjs';
+import { detect, missingReasons, sourceReasons, unknownSources } from './setup.mjs';
 import { relativeSegments, scopeOf } from './urls.mjs';
 
 /** Parses JSON; with `object: true` it must also be a plain object (not null or an array). */
@@ -517,11 +518,21 @@ async function loadFiles(project) {
   return Object.fromEntries(entries.filter(([, text]) => text !== undefined));
 }
 
-/** `setup`: every precondition `detect()` looks for is ok, re-checked, never trusted from disk. */
+/**
+ * `setup`: every precondition `detect()` looks for is ok — re-checked, never trusted from
+ * disk — and every sibling comes from the source `project.json` names; the ones nobody
+ * recorded a source for are a note, not a failure.
+ */
 async function checkSetup(project) {
   const detection = await detect({ cwd: project.root });
-  const reasons = missingReasons(detection);
-  return { pass: reasons.length === 0, reasons };
+  const setupJson = await readFile(project.setupFile, 'utf8').then(JSON.parse, () => null);
+  const wanted = (await readProject(project))?.skills;
+  const reasons = [...missingReasons(detection), ...sourceReasons(setupJson, wanted)];
+  const unknown = unknownSources(setupJson);
+  return {
+    pass: reasons.length === 0, reasons,
+    ...(unknown.length ? { note: `${unknown.length} skills of unknown source` } : {}),
+  };
 }
 
 /**

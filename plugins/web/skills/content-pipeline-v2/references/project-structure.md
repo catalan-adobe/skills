@@ -20,9 +20,10 @@ approvals must be given again.
 
 `setup.json`
 : Written by `status.mjs setup [--install]`: the resolved `playwrightCli.path`, package
-  and skill paths.
-: Read by every brief to locate the binary and the sibling skills. `check setup` ignores
-  it and re-runs the detection.
+  and skill paths, and per sibling the `source` (repo, ref) it was installed from — `null`
+  when it was already present.
+: Read by every brief to locate the binary and the sibling skills. `check setup` re-runs
+  the detection for what is present and reads only `source`, against `project.json`.
 
 `REPORT.md`
 : Every step appends its `## <step>` section; `report` adds the header and `## next`.

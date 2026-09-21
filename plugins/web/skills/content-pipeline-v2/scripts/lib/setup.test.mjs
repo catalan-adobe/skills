@@ -265,10 +265,20 @@ test('writeSetupJson writes the resolved detection to migration/setup.json', asy
   const detection = await detect({
     nodeVersion: '22.0.0', env: { PATH: '' }, cwd, home: HOME, exists: fakeExists([]),
   });
-  const written = await writeSetupJson(project, detection);
-  assert.equal(written, detection);
+  const written = await writeSetupJson(project, detection, {
+    installs: [{ target: 'skill:page-tree', ok: true }, { target: 'skill:page-cache', ok: false },
+      { target: 'playwrightCli', ok: true }],
+    source: { repo: 'someone/skills', ref: 'wip' },
+  });
   const onDisk = JSON.parse(await readFile(project.setupFile, 'utf8'));
-  assert.deepEqual(onDisk, detection);
+  assert.deepEqual(onDisk, written);
+  assert.deepEqual(onDisk.node, detection.node);
+  assert.deepEqual(onDisk.skills['page-tree'].source, { repo: 'someone/skills', ref: 'wip' },
+    'the skill this run installed records where from');
+  assert.equal(onDisk.skills['page-cache'].source, null, 'a failed install records nothing');
+  const rerun = await writeSetupJson(project, detection, { source: { repo: 'x' } });
+  assert.deepEqual(rerun.skills['page-tree'].source, { repo: 'someone/skills', ref: 'wip' },
+    'a rerun that installs nothing keeps the record');
 });
 
 test('install takes the skills from another repository and branch when told to', async () => {

@@ -1,4 +1,4 @@
-import { access, mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import os from 'node:os';
@@ -176,9 +176,43 @@ export async function install(detection, {
   return results;
 }
 
-/** Writes `migration/setup.json` with the resolved paths from a `detect()` result. */
-export async function writeSetupJson(project, detection) {
+/**
+ * Writes `migration/setup.json`: the resolved paths from a `detect()` result, and for
+ * every sibling skill where it came from — the `source` `install` used for the ones it
+ * installed this time (`installs`), what the previous file said for the others, `null`
+ * when nobody knows (the operator put it there). upskill leaves no record of its own.
+ */
+export async function writeSetupJson(project, detection, { installs = [], source } = {}) {
   await mkdir(project.dir, { recursive: true });
-  await writeFile(project.setupFile, `${JSON.stringify(detection, null, 2)}\n`);
-  return detection;
+  const previous = await readFile(project.setupFile, 'utf8').then(JSON.parse, () => ({}));
+  const installed = new Set(installs.filter((i) => i.ok && i.target.startsWith('skill:'))
+    .map((i) => i.target.slice('skill:'.length)));
+  const skills = Object.fromEntries(Object.entries(detection.skills).map(([name, s]) => [name, {
+    ...s,
+    source: installed.has(name) ? { repo: source.repo, ref: source.ref ?? null }
+      : previous.skills?.[name]?.source ?? null,
+  }]));
+  const data = { ...detection, skills };
+  await writeFile(project.setupFile, `${JSON.stringify(data, null, 2)}\n`);
+  return data;
 }
+
+/**
+ * Siblings whose recorded source is not the project's: the check's reasons, with the fix.
+ * `setupJson` is the file `writeSetupJson` wrote; `wanted` the project's `skills`
+ * (`adobe/skills` at its default branch when unset).
+ */
+export function sourceReasons(setupJson, wanted = {}) {
+  const want = { repo: wanted.repo ?? 'adobe/skills', ref: wanted.ref ?? null };
+  return Object.entries(setupJson?.skills ?? {}).flatMap(([name, s]) => {
+    if (!s.ok || !s.source) return [];
+    if (s.source.repo === want.repo && (s.source.ref ?? null) === want.ref) return [];
+    const at = (x) => `${x.repo}${x.ref ? `@${x.ref}` : ''}`;
+    return [`${name} was installed from ${at(s.source)}; project.json says ${at(want)} — `
+      + `remove .agents/skills/${name} and run setup --install`];
+  });
+}
+
+/** The siblings present whose source nobody recorded. */
+export const unknownSources = (setupJson) => Object.entries(setupJson?.skills ?? {})
+  .filter(([, s]) => s.ok && !s.source).map(([name]) => name);

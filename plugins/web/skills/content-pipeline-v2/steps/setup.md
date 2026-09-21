@@ -26,8 +26,9 @@ None. The runner does the detection and the installs.
 ## Outputs
 
 - `migration/setup.json`: the resolved paths: `playwrightCli.path`,
-  `packages["franklin-bulk-shared"].path`, `skills.<name>.path`. Every later brief reads
-  the binary and skill locations from here instead of guessing.
+  `packages["franklin-bulk-shared"].path`, `skills.<name>.path`, and `skills.<name>.source`
+  (the repo and ref `setup` installed it from; `null` when it was already there). Every
+  later brief reads the binary and skill locations from here instead of guessing.
 
 ## REPORT.md
 
@@ -41,5 +42,6 @@ you chose and the model each tier will run on — or that the harness cannot swi
 node <skill>/scripts/status.mjs check setup
 ```
 
-The check re-runs the detection; it never trusts `setup.json`. If it fails, install the
-missing piece in project scope and run the check again.
+The check re-runs the detection; it never trusts `setup.json` for what is present. It fails
+on a sibling installed from another source than `project.json` names (the reason says
+what to remove and rerun); siblings of unknown source are a note, not a failure.

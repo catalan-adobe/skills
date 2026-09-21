@@ -260,7 +260,9 @@ test('setup on a fresh project reports every missing precondition; writes setup.
     assert.ok(out.reasons.includes(`skill ${name} not found`), name);
   }
   const onDisk = JSON.parse(await readFile(path.join(cwd, 'migration/setup.json'), 'utf8'));
-  assert.deepEqual(onDisk, out.detection);
+  assert.deepEqual(onDisk.playwrightCli, out.detection.playwrightCli);
+  assert.deepEqual(onDisk.skills['page-tree'],
+    { ...out.detection.skills['page-tree'], source: null });
 });
 
 test('setup reports Node < 22 with the message; --install then runs no installer', async () => {
@@ -350,6 +352,35 @@ test('check setup re-detects instead of trusting setup.json', async () => {
   const passing = await cli(cwd, 'check', 'setup', { env });
   assert.equal(passing.pass, true);
   assert.deepEqual(passing.reasons, []);
+  assert.equal(passing.note, '5 skills of unknown source', 'nobody recorded a source');
+});
+
+test('check setup: siblings must come from the source project.json names', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://example.com/',
+    '--skills-repo', 'someone/skills', '--skills-ref', 'pinned');
+  const env = await isolatedEnv();
+  await fakeSetupOk(cwd);
+  const first = await cli(cwd, 'setup', { env });
+  assert.deepEqual(first.reasons, [], 'present siblings of unknown source pass');
+  const setupJson = path.join(cwd, 'migration/setup.json');
+  const written = JSON.parse(await readFile(setupJson, 'utf8'));
+  assert.equal(written.skills['page-tree'].source, null);
+  const noted = await cli(cwd, 'check', 'setup', { env });
+  assert.equal(noted.note, `${SKILL_NAMES.length} skills of unknown source`);
+  written.skills['page-tree'].source = { repo: 'adobe/skills', ref: null };
+  written.skills['page-cache'].source = { repo: 'someone/skills', ref: 'pinned' };
+  await writeFile(setupJson, JSON.stringify(written));
+  const mismatch = await cli(cwd, 'check', 'setup', { env }).catch((e) => e);
+  assert.equal(mismatch.code, 1);
+  assert.deepEqual(JSON.parse(mismatch.stdout).reasons, ['page-tree was installed from '
+    + 'adobe/skills; project.json says someone/skills@pinned — remove .agents/skills/page-tree'
+    + ' and run setup --install']);
+  const again = await cli(cwd, 'setup', { env }).catch((e) => JSON.parse(e.stdout));
+  assert.equal(again.reasons.length, 1, 'setup itself reports the mismatch');
+  const kept = JSON.parse(await readFile(setupJson, 'utf8'));
+  assert.deepEqual(kept.skills['page-cache'].source, { repo: 'someone/skills', ref: 'pinned' },
+    'a recorded source survives a rerun that installs nothing');
 });
 
 test('setup --install records --skills-repo and --skills-ref in project.json for later runs',
