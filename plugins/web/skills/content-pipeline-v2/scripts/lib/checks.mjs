@@ -4,6 +4,7 @@ import path from 'node:path';
 import { openWork, unfinished } from './jobs.mjs';
 import { captureFile, readCaptures, readRun, storeStatus } from './capture.mjs';
 import { readRules } from './elements-rules.mjs';
+import { deriveInventory, shortHash, validateMapping } from './mapping.mjs';
 import { INSTANCES_PER_TYPE, VARIANTS_PER_TYPE } from './elements-shots.mjs';
 import { STEPS } from './steps.mjs';
 import { readProject } from './project.mjs';
@@ -479,8 +480,47 @@ const CONTENT_CHECKS = {
   cache: checkCache,
   chrome: checkChrome,
   elements: checkElements,
+  mapping: checkMapping,
   report: checkReport,
 };
+
+/**
+ * `mapping`: the decisions file validates, no recurring type is undecided, and the block
+ * inventory was derived from these very decisions and this very elements.json (the
+ * hashes match) — else "rerun mapping.mjs". Orphaned decisions are the report's, not a
+ * failure.
+ */
+export function checkMapping(files) {
+  const reasons = [];
+  for (const f of ['mapping/mapping.json', 'mapping/inventory.json', 'mapping/mapping.md']) {
+    if (files[f] === undefined) reasons.push(`missing migration/${f}; run mapping.mjs`);
+  }
+  if (files['elements/elements.json'] === undefined) {
+    reasons.push('missing migration/elements/elements.json; run elements.mjs first');
+  }
+  if (reasons.length) return { pass: false, reasons };
+  let mapping; let inventory; let elements;
+  try {
+    mapping = JSON.parse(files['mapping/mapping.json']);
+    inventory = JSON.parse(files['mapping/inventory.json']);
+    elements = JSON.parse(files['elements/elements.json']);
+  } catch (err) {
+    return { pass: false, reasons: [`mapping: a file is not valid JSON (${err.message})`] };
+  }
+  const invalid = validateMapping(mapping);
+  if (invalid.length) return { pass: false, reasons: invalid.map((r) => `mapping.json: ${r}`) };
+  if (inventory.mappingHash !== shortHash(files['mapping/mapping.json'])
+    || inventory.elementsHash !== shortHash(files['elements/elements.json'])) {
+    reasons.push('mapping: inventory.json is not derived from the current mapping.json and '
+      + 'elements.json — rerun mapping.mjs');
+  }
+  const { undecided } = deriveInventory(elements, mapping);
+  if (undecided.length) {
+    reasons.push(`mapping: ${undecided.length} recurring types undecided (kind null) — decide`
+      + ' them in mapping/mapping.json and rerun mapping.mjs');
+  }
+  return { pass: reasons.length === 0, reasons };
+}
 
 async function readText(file) {
   try {
@@ -573,6 +613,16 @@ export const CHECKS = Object.fromEntries(
     }
     if (step.id === 'chrome') return [step.id, checkChromeOnDisk];
     if (step.id === 'elements') return [step.id, checkElementsOnDisk];
+    if (step.id === 'mapping') {
+      return [step.id, async (project) => {
+        const elements = await checkElementsOnDisk(project);
+        if (!elements.pass) {
+          return { pass: false, reasons: ['mapping: the elements check fails first —',
+            ...elements.reasons] };
+        }
+        return contentCheck(await loadFiles(project));
+      }];
+    }
     if (step.id === 'prep' || step.id === 'prep-verify') {
       return [step.id, async (project) => contentCheck(
         await loadFiles(project), await listDir(project.step('prep'), 'prep'),

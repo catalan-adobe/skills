@@ -74,6 +74,14 @@ export const STEPS = [
     writes: ['elements/elements.json', 'elements/elements.md', 'elements/evaluation.md'],
   },
   {
+    id: 'mapping',
+    tier: 'medium',
+    tierNote: 'the model decides block or default content from the crops and names blocks',
+    skill: null,
+    dependsOn: ['elements'],
+    writes: ['mapping/mapping.json', 'mapping/mapping.md', 'mapping/inventory.json'],
+  },
+  {
     id: 'report',
     tier: 'medium',
     skill: null,

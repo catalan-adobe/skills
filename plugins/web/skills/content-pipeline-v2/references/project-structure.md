@@ -173,6 +173,24 @@ element types of the source markup. Decomposed, not named.
   engine's defaults — identity exclusions, noise classes, leaf tags, container share,
   recurrence, `merge`, `chrome`, `reject`. Read by `elements.mjs`.
 
+## mapping/
+
+`mapping/mapping.json`
+: Seeded by `mapping.mjs` with every recurring type outside a fragment (`kind: null`), then
+  written by the agent or the operator: per type id `kind` (`block`, `default-content`,
+  `skip`), `block` (the EDS block name, blocks only), `notes`. Decisions for types no
+  longer recurring are kept. Read by `mapping.mjs` and `check mapping`.
+
+`mapping/inventory.json`
+: Written by `mapping.mjs`: the block inventory — per block its types, instances, pages,
+  variants, median height, sample and crops; default content; skipped; per-page coverage
+  (sections inside a fragment aside); undecided and orphaned type ids; `mappingHash` and
+  `elementsHash` of the files it derives from (the check fails when either changed). Read
+  by `check mapping` and the dashboard.
+
+`mapping/mapping.md`
+: Written by `mapping.mjs`: the same for the operator. Read by the operator.
+
 ## .work/
 
 `.work/node_modules/`

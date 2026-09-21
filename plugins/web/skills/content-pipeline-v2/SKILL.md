@@ -16,7 +16,7 @@ description: >-
 
 # content-pipeline-v2
 
-Runs the first phase of a migration as ten steps, each done by a sibling skill or a
+Runs the first phase of a migration as eleven steps, each done by a sibling skill or a
 script of this one, each verified by `scripts/status.mjs`. A step is done when the runner
 finds its outcome on disk, never when an agent says so. Everything lands under
 `migration/` in the folder where the agent runs.
@@ -56,6 +56,7 @@ migration/
   capture/        <sha8>.json (the visual-tree store) · captures.md
   chrome/         chrome.json · chrome.md · screenshots/
   elements/       elements.json · elements.md · rules.json
+  mapping/        mapping.json (the decisions) · inventory.json · mapping.md
   .work/          scratch: npm installs, scan script, browser profiles (gitignored)
   REPORT.md       one ## <step> section per step that ran
 ```
@@ -99,6 +100,7 @@ Each step has a brief in `steps/<id>.md`: hand that one file to whoever runs the
 | `capture` | low | page-tree (`capture.mjs`) | `capture/captures.md` + the store | 2 min/100 pp |
 | `chrome` | medium | — (`chrome.mjs`) | `chrome/chrome.json`, `chrome/chrome.md` | < 1 min |
 | `elements` | medium | — (`elements.mjs`) | `elements/elements.json`, `.md` | 3 min a run |
+| `mapping` | medium | — (`mapping.mjs`) | `mapping/mapping.json`, `.md`, `inventory.json` | 1 s |
 | `report` | medium | — | `REPORT.md` | 1–2 min |
 
 Takes: wall time measured on a 50-page run at a 1500 ms pace, the agent's reading included

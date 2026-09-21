@@ -3,7 +3,11 @@
 // (containers, fragments); header and footer the chrome step's. Pure functions over an
 // elements inventory and the decisions file; nothing here knows a site.
 
+import { createHash } from 'node:crypto';
+
 export const KINDS = ['block', 'default-content', 'skip'];
+/** A short content hash: inventory.json records the mapping and elements it derives from. */
+export const shortHash = (text) => createHash('sha1').update(text).digest('hex').slice(0, 12);
 export const RESERVED_BLOCKS = ['header', 'footer', 'section', 'fragment'];
 const BLOCK_NAME = /^[a-z][a-z0-9-]*$/;
 

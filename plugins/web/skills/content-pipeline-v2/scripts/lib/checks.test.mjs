@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  cacheRelativePath, checkCache, checkChrome, checkPrep, checkPrepVerify, checkProbe, checkReport,
-  checkScan,
+  cacheRelativePath, checkCache, checkChrome, checkMapping, checkPrep, checkPrepVerify,
+  checkProbe, checkReport, checkScan,
 } from './checks.mjs';
+import { shortHash } from './mapping.mjs';
 
 test('checkProbe passes when the recipe parses and probe.md is non-empty', () => {
   const files = {
@@ -551,4 +552,38 @@ test('checkChrome: variants, selectors against captures, screenshots, defects', 
 
   assert.match(checkChrome({}).reasons[0], /missing migration\/chrome\/chrome\.json/);
   assert.match(checkChrome({ 'chrome/chrome.json': '{' }).reasons[0], /not valid JSON/);
+});
+
+test('checkMapping: files, validity, derivation hashes, then no undecided type', () => {
+  const elements = JSON.stringify({
+    types: [{ id: 't-a', recurring: true }, { id: 't-b', recurring: true }],
+    fragments: [], pages: [],
+  });
+  const derived = (mapping, inventory = {}) => ({
+    'elements/elements.json': elements,
+    'mapping/mapping.json': mapping,
+    'mapping/mapping.md': '# Block inventory',
+    'mapping/inventory.json': JSON.stringify({
+      mappingHash: shortHash(mapping), elementsHash: shortHash(elements), ...inventory,
+    }),
+  });
+  const missing = checkMapping({ 'elements/elements.json': elements });
+  assert.equal(missing.pass, false);
+  assert.equal(missing.reasons.length, 3);
+  assert.match(missing.reasons[0], /missing migration\/mapping\/mapping.json; run mapping.mjs/);
+  const noElements = checkMapping({
+    ...derived('{"types":{}}'), 'elements/elements.json': undefined,
+  });
+  assert.match(noElements.reasons[0], /run elements.mjs first/);
+  const invalid = checkMapping(derived('{"types":{"t-a":{"kind":"widget"}}}'));
+  assert.match(invalid.reasons[0], /^mapping.json: t-a: kind must be one of/);
+  const undecided = checkMapping(derived('{"types":{"t-a":{"kind":null},"t-b":{"kind":"skip"}}}'));
+  assert.deepEqual(undecided.reasons, ['mapping: 1 recurring types undecided (kind null) — decide'
+    + ' them in mapping/mapping.json and rerun mapping.mjs']);
+  const decided = '{"types":{"t-a":{"kind":"block","block":"hero"},"t-b":{"kind":"skip"}}}';
+  assert.deepEqual(checkMapping(derived(decided)), { pass: true, reasons: [] });
+  const stale = checkMapping({ ...derived(decided), 'mapping/mapping.json': `${decided}\n` });
+  assert.match(stale.reasons[0], /not derived from the current mapping.json .* rerun mapping.mjs/);
+  const broken = checkMapping({ ...derived(decided), 'mapping/inventory.json': '{' });
+  assert.match(broken.reasons[0], /not valid JSON/);
 });
