@@ -126,6 +126,11 @@ test('status follows the artefacts on disk; approve opens the operator gate', as
   assert.match(text, /^step\s+state/);
   assert.match(text, /cache\s+ready/);
   assert.match(text, /medium\s+via page-prep/);
+  assert.match(text, /probe\s+done\s+no report section/, 'a done step without its words');
+  await writeFile(path.join(m, 'REPORT.md'), '## probe\n\nfine\n');
+  s = byId(await cli(cwd));
+  assert.equal(s.probe.note, undefined);
+  assert.equal(s.setup.note, 'no report section');
 });
 
 test('approve cache <subset> persists the selection so check cache scopes to it', async () => {

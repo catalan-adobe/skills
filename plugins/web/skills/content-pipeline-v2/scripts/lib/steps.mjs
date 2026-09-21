@@ -97,7 +97,8 @@ export function stepById(id) {
  * @param {Record<string, boolean>} [approved] Step id → operator approval recorded.
  * @param {Record<string, string>} [running] Step id → a progress label while background
  *   work holds the step (`12/50 (blogs) · queued: ja-jp`).
- * @param {Record<string, string>} [notes] Step id → a short note on why it is not done
+ * @param {Record<string, string>} [notes] Step id → a short note: why it is not done, or
+ *   what a done step still lacks (its report section)
  *   (`12 pages behind the cache`).
  * @returns {{id: string, tier: string, tierNote?: string, skill: string|null,
  *   state: 'done'|'ready'|'blocked'|'waiting-operator'|'running', blockedBy: string[],
@@ -123,7 +124,7 @@ export function stepStates(done, approved = {}, running = {}, notes = {}) {
       blockedBy,
       writes,
       ...(state === 'running' ? { running: running[step.id] } : {}),
-      ...(notes[step.id] && state !== 'done' ? { note: notes[step.id] } : {}),
+      ...(notes[step.id] ? { note: notes[step.id] } : {}),
     };
   });
 }

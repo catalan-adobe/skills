@@ -240,8 +240,8 @@ test('a store behind the cache: capture notes it, chrome fails on it', async () 
   assert.ok(chrome.reasons.some((r) => behind.test(r)), chrome.reasons.join('; '));
   const states = stepStates({ capture: false, cache: true }, {}, {}, { capture: capture.note });
   assert.equal(states.find((s) => s.id === 'capture').note, '2 pages behind the cache');
-  assert.equal(stepStates({ capture: true }, {}, {}, { capture: 'x' })
-    .find((s) => s.id === 'capture').note, undefined, 'a done step carries no note');
+  assert.equal(stepStates({ capture: true }, {}, {}, { capture: 'no report section' })
+    .find((s) => s.id === 'capture').note, 'no report section', 'a done step can lack words');
 });
 
 test('storedMinWidth reads the head of a real capture whatever the URL length', async () => {

@@ -298,6 +298,8 @@ function stepsThatRan(files) {
 }
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const sectionCount = (md, id) => (
+  md.match(new RegExp(`^##\\s+${escapeRegExp(id)}\\s*$`, 'gm')) ?? []).length;
 
 /** `report`: `REPORT.md` has a `## <step>` section for every step whose artefacts exist. */
 export function checkReport(files) {
@@ -305,7 +307,7 @@ export function checkReport(files) {
   if (md === undefined) return { pass: false, reasons: ['missing migration/REPORT.md'] };
   // `## next` is the report step's own output; without it the step has not run.
   const reasons = [...stepsThatRan(files), 'next'].flatMap((id) => {
-    const count = (md.match(new RegExp(`^##\\s+${escapeRegExp(id)}\\s*$`, 'gm')) ?? []).length;
+    const count = sectionCount(md, id);
     if (count === 0) return [`migration/REPORT.md has no "## ${id}" section`];
     if (count > 1) return [`migration/REPORT.md has ${count} "## ${id}" sections; keep one`];
     return [];
@@ -699,5 +701,11 @@ export async function runAllChecks(project) {
     .map(([id, r]) => [id, r.running]));
   const notes = Object.fromEntries(results.filter(([, r]) => r.note)
     .map(([id, r]) => [id, r.note]));
+  // A done step whose words are missing from REPORT.md says so: the report step fills
+  // the section from the step's own .md, and an agent that timed out left none.
+  const md = await readFile(project.report, 'utf8').catch(() => '');
+  for (const id of Object.keys(done).filter((k) => done[k] && k !== 'report')) {
+    if (!notes[id] && sectionCount(md, id) === 0) notes[id] = 'no report section';
+  }
   return { done, running, notes };
 }

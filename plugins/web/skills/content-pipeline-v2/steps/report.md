@@ -17,8 +17,8 @@ None.
 
 ## Method
 
-1. Run `status.mjs`. Every step whose artefacts exist needs a `## <step>` section; add the
-   missing ones from the artefacts with `status.mjs section <step> --file body.md`. Never
+1. Run `status.mjs --text`: a `done` step marked `no report section` lacks its `## <step>`;
+   add it from the step's own `.md` with `status.mjs section <step> --file body.md`. Never
    rewrite `REPORT.md` as a whole: the runner and the steps own their sections. The model
    line in `## setup` comes from the runner; do not add your own guess.
 2. Write `## next` with `status.mjs section next --file body.md` — write the body to a file
