@@ -2,8 +2,7 @@
 
 Purpose: the **elements inventory** — every captured page decomposed into its sections,
 each resolved to an element type of the source markup, with coverage and compositions.
-Decomposition only; mapping a type to an EDS block is the mapping expert's work. Tier:
-medium (a script decomposes; you read and adapt rules).
+Decomposition only; mapping a type to an EDS block is the mapping expert's work. Tier: medium.
 
 ## Inputs
 
@@ -12,43 +11,41 @@ medium (a script decomposes; you read and adapt rules).
 
 ## Method
 
-1. Start the run — it returns at once:
-
-   ```bash
-   node <skill>/scripts/elements.mjs
-   ```
-
-   One detached worker decomposes every capture (seconds), appends a run to the previous
-   file (type ids are stable, so a run is a delta), crops the evidence for every recurring
-   type offline (minutes; only the missing crops) and writes `elements/elements.json`,
-   `elements.md`, `evaluation.md` and the report section.
+1. Start the run — it returns at once: `node <skill>/scripts/elements.mjs`. One detached
+   worker decomposes every capture (seconds), appends a run to the previous file (type ids
+   are stable, so a run is a delta), crops every recurring type offline (minutes; only the
+   missing crops) and writes `elements/elements.json`, `elements.md`, `evaluation.md` and
+   the report section.
 2. Do not wait for it or poll it in a loop. `status.mjs` shows `elements` as `running` with
    `crops 63/180 pages`; `elements.mjs status` has the details; `elements.mjs stop` ends it.
-   When done, read `elements/evaluation.md`: the flags first, then the crops of each type —
-   do the instances look like one element? do two types look alike?
+   Then read `elements/evaluation.md`: `## Flags`, then the crops of the recurring types you
+   judge; the type sections are reference, not reading.
 3. Adapt through `elements/rules.json` only (the first run wrote it, with the vocabulary
-   under `_example`): a type whose instances are whole page columns is a **container**
-   (`containers`); a wrapper that delivers another document's content — its class or id
-   usually says so: fragment, xf, include, embed — is a **fragment** (`fragments`); two
-   identities of one element → `merge` (type ids); a header or footer leak → `chrome`
-   (selectors); noise → `reject` (selectors). `containers` and `fragments` take the
-   **identity** string as printed in the type table of `elements.md`, never a selector; a
-   rule that matches nothing is a warning in the next run. Run `elements.mjs` again and read
-   the runs table: the run says "rules changed" with the types added and removed. Two or
-   three iterations is normal. A wish the vocabulary cannot express is an engine gap: name
-   it in the report section, do not work around it. Never edit the scripts.
+   under `_example`). **Done when every recurring type's crops show one thing an author
+   placed.** A type whose crops show unrelated things stacked — a column, a row, a grid, a
+   background band — is a **container** (`containers`), whatever its class says; wrappers
+   nest, each one peeled shows the next; peel until none is left (an AEM site: three to
+   six). A wrapper that delivers another document's content — its class or id says
+   fragment, xf, include, embed — is a **fragment** (`fragments`); two identities of one
+   element → `merge` (type ids); a header or footer leak → `chrome`; noise → `reject`
+   (both: the selector as printed in the check or the type sample; a node under it counts).
+   `containers` and `fragments` take the **identity** as printed in the type table of
+   `elements.md`, never a selector; a rule that matches nothing is a warning next run. Rerun
+   `elements.mjs` and read the runs table: it says how far a change reached (types added,
+   removed), not whether you are done. A wish the vocabulary cannot express is an engine
+   gap: name it in the report section, do not work around it. Never edit the scripts.
 4. After a new cache phase: `capture.mjs`, then `elements.mjs`. Never read the captures,
-   never name types, never edit `elements.json`. Write what you changed and why with
-   `status.mjs section elements`.
+   never name types, never edit `elements.json`. `status.mjs section elements`: what you
+   changed and why.
 
 ## Outputs
 
 - `migration/elements/elements.json`: the deliverable — `types`, `pages` (sections with
-  `within`, coverage, composition, rejected), `compositions`, `fragments` (distinct contents
-  per fragment: the reuse), `groups`, `runs`, `warnings`, `limits`. `rules.json`: the
-  site's rules, a deliverable too.
-- `migration/elements/elements.md`: for the operator; `migration/elements/evaluation.md` +
-  `screenshots/`: the evidence — crops per type and variant, flags; `REPORT.md` `## elements`.
+  `within`, coverage, composition, rejected), `compositions`, `fragments` (the reuse),
+  `groups`, `runs`, `warnings`, `limits`; `rules.json`: the site's rules, a deliverable too.
+- `elements/elements.md` for the operator; `evaluation.md` + `screenshots/`: crops per type and
+  variant, flags; `REPORT.md` `## elements`.
+
 ## Done
 
 Fails while the run is open — not an error to fix. Once done: a store behind the cache

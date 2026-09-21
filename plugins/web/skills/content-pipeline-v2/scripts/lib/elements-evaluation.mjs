@@ -113,8 +113,8 @@ export function flags(result) {
     out.push({
       flag: 'empty pages',
       detail: `${empty} pages have no section: their capture holds nothing between the chrome`
-        + ' — content that did not render offline (a gated form, script-built content). Not a'
-        + ' rules matter; note the pages in the report',
+        + ' — a cache or rendering matter (a gated form, content a script builds), neither a'
+        + ' rules matter nor an engine gap; name the pages in the report',
     });
   }
   return out;

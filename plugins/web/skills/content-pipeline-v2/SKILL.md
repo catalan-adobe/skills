@@ -16,10 +16,10 @@ description: >-
 
 # content-pipeline-v2
 
-Runs the first phase of a migration as seven steps, each done by a sibling skill and each
-verified by `scripts/status.mjs`. A step is done when the runner finds its outcome on
-disk, never when an agent says so. Everything lands under `migration/` in the folder where
-the agent runs.
+Runs the first phase of a migration as ten steps, each done by a sibling skill or a
+script of this one, each verified by `scripts/status.mjs`. A step is done when the runner
+finds its outcome on disk, never when an agent says so. Everything lands under
+`migration/` in the folder where the agent runs.
 
 ## Quick start
 
@@ -31,14 +31,16 @@ node $SKILL/scripts/status.mjs --text
 ```
 
 `init` creates `migration/project.json`; `setup --install` puts `playwright-cli`,
-`franklin-bulk-shared` and the four sibling skills in project scope (`migration/.work/`,
+`franklin-bulk-shared` and the five sibling skills in project scope (`migration/.work/`,
 `.agents/skills/`) and stops only on Node < 22. The skills come from `adobe/skills` unless
 the operator names another source — `--skills-repo <owner/repo> --skills-ref <branch>` —
 which `project.json` then remembers. `status.mjs --text` shows each step as `done`,
 `ready`, `blocked (by …)`, `waiting-operator` or `running` (background work holds it; the
 label is its progress). Then follow the loop below. An operator who
 wants the steps fanned out to agents at their tiers says so in the prompt ("run the
-migration analysis as a workflow"); the skill does not opt in for them.
+migration analysis as a workflow"); the skill does not opt in for them. An agent that
+fails or times out leaves its artefacts behind: run `status.mjs --text` before redoing a
+step — the check says whether it is done, not the agent's last words.
 
 ## Project structure
 
