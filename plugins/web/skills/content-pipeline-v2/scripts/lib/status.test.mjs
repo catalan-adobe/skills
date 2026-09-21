@@ -668,16 +668,19 @@ test('init installs the dashboard under tools/migration and excludes migration/ 
     const cwd = await fresh();
     await writeFile(path.join(cwd, '.hlxignore'), '.*\n*.md\n');
     const out = await cli(cwd, 'init', '--origin', 'https://example.com/');
-    assert.deepEqual(out.dashboard, { installed: true, path: 'tools/migration' });
+    assert.deepEqual(out.dashboard, { installed: true, updated: [], path: 'tools/migration' });
     for (const f of ['index.html', 'dashboard.js', 'dashboard.css']) {
       await access(path.join(cwd, 'tools/migration', f));
     }
     assert.match(await readFile(path.join(cwd, '.hlxignore'), 'utf8'), /\nmigration\/\n/);
     await writeFile(path.join(cwd, 'tools/migration/dashboard.css'), 'body { color: red }');
     const again = await cli(cwd, 'init', '--origin', 'https://example.com/');
-    assert.equal(again.dashboard.installed, false, 'an existing dashboard is left alone');
-    assert.equal(await readFile(path.join(cwd, 'tools/migration/dashboard.css'), 'utf8'),
+    assert.deepEqual([again.dashboard.installed, again.dashboard.updated],
+      [false, ['dashboard.css']], 'a dashboard behind the skill is brought up to date');
+    assert.notEqual(await readFile(path.join(cwd, 'tools/migration/dashboard.css'), 'utf8'),
       'body { color: red }');
+    const same = await cli(cwd, 'init', '--origin', 'https://example.com/');
+    assert.deepEqual(same.dashboard.updated, [], 'nothing to rewrite when equal');
     const ignore = await readFile(path.join(cwd, '.hlxignore'), 'utf8');
     assert.equal(ignore.match(/migration\//g).length, 1, 'the ignore line is added once');
     const noHlx = await fresh();

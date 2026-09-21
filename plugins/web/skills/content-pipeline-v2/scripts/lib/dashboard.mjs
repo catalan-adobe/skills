@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { installDashboard } from './project.mjs';
 
 const DASHBOARD = '/tools/migration/';
 const START_TIMEOUT_MS = 30_000;
@@ -34,9 +35,10 @@ const readState = (project) => readFile(stateFile(project), 'utf8').then(JSON.pa
 
 /** Starts the server if none of ours is alive, waits for the dashboard, returns its URL. */
 export async function dashboard(project, freePort, io = defaultIo) {
+  const { updated } = await installDashboard(project);
   const current = await readState(project);
   if (current && io.alive(current.pid) && await io.reachable(current.url)) {
-    return { ...current, started: false };
+    return { ...current, started: false, updated };
   }
   const port = await freePort(3000);
   const pid = io.spawn(port, project.root);
@@ -53,7 +55,7 @@ export async function dashboard(project, freePort, io = defaultIo) {
   const state = { pid, port, url };
   await mkdir(project.work, { recursive: true });
   await writeFile(stateFile(project), `${JSON.stringify(state, null, 2)}\n`);
-  return { ...state, started: true };
+  return { ...state, started: true, updated };
 }
 
 /** Stops the server recorded in .work/dashboard.json, if any. */

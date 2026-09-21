@@ -1,5 +1,5 @@
 import {
-  access, cp, mkdir, readFile, writeFile,
+  access, mkdir, readdir, readFile, writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
 import { realpathSync } from 'node:fs';
@@ -94,15 +94,29 @@ const DASHBOARD_SRC = fileURLToPath(new URL('../../tools/migration/', import.met
 const exists = (file) => access(file).then(() => true, () => false);
 
 /**
- * Copies the read-only dashboard to `<root>/tools/migration/` (served locally by `aem up` at
- * `/tools/migration/`) unless one is already there, and keeps `migration/` out of the
- * deployment by adding it to an existing `.hlxignore` once. No `.hlxignore` is created
- * where none exists.
+ * Brings the read-only dashboard under `<root>/tools/migration/` (served locally by `aem up`
+ * at `/tools/migration/`) up to the skill's copy — installed when absent, rewritten file by
+ * file when the skill's differs: the dashboard is the skill's artefact, and a project
+ * initialised before a panel existed would otherwise never see it. Keeps `migration/` out
+ * of the deployment by adding it to an existing `.hlxignore` once; no `.hlxignore` is
+ * created where none exists.
+ *
+ * @returns {Promise<{installed: boolean, updated: string[], path: string}>} `installed`
+ *   when there was no dashboard; `updated` names the files rewritten.
  */
-async function installDashboard(project) {
+export async function installDashboard(project) {
   const dest = path.join(project.root, 'tools', 'migration');
   const installed = !(await exists(dest));
-  if (installed) await cp(DASHBOARD_SRC, dest, { recursive: true });
+  await mkdir(dest, { recursive: true });
+  const updated = [];
+  for (const name of await readdir(DASHBOARD_SRC)) {
+    const wanted = await readFile(path.join(DASHBOARD_SRC, name), 'utf8');
+    const current = await readFile(path.join(dest, name), 'utf8').catch(() => null);
+    if (current !== wanted) {
+      await writeFile(path.join(dest, name), wanted);
+      if (!installed) updated.push(name);
+    }
+  }
   const hlxignore = path.join(project.root, '.hlxignore');
   if (await exists(hlxignore)) {
     const text = await readFile(hlxignore, 'utf8');
@@ -110,7 +124,7 @@ async function installDashboard(project) {
       await writeFile(hlxignore, `${text.replace(/\n*$/, '')}\nmigration/\n`);
     }
   }
-  return { installed, path: 'tools/migration' };
+  return { installed, updated, path: 'tools/migration' };
 }
 
 const REPORT_TITLE = '# Migration report';

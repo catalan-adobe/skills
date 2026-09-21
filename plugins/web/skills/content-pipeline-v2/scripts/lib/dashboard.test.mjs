@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveProject } from './project.mjs';
@@ -33,9 +33,12 @@ test('dashboard starts aem up on a free port, waits for it, records and reuses i
   assert.deepEqual(calls.spawned, [{ port: 3005, root }]);
   const state = JSON.parse(await readFile(path.join(root, 'migration/.work/dashboard.json')));
   assert.equal(state.pid, 4242);
+  assert.deepEqual(first.updated, [], 'a fresh copy of the dashboard was installed');
+  await writeFile(path.join(root, 'tools/migration/dashboard.js'), '// stale');
   const again = await dashboard(project, async () => { throw new Error('not asked'); }, io);
   assert.equal(again.started, false, 'a live server is reused, no second aem up');
   assert.equal(again.url, first.url);
+  assert.deepEqual(again.updated, ['dashboard.js'], 'the served copy follows the skill');
   const stopped = await stopDashboard(project, io);
   assert.deepEqual(stopped, { stopped: true, pid: 4242, port: 3005 });
   assert.deepEqual(calls.killed, [4242]);

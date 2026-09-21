@@ -66,8 +66,9 @@ migration/
 
 ## Dashboard
 
-`init` copies a read-only dashboard to `tools/migration/` in the repository. Serve it with
-`status.mjs dashboard` — it starts the EDS local server (`aem up`) on a free port, waits
+`init` copies a read-only dashboard to `tools/migration/` in the repository; `dashboard`
+brings that copy up to the skill's on every start. Serve it with `status.mjs dashboard` —
+it starts the EDS local server (`aem up`) on a free port, waits
 until the page answers and prints the URL; never pick a port yourself. `status.mjs dashboard
 stop` ends it. Never start `aem up` any other way: that server is the EDS local server for
 the whole repository, so anything else you need served (a page, a block) is at the same
