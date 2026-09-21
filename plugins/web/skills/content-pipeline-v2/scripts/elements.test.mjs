@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { workerMain } from './elements.mjs';
-import { captureFile, readRun, runFile } from './lib/capture.mjs';
+import { MIN_WIDTH, captureFile, readRun, runFile } from './lib/capture.mjs';
 import { writeJson } from './lib/jobs.mjs';
 import { writeInventory } from './lib/inventory.mjs';
 import { resolveProject, writeProject } from './lib/project.mjs';
@@ -30,7 +30,7 @@ async function project() {
     const url = `${ORIGIN}/${n}.html`;
     records.push({ url, kind: 'page', group: 'g', cache: { path: 'x', verified: true } });
     const tree = el('BODY', '', 'body', 0, 1000, [cards('s1', 0), text('s2', 400)]);
-    await writeFile(captureFile(p, url), JSON.stringify({ minWidth: 300, url, tree,
+    await writeFile(captureFile(p, url), JSON.stringify({ minWidth: MIN_WIDTH, url, tree,
       capturedAt: `2026-01-01T00:0${records.length}:00.000Z` }));
   }
   await writeInventory(p.step('urls'), records);

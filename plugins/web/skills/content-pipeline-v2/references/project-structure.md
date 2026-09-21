@@ -108,7 +108,7 @@ approvals must be given again.
   (nodes with tag, selector, id, className, bounds, children, `collapsed` chain, `fixed`),
   `text` (the indented form), `nodeMap`, `rootBackground`. Rendered from the cache, never
   from the site (gitignored; `<sha8>` = first 8 hex of sha256 of the URL). Default
-  min-width 300 px; a capture at another width is stale and redone by the next run.
+  min-width 250 px; a capture at another width is stale and redone by the next run.
 : Written by the capture worker (`capture.mjs`; rerun: missing and stale pages only;
   `--force`: all). Every analysis of page structure reads the store instead of rendering
   again.
@@ -221,7 +221,7 @@ element types of the source markup. Decomposed, not named.
   done/total, current page, min-width, failures), the worker's output, and the session
   config (cache browser config plus the page-tree bundle). Read by `capture.mjs
   status|stop`, `check capture` (the running label; the min-width the store is held to) and
-  `check chrome` (the same min-width). Without a run the store is held to 300 px.
+  `check chrome` (the same min-width). Without a run the store is held to 250 px.
 
 `.work/chrome/run.json`, `.work/chrome/worker.log`
 : Written by `chrome.mjs`: the run's state (`queued|running|analysing|done|failed`) and

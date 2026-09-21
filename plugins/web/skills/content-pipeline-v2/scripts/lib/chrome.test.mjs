@@ -44,9 +44,17 @@ test('fingerprint ignores text, bounds, active classes and generated ids; sees s
   const a = el('DIV', 'nav active', box(0, 80), [el('A', 'link', box(0, 20))], { text: 'Home' });
   const b = el('DIV', 'nav', box(900, 80), [el('A', 'link', box(0, 20))], { text: 'Blog' });
   assert.equal(fingerprint(a), fingerprint(b));
-  const c = el('DIV', 'nav', box(0, 80),
-    [el('A', 'link', box(0, 20)), el('A', 'link', box(0, 20))]);
-  assert.notEqual(fingerprint(a), fingerprint(c), 'a second child changes the structure');
+  const link = () => el('A', 'link', box(0, 20));
+  const two = el('DIV', 'nav', box(0, 80), [link(), link()]);
+  const three = el('DIV', 'nav', box(0, 80), [link(), link(), link()]);
+  assert.notEqual(fingerprint(a), fingerprint(two), 'a lone child is descended into');
+  assert.equal(fingerprint(two), fingerprint(three),
+    'one more of the same child is repetition, not another structure: a footer with four link'
+    + ' columns and one with five are one footer');
+  const d = el('DIV', 'nav', box(0, 80), [link(), el('SPAN', 'badge', box(0, 20))]);
+  assert.notEqual(fingerprint(two), fingerprint(d), 'a different kind of child is structure');
+  const e = el('DIV', 'nav', box(0, 80), [el('SPAN', 'badge', box(0, 20)), link()]);
+  assert.equal(fingerprint(d), fingerprint(e), 'order does not count either');
   assert.equal(fingerprint({ tag: 'DIV', id: 'x-a1b2c3d4', bounds: box(0, 1) }),
     fingerprint({ tag: 'DIV', id: 'x-e5f6a7b8', bounds: box(0, 1) }));
 });

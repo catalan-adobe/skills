@@ -23,7 +23,7 @@ Everything here comes from the local cache, never the site: `references/local-ca
 
    One detached worker starts the offline cache server, renders every verified cached page
    in one browser session (proxy only, the prep step's hide rules applied) and stores its
-   visual tree under `capture/` at min-width 300 px, then writes `capture/captures.md`.
+   visual tree under `capture/` at min-width 250 px, then writes `capture/captures.md`.
    About one second per page.
 2. Do not wait for it, poll it in a loop, or read the captures. Tell the operator the run
    is on and stop, or continue with another `ready` step. `status.mjs` shows `capture` as

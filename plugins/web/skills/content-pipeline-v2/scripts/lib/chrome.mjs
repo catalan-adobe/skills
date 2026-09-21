@@ -50,11 +50,14 @@ export function own(node, keepToken = () => true) {
 }
 
 /**
- * A structural fingerprint: the element's own identity and the same for the structural
- * children down to `depth`. Text, bounds, hrefs and generated ids are left out on purpose.
+ * A structural fingerprint: the element's own identity and the set of its structural
+ * children's fingerprints down to `depth` — a set, so a footer with four link columns and
+ * one with five are one footer (repetition is variation, as the elements engine reads it).
+ * Text, bounds, hrefs and generated ids are left out on purpose.
  */
 export function fingerprint(node, depth = FINGERPRINT_DEPTH) {
-  const kids = depth > 0 ? structuralChildren(node).map((c) => fingerprint(c, depth - 1)) : [];
+  const kids = depth > 0
+    ? [...new Set(structuralChildren(node).map((c) => fingerprint(c, depth - 1)))].sort() : [];
   return createHash('sha1').update(`${own(node)}[${kids.join(',')}]`).digest('hex').slice(0, 12);
 }
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { captureFile, capturesDir, runFile } from './capture.mjs';
+import { MIN_WIDTH, captureFile, capturesDir, runFile } from './capture.mjs';
 import { writeJson } from './jobs.mjs';
 import { checkElements, runCheck } from './checks.mjs';
 import { writeEvaluation } from './elements-evaluation.mjs';
@@ -50,7 +50,8 @@ async function addPages(p, pages) {
     records.push({ url, kind: 'page', group, cache: { path: 'x', verified: true } });
     clock += 1;
     const capturedAt = new Date(Date.UTC(2026, 0, 1, 0, clock)).toISOString();
-    await writeFile(captureFile(p, url), JSON.stringify({ minWidth: 300, url, capturedAt, tree }));
+    await writeFile(captureFile(p, url),
+      JSON.stringify({ minWidth: MIN_WIDTH, url, capturedAt, tree }));
   }
   records.push({ url: `${ORIGIN}/empty/x.html`, kind: 'page', group: 'empty', cache: {} });
   await writeInventory(p.step('urls'), records);
@@ -184,7 +185,7 @@ test('check elements: an edited id, a removed page, a wrong sample, a stale file
     await writeFile(file, JSON.stringify(good));
     const url = `${ORIGIN}/blog/a.html`;
     await writeFile(captureFile(p, url), JSON.stringify({
-      minWidth: 300, url, capturedAt: '2027-01-01T00:00:00.000Z', tree: three[0][2],
+      minWidth: MIN_WIDTH, url, capturedAt: '2027-01-01T00:00:00.000Z', tree: three[0][2],
     }));
     assert.deepEqual((await runCheck('elements', p)).reasons,
       ['elements.json predates the store — run elements.mjs']);

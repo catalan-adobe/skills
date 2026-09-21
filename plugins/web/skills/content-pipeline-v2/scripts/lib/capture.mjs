@@ -11,7 +11,9 @@ import { readInventory } from './inventory.mjs';
 import { alive, writeJson } from './jobs.mjs';
 import { pageExpression, parseEval } from './warm.mjs';
 
-export const MIN_WIDTH = 300;
+// A 1280 px viewport puts a four-up grid column and a quarter-width rail at ~290 px; 300
+// missed both and left their content out of the store. 250 sees them; 200 saw nothing more.
+export const MIN_WIDTH = 250;
 export const MAX_CONSECUTIVE_FAILURES = 5;
 export const captureExpression = (minWidth = MIN_WIDTH) => (
   `JSON.stringify(window.__visualTree.captureVisualTree(${minWidth}))`);

@@ -82,8 +82,9 @@ test('captures.md states the store against the cache and the failures', async ()
   assert.equal(run.failed.length, 1);
   await writeCapturesMd(p, { now: () => new Date('2026-01-02T03:04:05Z') });
   const md = await readFile(path.join(capturesDir(p), 'captures.md'), 'utf8');
-  assert.match(md, /Captured 2026-01-02T03:04Z at min-width 300 px/);
-  assert.match(md, /verified cached pages: 2\n- captured at 300 px: 1\n- without a capture: 1/);
+  assert.match(md, new RegExp(`Captured 2026-01-02T03:04Z at min-width ${MIN_WIDTH} px`));
+  assert.match(md,
+    new RegExp(`verified cached pages: 2\\n- captured at ${MIN_WIDTH} px: 1\\n- without`));
   assert.match(md, /failed in the last run: 1\n {2}- https:\/\/site.example\/p2.html — /);
 });
 
@@ -150,7 +151,7 @@ test('startCapture spawns one detached worker, refuses while one runs, and repor
     };
     const first = await startCapture(p, '/skill/capture.mjs', { force: false }, io);
     assert.deepEqual([first.started, first.pid, first.total], [true, 4242, 3]);
-    assert.deepEqual(spawned[0], ['/skill/capture.mjs', '--worker', '--min-width', '300']);
+    assert.deepEqual(spawned[0], ['/skill/capture.mjs', '--worker', '--min-width', '250']);
     const second = await startCapture(p, '/skill/capture.mjs', {}, io);
     assert.equal(second.started, false);
     assert.equal(second.run.state, 'running');
@@ -161,7 +162,7 @@ test('startCapture spawns one detached worker, refuses while one runs, and repor
       { ...io, alive: () => false });
     assert.equal(restarted.started, true);
     assert.deepEqual(spawned[1],
-      ['/skill/capture.mjs', '--worker', '--force', '--min-width', '300']);
+      ['/skill/capture.mjs', '--worker', '--force', '--min-width', '250']);
   });
 
 test('startWorker keeps one run per kind: a chrome run does not block a capture run', async () => {
