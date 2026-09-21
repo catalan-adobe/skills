@@ -1,6 +1,6 @@
 // Read-only dashboard over migration/: status.json (the runner's view of the steps),
 // project.json, setup.json, urls/urls.json (the inventory), chrome/chrome.json,
-// elements/elements.json, REPORT.md. No writes, no deps.
+// elements/elements.json, mapping/inventory.json, REPORT.md. No writes, no deps.
 const BASE = '/migration';
 const ROWS = 200;
 
@@ -216,6 +216,17 @@ function typeLabels(types) {
   }));
 }
 
+/** The mapping's word on a type, as a chip: block <name>, default content, skip, undecided. */
+function kindChip(id) {
+  if (!mappingKinds) return '';
+  const d = mappingKinds.get(id);
+  if (!d) return '';
+  if (d.kind === 'block') return chip(`block ${d.block}`, 'done');
+  if (d.kind === 'default-content') return chip('default content', 'ready');
+  if (d.kind === 'skip') return chip('skip', 'blocked');
+  return chip('undecided', 'waiting-operator');
+}
+
 function elementType(t, label) {
   const shots = t.screenshots?.instances ?? [];
   const crop = shots[0]
@@ -225,7 +236,7 @@ function elementType(t, label) {
     `<a href="${BASE}/elements/${esc(f)}">crop ${i + 2}</a>`)).join(' · ');
   const defects = (t.screenshotError ?? []).map((e) => `<li class="bad">${esc(e)}</li>`).join('');
   return `<article class="variant">
-    <h3>${esc(label)} · ${t.pages} pages (${Math.round(t.support * 100)} %)</h3>
+    <h3>${esc(label)} · ${t.pages} pages (${Math.round(t.support * 100)} %) ${kindChip(t.id)}</h3>
     <p class="small"><code>${esc(t.identity)}</code> · ${esc(t.id)}</p>
     <p class="small">${t.instances} instances · ${t.variants.length} variants · ${
   t.heightRange[0]}–${t.heightRange[1]} px${more ? ` · ${more}` : ''}</p>
@@ -334,8 +345,73 @@ function renderReport(md) {
     : '<p class="muted">No <code>REPORT.md</code> yet.</p>';
 }
 
+/** The block inventory panel: blocks with a crop each, default content, skipped, coverage. */
+function renderBlocks(inv) {
+  const panel = $('#blocks .panel');
+  if (!inv) {
+    panel.innerHTML = '<p class="muted">No <code>mapping/inventory.json</code> yet — '
+      + '<code>mapping.mjs</code> after the elements step; the panel shows once every type is'
+      + ' decided.</p>';
+    return;
+  }
+  const cards = [
+    ['blocks', inv.blocks.length], ['default content types', inv.defaultContent.types.length],
+    ['skipped', inv.skipped.length], ['undecided', inv.undecided.length],
+    ['pages covered', `${inv.coverage.covered} / ${inv.coverage.pages}`],
+  ].map(([label, n]) => `<div class="card"><div class="n">${n}</div>${chip(label)}</div>`);
+  const block = (b) => {
+    const shot = b.screenshots?.[0];
+    const crop = shot ? `<a href="${BASE}/elements/${esc(shot)}"><img class="shot"
+        alt="${esc(b.name)}" src="${BASE}/elements/${esc(shot)}"></a>` : '';
+    const types = b.identities.map((i) => `<code>${esc(i)}</code>`).join(' ');
+    return `<article class="variant">
+    <h3>${esc(b.name)} · ${b.pages} pages</h3>
+    <p class="small">${types}</p>
+    <p class="small">${b.instances} instances · ${b.variants} variants · ${b.medianHeight} px${
+  b.sample ? ` · ${link(b.sample.url)}` : ''}</p>
+    ${b.notes?.length ? `<p class="small">${esc(b.notes.join(' · '))}</p>` : ''}${crop}
+  </article>`;
+  };
+  const dc = inv.defaultContent.types.map((id) => `<code>${esc(typeIndex?.get(id)?.identity
+    ?? id)}</code>`).join(' ');
+  const skipped = inv.skipped.length ? `<h3>Skipped</h3><ul>${inv.skipped.map((s) => (
+    `<li><code>${esc(s.identity)}</code> · ${s.pages} pages${
+      s.notes ? ` — ${esc(s.notes)}` : ''}</li>`)).join('')}</ul>` : '';
+  const open = inv.coverage.uncovered.length ? table(['page', 'open types'],
+    inv.coverage.uncovered.slice(0, 25).map((u) => [link(u.url), u.types.map((id) => (
+      `<code>${esc(typeIndex?.get(id)?.identity ?? id)}</code>`)).join(' ')])) : '';
+  panel.innerHTML = `<p class="small"><a href="${BASE}/mapping/mapping.md">mapping.md</a> ·
+    <a href="${BASE}/mapping/mapping.json">mapping.json</a></p>
+    <div class="cards">${cards.join('')}</div>
+    <h3>Blocks</h3><div class="variants">${inv.blocks.map(block).join('')}</div>
+    <h3>Default content</h3><p class="small">${dc || '<span class="muted">none</span>'} · ${
+  inv.defaultContent.instances} instances on ${inv.defaultContent.pages} pages</p>
+    ${skipped}${open ? `<h3>Pages with an open section</h3>${open}` : ''}`;
+}
+
 let chromeSeen = null;
 let elementsSeen = null;
+let mappingSeen = null;
+let mappingKinds = null;
+/** inventory.json is fetched when the mapping step is done; the kinds then dress the types. */
+async function refreshMapping(status) {
+  const step = status?.steps?.find((s) => s.id === 'mapping');
+  if (!step) return;
+  if (step.state !== 'done') {
+    if (mappingSeen === null) { renderBlocks(null); mappingSeen = 'none'; }
+    return;
+  }
+  if (mappingSeen === status.generatedAt) return;
+  mappingSeen = status.generatedAt;
+  const [inv, mapping] = await Promise.all([
+    json('mapping/inventory.json'), json('mapping/mapping.json'),
+  ]);
+  mappingKinds = mapping ? new Map(Object.entries(mapping.types)) : null;
+  renderBlocks(inv);
+  if (elementsSeen && elementsSeen !== 'none') {
+    renderElements(await json('elements/elements.json'));
+  }
+}
 /** elements.json (large) is fetched like chrome.json: only when the step is done and new. */
 async function refreshElements(status) {
   const step = status?.steps?.find((s) => s.id === 'elements');
@@ -376,6 +452,7 @@ async function refreshLive() {
   renderSteps(status, progress);
   await refreshChrome(status);
   await refreshElements(status);
+  await refreshMapping(status);
   if (records || !$('#inventory .card')) {
     renderInventory(records ?? []);
     renderRedirects(records ?? []);

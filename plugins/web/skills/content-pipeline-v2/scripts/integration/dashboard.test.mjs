@@ -120,9 +120,21 @@ test('the elements panel renders types, the groups table and composition chips',
   await writeFile(path.join(project.dir, 'urls', 'urls.json'), JSON.stringify(
     elements.pages.map((p) => ({ url: p.url, kind: 'page', group: 'blog', cache: { at: 'x' } })),
   ));
+  const mapping = { types: { 't-a': { kind: 'block', block: 'cards', notes: 'two up' },
+    't-b': { kind: 'default-content' } } };
+  await mkdir(path.join(project.dir, 'mapping'), { recursive: true });
+  await writeFile(path.join(project.dir, 'mapping', 'mapping.json'), JSON.stringify(mapping));
+  await writeFile(path.join(project.dir, 'mapping', 'inventory.json'), JSON.stringify({
+    blocks: [{ name: 'cards', types: ['t-a'], identities: ['DIV#.fw.cards'], instances: 3,
+      pages: 3, variants: 1, medianHeight: 100, sample: { url: 'u' }, notes: ['two up'],
+      screenshots: ['screenshots/type-t-a-1.png'] }],
+    defaultContent: { types: ['t-b'], instances: 2, pages: 2 }, skipped: [], undecided: [],
+    orphaned: [], coverage: { pages: 3, covered: 2, uncovered: [{ url: 'x', types: ['t-u'] }] },
+  }));
   await writeFile(project.statusFile, JSON.stringify({
     generatedAt: '2026-01-02T03:04:05Z', cacheServer: { running: false },
-    steps: [{ id: 'elements', state: 'done', tier: 'medium', blockedBy: [], writes: [] }],
+    steps: [{ id: 'elements', state: 'done', tier: 'medium', blockedBy: [], writes: [] },
+      { id: 'mapping', state: 'done', tier: 'medium', blockedBy: [], writes: [] }],
   }));
   const served = await dashboard(project, freePort);
   const S = 'cpv2-test-dash-elements';
@@ -137,19 +149,30 @@ test('the elements panel renders types, the groups table and composition chips',
       badges: [...document.querySelectorAll('#urls td .chip[class*=cover-]')]
         .map((c) => c.textContent),
       filter: document.querySelector('#urls [name=covered]').hidden,
+      kinds: [...document.querySelectorAll('#elements .variant h3 .chip')]
+        .map((c) => c.textContent),
+      blocks: [...document.querySelectorAll('#blocks .variant h3')]
+        .map((h) => h.textContent.trim()),
+      blockCards: [...document.querySelectorAll('#blocks .card .n')].map((n) => n.textContent),
+      openRows: document.querySelectorAll('#blocks table tbody tr').length,
     })`)).stdout));
     let got = await read();
-    for (let i = 0; i < 40 && !got.heads.length; i += 1) {
+    for (let i = 0; i < 40 && !(got.heads.length && got.kinds.length); i += 1) {
       await new Promise((r) => { setTimeout(r, 250); });
       got = await read();
     }
-    assert.deepEqual(got.heads, ['cards · 3 pages (100 %)', 'text · 2 pages (67 %)'],
-      'recurring types only, labels without the shared framework class');
+    assert.deepEqual(got.heads,
+      ['cards · 3 pages (100 %) block cards', 'text · 2 pages (67 %) default content'],
+      'recurring types only, labels without the shared framework class, the kind chip');
     assert.equal(got.groups, 1);
     assert.equal(got.without, true);
     assert.deepEqual(got.chips, ['cards', 'text', 'cards', 'once']);
     assert.deepEqual(got.badges, ['full', 'full', 'none']);
     assert.equal(got.filter, false, 'the coverage filter appears with the inventory');
+    assert.deepEqual(got.kinds, ['block cards', 'default content'], 'the mapping on the types');
+    assert.deepEqual(got.blocks, ['cards · 3 pages']);
+    assert.deepEqual(got.blockCards, ['1', '1', '0', '0', '2 / 3']);
+    assert.equal(got.openRows, 1);
   } finally {
     await pw(cli, S, 'close').catch(() => {});
     await stopDashboard(project);
