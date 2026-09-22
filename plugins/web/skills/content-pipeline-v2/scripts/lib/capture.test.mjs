@@ -205,15 +205,53 @@ test('the prep expression runs before the capture and the page is scrolled back 
   await captureAll(p, { browser, origin: ORIGIN, port: 1, prepare: '(() => "prep")()' },
     { urls: [page(1)] });
   assert.equal(evals.length, 2);
-  assert.match(evals[0], /^\(async \(\) => \{ await \(\(\(\) => "prep"\)\(\)\); window\.scrollTo/,
+  assert.match(evals[0], /^\(async \(\) => \{ await \(\(\(\) => "prep"\)\(\)\);.*scrollTo\(0, 0\)/,
     'the prep expression is awaited, then the page goes back to the top — not the other way');
   const order = [];
-  const window = { scrollTo: (x, y) => order.push(`scroll ${y}`) };
+  const window = {
+    scrollTo: (x, y) => order.push(`scroll ${y}`), innerWidth: 1280, innerHeight: 900,
+  };
+  const box = (top, height, opacity, children = [1]) => ({
+    children, opacity, contains: () => false,
+    getBoundingClientRect: () => ({ left: 0, right: 1280, top, bottom: top + height,
+      width: 1280, height }),
+  });
+  globalThis.getComputedStyle = (e) => ({ opacity: e.opacity, position: e.position ?? 'static' });
+  // A page still building itself: the count grows for two samples; a large block sits at
+  // opacity 0 with nothing drawn over it — a hole — until one sample later it fades in.
+  let elements = 10;
+  let fadeIn = 2;
+  const hole = box(0, 2000, '0');
+  const document = {
+    getElementsByTagName: () => {
+      elements += elements < 12 ? 1 : 0;
+      order.push(`sample ${elements}`);
+      return { length: elements };
+    },
+    querySelectorAll: () => {
+      fadeIn -= fadeIn ? 1 : 0;
+      if (!fadeIn) hole.opacity = '1';
+      return [hole];
+    },
+    documentElement: { scrollHeight: 3000 },
+  };
   const slow = '(async () => { await new Promise((r) => setTimeout(r, 20));'
     + ' order.push("prep") })()';
   const expr = evals[0].replace('(() => "prep")()', slow);
-  assert.equal(await new Function('window', 'order', `return ${expr}`)(window, order), 'top');
-  assert.deepEqual(order, ['prep', 'scroll 0'], 'the scroll to the top waits for the prep');
+  const run = new Function('window', 'document', 'order', `return ${expr}`);
+  assert.equal(await run(window, document, order), 'top');
+  assert.deepEqual(order,
+    ['prep', 'sample 11', 'sample 12', 'sample 12', 'sample 12', 'scroll 0'],
+    'the prep first, then samples until the count holds and the hole has filled, then the top');
+  // An inactive slide: opacity 0 under a visible sibling of the same size. Not a hole.
+  order.length = 0;
+  elements = 12;
+  const parked = { ...box(0, 600, '0'), position: 'fixed' };
+  document.querySelectorAll = () => [box(0, 700, '0'), box(0, 700, '1'), parked];
+  assert.equal(await run(window, document, order), 'top');
+  assert.deepEqual(order, ['prep', 'sample 12', 'sample 12', 'scroll 0'],
+    'a covered slide and a parked fixed panel: two agreeing samples and go');
+  delete globalThis.getComputedStyle;
 });
 
 test('--min-width reaches the worker and the capture; the capture records it', async () => {

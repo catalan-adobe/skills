@@ -84,13 +84,49 @@ export async function bundlePath(project) {
 
 /** The prep step's recipe as one expression: hide rules and scroll fix; null without one. */
 /**
- * The prep expression, then the top of the page: the expression scrolls through the page
- * (lazy content) and ends at the bottom, and it is asynchronous — a measurement taken
- * before it settles, or with the page left at the bottom, records a sticky nav where it
- * stuck. One expression for `playwright-cli eval`, awaited by the browser.
+ * The page is settled when samples this far apart agree and no hole is left; give up after
+ * this long. A hole: a block in the flow covering this share of the viewport, at opacity
+ * 0, with children, and nothing visible drawn over it — content on its way in (a fade gated
+ * on a script). An inactive slide sits under a visible sibling; a parked chat window or
+ * lightbox is positioned out of the flow; neither is a hole.
+ */
+export const SETTLE_SAMPLE_MS = 250;
+export const SETTLE_MAX_MS = 8000;
+export const PENDING_SHARE = 0.25;
+export const COVERED_SHARE = 0.5;
+
+/**
+ * The prep expression, then a settled page, then its top. The expression scrolls through
+ * the page (lazy content) and ends at the bottom, and it is asynchronous — a measurement
+ * taken before it finishes, or with the page left at the bottom, records a sticky nav where
+ * it stuck. Scripts still building the page after that are given time: the wait ends when
+ * element count and height agree across two samples and no hole is left, or at the bound.
+ * One expression for `playwright-cli eval`, awaited by the browser.
  */
 export const preparedAtTop = (prepare) => (
-  `(async () => { await (${prepare}); window.scrollTo(0, 0); return "top"; })()`);
+  `(async () => { await (${prepare});`
+  + ` const viewport = window.innerWidth * window.innerHeight * ${PENDING_SHARE};`
+  + ' const rect = (e) => e.getBoundingClientRect();'
+  + ' const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))'
+  + ' * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));'
+  + ' const all = () => [...document.querySelectorAll("*")];'
+  + ' const holes = () => { const els = all();'
+  + ' const dark = els.filter((e) => { const cs = getComputedStyle(e);'
+  + ' return e.children.length && cs.opacity === "0"'
+  + ' && cs.position !== "fixed" && cs.position !== "absolute"'
+  + ' && rect(e).width * rect(e).height >= viewport; });'
+  + ' return dark.filter((e) => { const r = rect(e); const area = r.width * r.height;'
+  + ' return !els.some((o) => o !== e && !e.contains(o) && !o.contains(e)'
+  + ' && getComputedStyle(o).opacity !== "0"'
+  + ` && overlap(r, rect(o)) >= area * ${COVERED_SHARE}); });`
+  + ' };'
+  + ' const sample = () => `${document.getElementsByTagName("*").length}:`'
+  + ' + document.documentElement.scrollHeight;'
+  + ` const until = Date.now() + ${SETTLE_MAX_MS}; let last = sample();`
+  + ' while (Date.now() < until) {'
+  + ` await new Promise((r) => setTimeout(r, ${SETTLE_SAMPLE_MS}));`
+  + ' const now = sample(); if (now === last && holes().length === 0) break; last = now; }'
+  + ' window.scrollTo(0, 0); return "top"; })()');
 
 export async function prepExpression(project) {
   const recipe = await readFile(path.join(project.step('prep'), 'page-prep.json'), 'utf8')
