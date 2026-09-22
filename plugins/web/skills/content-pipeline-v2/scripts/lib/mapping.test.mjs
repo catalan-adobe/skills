@@ -157,6 +157,14 @@ test('a container whose instances are all leaves is nothing to decide, and keeps
     assert.ok(stale.coverage.uncovered.some((u) => u.url.endsWith('/d')),
       'a stale decision on a leaf covers nothing');
     assert.deepEqual(stale.orphaned, ['t-col']);
+    const withEmpty = {
+      ...leafy, pages: [...leafy.pages, { url: 'https://x.example/e', sections: [] }],
+    };
+    const emptyInv = deriveInventory(withEmpty,
+      { types: { 't-text': { kind: 'default-content' } } });
+    assert.deepEqual(emptyInv.coverage.uncovered.find((u) => u.url.endsWith('/e')),
+      { url: 'https://x.example/e', types: [], leaves: [], empty: true }, 'an empty page is open');
+    assert.match(renderMappingMd(emptyInv, withEmpty), /x\.example\/e \| no section at all/);
     const md = renderMappingMd(inv, leafy);
     assert.match(md, /## Container leaves\n\n[^\n]+\n\n- `DIV#\.column` \(t-col\): 2 pages/);
     assert.match(md, /\| https:\/\/x\.example\/d \|  \| `DIV#\.column` \|/);

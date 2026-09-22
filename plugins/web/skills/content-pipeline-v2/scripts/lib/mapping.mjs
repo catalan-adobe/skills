@@ -127,9 +127,11 @@ export function deriveInventory(elements, mapping, containers = new Set()) {
   const orphaned = Object.keys(decisions).filter((id) => !mappable.has(id));
   // Only a decision on a type still to decide covers: a leaf's or an orphan's does not.
   const covering = (id) => mappable.has(id) && ['block', 'default-content'].includes(kindOf(id));
+  // A page with no section at all is not covered: nothing was seen, nothing was mapped.
   const uncovered = elements.pages.flatMap((p) => {
     const open = p.sections.filter((s) => !s.within?.length && !covering(s.type))
       .map((s) => s.type);
+    if (!p.sections.length) return [{ url: p.url, types: [], leaves: [], empty: true }];
     if (!open.length) return [];
     const distinct = [...new Set(open)];
     return [{
@@ -213,7 +215,8 @@ export function renderMappingMd(inventory, elements) {
     out.push('', '| page | open types | container leaves |', '|---|---|---|');
     const names = (ids) => ids.map((id) => `\`${identity(id)}\``).join(', ');
     for (const u of inventory.coverage.uncovered.slice(0, 25)) {
-      out.push(`| ${u.url} | ${names(u.types)} | ${names(u.leaves ?? [])} |`);
+      out.push(`| ${u.url} | ${u.empty ? 'no section at all (empty capture)' : names(u.types)} | ${
+        names(u.leaves ?? [])} |`);
     }
     const rest = inventory.coverage.uncovered.length - 25;
     if (rest > 0) out.push(`| … and ${rest} more | | |`);

@@ -86,6 +86,9 @@ test('captures.md states the store against the cache and the failures', async ()
   assert.match(md,
     new RegExp(`verified cached pages: 2\\n- captured at ${MIN_WIDTH} px: 1\\n- without`));
   assert.match(md, /failed in the last run: 1\n {2}- https:\/\/site.example\/p2.html — /);
+  const report = await readFile(p.report, 'utf8');
+  assert.match(report, /## capture\n\n1 of 2 verified cached pages captured at min-width/);
+  assert.match(report, /1 failed in the last run: https:\/\/site.example\/p2.html\./);
 });
 
 test('captureAll stores one capture per page through the proxy and records progress', async () => {

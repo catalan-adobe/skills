@@ -24,8 +24,8 @@ Decomposition only; mapping a type to an EDS block is the mapping expert's work.
    under `_example`). **Done when every recurring type's crops show one thing an author
    placed.** A type whose crops show unrelated things stacked — a column, a row, a grid, a
    background band — is a **container** (`containers`), whatever its class says; wrappers
-   nest, each one peeled shows the next; peel until none is left (an AEM site: three to
-   six). A wrapper that delivers another document's content — its class or id says
+   nest, each one peeled shows the next; peel until none is left (there is no limit on
+   reruns). A wrapper that delivers another document's content — its class or id says
    fragment, xf, include, embed — is a **fragment** (`fragments`); two identities of one
    element → `merge` (type ids); a header or footer leak → `chrome`; noise → `reject`
    (the selector as printed in the check or type sample, a node under it counts; `reject`

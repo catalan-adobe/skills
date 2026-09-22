@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { proxiedUrl } from './cache-server.mjs';
 import { readInventory } from './inventory.mjs';
 import { alive, writeJson } from './jobs.mjs';
+import { upsertSection } from './project.mjs';
 import { pageExpression, parseEval } from './warm.mjs';
 
 // A 1280 px viewport puts a four-up grid column and a quarter-width rail at ~290 px; 300
@@ -203,11 +204,15 @@ export async function captureAll(project,
   return run;
 }
 
-/** `capture/captures.md`: the store against the cache, for the operator. */
+/**
+ * `capture/captures.md`: the store against the cache, for the operator — and the
+ * `## capture` report section, as the other workers write theirs.
+ */
 export async function writeCapturesMd(project, { minWidth = MIN_WIDTH, now = () => new Date() }
   = {}) {
   const status = await storeStatus(project, minWidth);
   const run = await readRun(project);
+  const failed = run?.failed ?? [];
   const lines = [
     '# Visual-tree store', '',
     `Captured ${now().toISOString().slice(0, 16)}Z at min-width ${minWidth} px.`, '',
@@ -215,10 +220,17 @@ export async function writeCapturesMd(project, { minWidth = MIN_WIDTH, now = () 
     `- captured at ${minWidth} px: ${status.captured}`,
     `- without a capture: ${status.missing.length}`,
     `- captured at another width (stale): ${status.stale.length}`,
-    `- failed in the last run: ${run?.failed?.length ?? 0}`,
+    `- failed in the last run: ${failed.length}`,
   ];
-  for (const f of run?.failed ?? []) lines.push(`  - ${f.url} — ${f.error}`);
+  for (const f of failed) lines.push(`  - ${f.url} — ${f.error}`);
   await writeFile(capturesMd(project), `${lines.join('\n')}\n`);
+  await upsertSection(project, 'capture', [
+    `${status.captured} of ${status.verified} verified cached pages captured at min-width`
+      + ` ${minWidth} px into the visual-tree store (capture/); ${status.missing.length} without`
+      + ` a capture, ${status.stale.length} at another width.`,
+    failed.length ? `${failed.length} failed in the last run: ${failed.map((f) => f.url)
+      .join(', ')}.` : 'No failure in the last run.',
+  ].join('\n'));
   return status;
 }
 
