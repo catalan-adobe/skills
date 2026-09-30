@@ -16,3 +16,4 @@ icons-*/
 skills/*/tile.json
 execution/
 .playwright-cli/
+.claude/rules/kite.md
