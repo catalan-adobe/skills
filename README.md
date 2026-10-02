@@ -1,3 +1,4 @@
+<!-- Skills repository README -->
 # catalan-adobe Skills
 
 Claude Code skills marketplace by [@catalan-adobe](https://github.com/catalan-adobe).
