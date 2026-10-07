@@ -3,6 +3,7 @@
 // plan and the operator's decisions. One table, `pages/pages.json`; the layer hides it.
 import { open as openMigration } from './migration.mjs';
 import { HEAD, register } from './schema.mjs';
+import { read as readSelection } from './selections.mjs';
 import { id as makeId, openStore } from './store.mjs';
 
 export const FILE = 'pages/pages.json';
@@ -56,7 +57,7 @@ export const RECORD = {
   properties: {
     id: idPattern('pag'),
     url: { type: 'string', pattern: '^https?://' },
-    group: { type: 'string' },
+    group: { type: ['string', 'null'] },
     discovered: {
       type: 'object',
       required: ['from', 'at'],
@@ -163,11 +164,11 @@ export function groupOf(url, scope) {
   return segments.length > 1 ? segments[0] : '';
 }
 
-/** A fresh record for a URL just discovered. */
+/** A fresh record for a URL just discovered; off-scope pages have no group. */
 export function record(url, { from, source, at }, scope) {
   const href = canonical(url);
   return {
-    id: pageId(href), url: href, group: groupOf(href, scope) ?? '',
+    id: pageId(href), url: href, group: groupOf(href, scope),
     discovered: { from, at, ...(source ? { source } : {}) },
     http: null, redirect: null, finalUrl: null, kind: 'unknown',
     verdict: { status: 'undecided', reasons: [] },
@@ -215,7 +216,6 @@ export function verdict(rec, reasons, { decision, plan, selected, at }) {
   }
   if (all.some((r) => r.kind === 'exclude')) return { status: 'out', reasons: all };
   if (plan.selection) {
-    if (!selected) return { status: 'undecided', reasons: all };
     if (selected.has(rec.id)) return { status: 'in', reasons: all };
     all.push(reason('over-budget', 'exclude', 'plan', at, `not in selection ${plan.selection}`));
     return { status: 'out', reasons: all };
@@ -232,7 +232,8 @@ export function summarise(pages) {
     for (const r of p.verdict.reasons) reasons.set(r.code, (reasons.get(r.code) ?? 0) + 1);
   }
   const list = [...reasons].sort((a, b) => b[1] - a[1]).map(([c, k]) => `${k} ${c}`).join(', ');
-  return `${n} URLs in ${new Set(pages.map((p) => p.group)).size} groups: `
+  const groups = new Set(pages.filter((p) => p.group !== null).map((p) => p.group));
+  return `${n} URLs in ${groups.size} groups: `
     + `${by((p) => p.verdict.status === 'in')} in, ${by((p) => p.verdict.status === 'out')} out, `
     + `${by((p) => p.verdict.status === 'undecided')} undecided; `
     + `${by((p) => p.cache)} cached, ${by((p) => p.composition)} composed`
@@ -252,12 +253,20 @@ export async function decisions(cwd) {
 
 /**
  * Writes the table from `pages`, recomputing every verdict against the migration's scope
- * and plan, the operator's decisions and the plan's selection (its ids, when named).
+ * and plan, the operator's decisions and the plan's selection when one is named.
  */
-export async function write(cwd, pages, { selected = null } = {}) {
+export async function write(cwd, pages) {
   const store = openStore(cwd);
   const migration = await openMigration(cwd);
   const decided = await decisions(cwd);
+  let selected = null;
+  if (migration.plan.selection) {
+    const sel = await readSelection(cwd, migration.plan.selection);
+    if (!sel) {
+      throw new Error(`plan.selection names ${migration.plan.selection}, which does not exist`);
+    }
+    selected = new Set(sel.pages);
+  }
   const at = store.now().toISOString();
   const finalUrls = new Map();
   for (const p of pages) {
@@ -277,11 +286,14 @@ export async function write(cwd, pages, { selected = null } = {}) {
   return store.write(FILE, { schema: SCHEMA, summary: summarise(judged), pages: judged });
 }
 
+/** Recomputes every verdict (after a plan change, a new selection, a decision). */
+export const rejudge = async (cwd) => write(cwd, (await read(cwd)).pages);
+
 /**
  * Adds or updates records: by id, a patch merges over the existing record; a new URL
  * becomes a record. Returns the written table.
  */
-export async function upsert(cwd, entries, options = {}) {
+export async function upsert(cwd, entries) {
   const migration = await openMigration(cwd);
   const table = await read(cwd);
   const byId = new Map(table.pages.map((p) => [p.id, p]));
@@ -295,14 +307,14 @@ export async function upsert(cwd, entries, options = {}) {
     const { url: _u, discovered: _d, id: _i, verdict: _v, ...patch } = e;
     byId.set(id, { ...current, ...patch });
   }
-  return write(cwd, [...byId.values()], options);
+  return write(cwd, [...byId.values()]);
 }
 
 /**
  * Replaces one unit's reasons on some pages: `by` names the unit, `flags` maps page id →
  * reasons it found (code, kind, detail); pages not in `flags` lose that unit's reasons.
  */
-export async function setReasons(cwd, by, flags, options = {}) {
+export async function setReasons(cwd, by, flags) {
   const table = await read(cwd);
   const at = openStore(cwd).now().toISOString();
   const pages = table.pages.map((p) => ({
@@ -315,7 +327,7 @@ export async function setReasons(cwd, by, flags, options = {}) {
       ],
     },
   }));
-  return write(cwd, pages, options);
+  return write(cwd, pages);
 }
 
 /** One record, by id or URL; null when unknown. */
@@ -349,5 +361,5 @@ export async function decide(cwd, idOrUrl, status, why) {
     schema: DECISIONS_SCHEMA,
     pages: { ...current, [page.id]: { status, reason: why, at: store.now().toISOString() } },
   });
-  return write(cwd, (await read(cwd)).pages);
+  return rejudge(cwd);
 }

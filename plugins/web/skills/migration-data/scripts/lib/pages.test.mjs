@@ -6,8 +6,9 @@ import path from 'node:path';
 import { init, plan } from './migration.mjs';
 import {
   DECISIONS_SCHEMA, FILE, REASONS, REASON_CODES, SCHEMA, canonical, decide, get, groupOf, list,
-  pageId, read, setReasons, summarise, upsert, verdict,
+  pageId, read, rejudge, setReasons, summarise, upsert, verdict,
 } from './pages.mjs';
+import { create as createSelection } from './selections.mjs';
 import { classOf, schemaOf } from './schema.mjs';
 import { openStore } from './store.mjs';
 
@@ -81,6 +82,7 @@ test('upsert discovers, merges facts by id, and judges every record', async () =
     [['http-error', 'HTTP 500']]);
   assert.equal(after[`${ORIGIN}blogs/one.html`].verdict.status, 'in');
   assert.equal(after[`${ORIGIN}blogs/one.html`].discovered.from, 'sitemap', 'discovery is kept');
+  assert.equal(t['https://other.example/x'].group, null, 'off scope: no group');
   assert.match(table.summary, /^5 URLs in 3 groups: 4 in, 1 out, 0 undecided; 0 cached/);
   assert.match((await read(cwd)).summary, /2 cached, 0 composed\. Reasons: .*1 off-scope/);
 });
@@ -114,10 +116,9 @@ test('the plan decides: no plan in, a budget undecided, a selection in or over',
   assert.deepEqual((await read(cwd)).pages.map((p) => p.verdict.status),
     ['undecided', 'undecided']);
   await plan(cwd, { selection: 'migrate' });
-  const unknown = await upsert(cwd, []);
-  assert.deepEqual(unknown.pages.map((p) => p.verdict.status), ['undecided', 'undecided'],
-    'a selection named but not given: nothing to judge with');
-  const chosen = await upsert(cwd, [], { selected: new Set([pageId(`${ORIGIN}a`)]) });
+  await assert.rejects(rejudge(cwd), /plan\.selection names migrate, which does not exist/);
+  await createSelection(cwd, 'migrate', [pageId(`${ORIGIN}a`)], { criteria: { count: 1 } });
+  const chosen = await rejudge(cwd);
   const t = byUrl(chosen);
   assert.equal(t[`${ORIGIN}a`].verdict.status, 'in');
   assert.deepEqual(t[`${ORIGIN}b`].verdict.reasons.map((r) => [r.code, r.by, r.detail]),
@@ -148,7 +149,8 @@ test('the operator decides a page, with a reason, and wins; get and list answer 
     assert.equal((await get(cwd, pageId(`${ORIGIN}legal`))).url, `${ORIGIN}legal`);
     assert.equal(await get(cwd, `${ORIGIN}zzz`), null);
     assert.deepEqual((await list(cwd, { status: 'out' })).map((p) => p.url), [`${ORIGIN}legal`]);
-    assert.deepEqual((await list(cwd, { group: '' })).length, 2);
+    assert.deepEqual((await list(cwd, { group: '' })).length, 1);
+    assert.deepEqual((await list(cwd, { group: null })).length, 1, 'the off-scope one');
     assert.equal(summarise([]),
       '0 URLs in 0 groups: 0 in, 0 out, 0 undecided; 0 cached, 0 composed.');
     assert.equal(verdict({ id: 'pag-x' }, [], { plan: { pages: null, selection: null } }).status,
