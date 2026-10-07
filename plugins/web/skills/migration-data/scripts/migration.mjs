@@ -3,9 +3,16 @@
 // --text for people; errors on stderr, exit 1. Run from the folder holding migration/.
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import * as elements from './lib/elements.mjs';
+import * as inventory from './lib/inventory.mjs';
 import * as migration from './lib/migration.mjs';
+import * as notes from './lib/notes.mjs';
+import * as pages from './lib/pages.mjs';
 import * as runs from './lib/runs.mjs';
+import * as selections from './lib/selections.mjs';
 import * as state from './lib/state.mjs';
+import * as views from './lib/views.mjs';
+import * as website from './lib/website.mjs';
 
 export const COMMANDS = [
   { name: 'init', usage: '--origin <url> [--scope <url>] [--pages <n>] [--target-repo <path>]'
@@ -17,13 +24,31 @@ export const COMMANDS = [
     help: 'the operator\'s yes at a gate: selections for cache, bare for the others' },
   { name: 'runs', usage: '[--step <id>]', help: 'every run, oldest first' },
   { name: 'state', usage: '[--text]', help: 'every step\'s state, computed and written' },
+  { name: 'pages', usage: '[--group <g>] [--status in|out|undecided] [--reason <code>]'
+    + ' [--cached] [--uncached] [--fragment <frg-id>] [--text]',
+    help: 'the page table, filtered; --text as a list' },
+  { name: 'page', usage: '<id-or-url>', help: 'one page record' },
+  { name: 'decide-page', usage: '<id-or-url> in|out <reason...>',
+    help: 'the operator\'s word on a page' },
+  { name: 'selections', usage: '', help: 'every selection' },
+  { name: 'website', usage: '', help: 'the website summary, refreshed from the table' },
+  { name: 'types', usage: '[--undecided]', help: 'the element types, or the ones to decide' },
+  { name: 'decide-type', usage: '<typ-id> <kind> [<name-or-style>] [--notes <text>]',
+    help: 'what a type is: section|block|default-content|fragment|wrapper|skip' },
+  { name: 'inventory', usage: '', help: 'the EDS reading of the site, derived and written' },
+  { name: 'note', usage: '<step> <author> <text...> [--page <pag-id>]', help: 'add a note' },
+  { name: 'notes', usage: '[--step <id>]', help: 'the notes index' },
+  { name: 'report', usage: '', help: 'render views/report.md' },
 ];
 
 const FLAGS = {
   init: ['--origin', '--scope', '--pages', '--target-repo', '--skills-repo', '--skills-ref'],
   show: [], plan: ['--pages', '--selection'], approve: [], runs: ['--step'], state: ['--text'],
+  pages: ['--group', '--status', '--reason', '--cached', '--uncached', '--fragment', '--text'],
+  page: [], 'decide-page': [], selections: [], website: [], types: ['--undecided'],
+  'decide-type': ['--notes'], inventory: [], note: ['--page'], notes: ['--step'], report: [],
 };
-const BOOLEAN = new Set(['--text']);
+const BOOLEAN = new Set(['--text', '--cached', '--uncached', '--undecided']);
 
 export function parse(argv) {
   const [name, ...rest] = argv;
@@ -85,6 +110,64 @@ export async function main(argv, cwd = process.cwd()) {
       const written = await state.write(cwd);
       return flags['--text'] ? state.asText(written) : written;
     }
+    case 'pages': {
+      const list = await pages.list(cwd, {
+        group: flags['--group'], status: flags['--status'], reason: flags['--reason'],
+        cached: flags['--cached'] ? true : flags['--uncached'] ? false : undefined,
+        fragment: flags['--fragment'],
+      });
+      return flags['--text']
+        ? list.map((p) => `${p.verdict.status.padEnd(9)} ${p.kind.padEnd(11)} ${p.url}`).join('\n')
+          || 'no page matches'
+        : list;
+    }
+    case 'page': {
+      const page = positional[0] && await pages.get(cwd, positional[0]);
+      if (!page) throw new Error(`no page ${positional[0] ?? ''}\n${usage('page')}`);
+      return page;
+    }
+    case 'decide-page': {
+      const [which, status, ...why] = positional;
+      if (!which || !['in', 'out'].includes(status) || !why.length) {
+        throw new Error(`decide-page needs a page, in or out, and the reason\n${
+          usage('decide-page')}`);
+      }
+      return pages.decide(cwd, which, status, why.join(' '));
+    }
+    case 'selections':
+      return selections.list(cwd);
+    case 'website':
+      return website.refresh(cwd);
+    case 'types': {
+      if (flags['--undecided']) return elements.undecided(cwd);
+      const types = await elements.readTypes(cwd);
+      if (!types) throw new Error('no elements/types.json yet; a decomposition method writes it');
+      return types;
+    }
+    case 'decide-type': {
+      const [id, kind, value] = positional;
+      if (!id || !kind) {
+        throw new Error(`decide-type needs a type and a kind\n${usage('decide-type')}`);
+      }
+      const field = { block: 'block', fragment: 'fragment', section: 'style' }[kind];
+      const what = { kind, ...(field && value !== undefined ? { [field]: value } : {}),
+        ...(kind === 'section' && value === undefined ? { style: null } : {}),
+        ...(flags['--notes'] ? { notes: flags['--notes'] } : {}) };
+      return elements.decide(cwd, id, what);
+    }
+    case 'inventory':
+      return inventory.write(cwd);
+    case 'note': {
+      const [step, author, ...text] = positional;
+      if (!step || !author || !text.length) {
+        throw new Error(`note needs a step, an author and text\n${usage('note')}`);
+      }
+      return notes.add(cwd, { step, author, body: text.join(' '), page: flags['--page'] });
+    }
+    case 'notes':
+      return notes.list(cwd, { step: flags['--step'] });
+    case 'report':
+      return views.writeReport(cwd);
     default:
       throw new Error(`usage:\n${usage()}`);
   }

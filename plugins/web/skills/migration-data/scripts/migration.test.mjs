@@ -63,6 +63,55 @@ test('the CLI drives a migration end to end: init, plan, approve, runs, state', 
   assert.deepEqual(await main(['show'], cwd), await cli(cwd, 'show'), 'main is the CLI');
 });
 
+test('the CLI reaches every unit: pages, decisions, website, types, notes, report', async () => {
+  const cwd = await fresh();
+  await cli(cwd, 'init', '--origin', 'https://a.example/');
+  const { upsert } = await import('./lib/pages.mjs');
+  await upsert(cwd, [
+    { url: 'https://a.example/x', discovered: { from: 'list', at: '2026-09-22T10:00:00Z' },
+      kind: 'page' },
+    { url: 'https://a.example/d.pdf', discovered: { from: 'list', at: '2026-09-22T10:00:00Z' },
+      kind: 'binary' },
+  ]);
+  assert.equal((await cli(cwd, 'pages')).length, 2);
+  assert.equal((await cli(cwd, 'pages', '--status', 'out')).length, 1);
+  assert.match(await cli(cwd, 'pages', '--text', '--status', 'in'),
+    /^in {8}page {8}https:\/\/a\.example\/x\n$/);
+  assert.equal(await cli(cwd, 'pages', '--text', '--reason', 'empty'), 'no page matches\n');
+  assert.equal((await cli(cwd, 'page', 'https://a.example/x')).kind, 'page');
+  const missing = await cli(cwd, 'page', 'https://a.example/zz').catch((e) => e);
+  assert.match(missing.stderr, /no page https:\/\/a\.example\/zz/);
+  const decided = await cli(cwd, 'decide-page', 'https://a.example/d.pdf', 'in',
+    'migrated', 'as', 'an', 'asset');
+  assert.equal(decided.pages.find((p) => p.kind === 'binary').verdict.status, 'in');
+  const badDecision = await cli(cwd, 'decide-page', 'https://a.example/x', 'maybe', 'why')
+    .catch((e) => e);
+  assert.match(badDecision.stderr, /decide-page needs a page, in or out, and the reason/);
+  assert.deepEqual(await cli(cwd, 'selections'), []);
+  assert.match((await cli(cwd, 'website')).summary, /2 URLs in scope/);
+  const noTypes = await cli(cwd, 'types').catch((e) => e);
+  assert.match(noTypes.stderr, /no elements\/types\.json yet/);
+  const { writeTypes, typeId } = await import('./lib/elements.mjs');
+  await writeTypes(cwd, { method: { name: 'm', at: '2026-09-22T10:00:00Z' }, types: [{
+    identity: 'DIV#.hero', pages: 2, instances: 2, recurring: true, variants: [],
+    sample: { page: 'pag-000000000001', selector: '.hero' } }] });
+  assert.deepEqual(await cli(cwd, 'types', '--undecided'), [typeId('DIV#.hero')]);
+  const d = await cli(cwd, 'decide-type', typeId('DIV#.hero'), 'block', 'hero',
+    '--notes', 'CTA optional');
+  assert.deepEqual(d.types[typeId('DIV#.hero')],
+    { kind: 'block', block: 'hero', notes: 'CTA optional' });
+  const s = await cli(cwd, 'decide-type', typeId('DIV#.hero'), 'section');
+  assert.deepEqual(s.types[typeId('DIV#.hero')], { kind: 'section', style: null });
+  assert.equal((await cli(cwd, 'inventory')).sections.length, 1);
+  const n = await cli(cwd, 'note', 'elements', 'agent', 'peeled', 'the', 'wrappers');
+  assert.equal(n.summary, 'peeled the wrappers');
+  assert.equal((await cli(cwd, 'notes', '--step', 'elements')).length, 1);
+  const r = await cli(cwd, 'report');
+  assert.equal(r.file, 'views/report.md');
+  const text = await cli(cwd, 'state', '--text');
+  assert.match(text, /^step/);
+});
+
 test('invariant: every registered schema has a known class; files name only registered ones',
   () => {
     for (const ref of registered()) {
