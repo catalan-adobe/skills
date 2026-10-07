@@ -1,7 +1,8 @@
 // The website as a whole: a summary of what is known about the source (derived from the
 // page table), how to open one of its pages (a decision: the browser recipe and the
-// overlays), and its chrome variants (derived: definitions, not page lists — a page says
-// which variants it carries; "pages with variant X" is a query).
+// overlays), and its shared documents — the fragments: header and footer placed by the
+// template, banners embedded in pages (derived: definitions, not page lists — a page says
+// which fragments it uses; "pages using fragment X" is a query).
 import { open as openMigration } from './migration.mjs';
 import { list as listPages, read as readTable } from './pages.mjs';
 import { HEAD, register } from './schema.mjs';
@@ -11,10 +12,10 @@ export const WEBSITE_FILE = 'website/website.json';
 export const WEBSITE_SCHEMA = 'website/website@1';
 export const ACCESS_FILE = 'website/access.json';
 export const ACCESS_SCHEMA = 'website/access@1';
-export const CHROME_FILE = 'website/chrome.json';
-export const CHROME_SCHEMA = 'website/chrome@1';
+export const FRAGMENTS_FILE = 'website/fragments.json';
+export const FRAGMENTS_SCHEMA = 'website/fragments@1';
 export const OVERLAY_ACTIONS = ['hide', 'click', 'remove'];
-export const CHROME_PARTS = ['header', 'footer'];
+export const PLACEMENTS = ['template', 'inline'];
 
 const idPattern = (prefix) => ({ type: 'string', pattern: `^${prefix}-[0-9a-f]{12}$` });
 const count = { type: 'integer', minimum: 0 };
@@ -95,9 +96,16 @@ register('website/access', 1, 'decision', {
   },
 });
 
-register('website/chrome', 1, 'derived', {
+/**
+ * The shared documents of the site. A fragment placed by the template (`template`) has a
+ * `part`: `header`, `footer`, or a named other; one header is one document however many
+ * bands compose it — two header fragments are two designs, never two bands of one. A
+ * fragment embedded in pages (`inline`) is placed by a fragment block where the page
+ * wants it. Each fragment has its own composition under `fragments/<id>/`.
+ */
+register('website/fragments', 1, 'derived', {
   type: 'object',
-  required: ['schema', 'summary', 'method', 'variants', 'rejected'],
+  required: ['schema', 'summary', 'method', 'fragments', 'rejected'],
   additionalProperties: false,
   properties: {
     ...HEAD,
@@ -111,21 +119,41 @@ register('website/chrome', 1, 'derived', {
         at: { type: 'string', format: 'date-time' }, inputs: { type: 'string' },
       },
     },
-    variants: {
+    fragments: {
       type: 'array',
       items: {
-        type: 'object',
-        required: ['id', 'part', 'selectors', 'optional', 'pages'],
-        additionalProperties: false,
-        properties: {
-          id: idPattern('chr'),
-          part: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' },
-          label: { type: 'string' },
-          selectors: { type: 'array', items: { type: 'string' }, minItems: 1 },
-          optional: { type: 'array', items: { type: 'string' } },
-          pages: count,
-          evidence: { type: 'array', items: { type: 'string' } },
-        },
+        oneOf: [
+          {
+            type: 'object',
+            required: ['id', 'placement', 'part', 'selectors', 'optional', 'pages'],
+            additionalProperties: false,
+            properties: {
+              id: idPattern('frg'),
+              placement: { const: 'template' },
+              part: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' },
+              label: { type: 'string' },
+              selectors: { type: 'array', items: { type: 'string' }, minItems: 1 },
+              optional: { type: 'array', items: { type: 'string' } },
+              pages: count,
+              evidence: { type: 'array', items: { type: 'string' } },
+            },
+          },
+          {
+            type: 'object',
+            required: ['id', 'placement', 'name', 'selectors', 'pages'],
+            additionalProperties: false,
+            properties: {
+              id: idPattern('frg'),
+              placement: { const: 'inline' },
+              name: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' },
+              label: { type: 'string' },
+              selectors: { type: 'array', items: { type: 'string' }, minItems: 1 },
+              type: idPattern('typ'),
+              pages: count,
+              evidence: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        ],
       },
     },
     rejected: {
@@ -140,8 +168,8 @@ register('website/chrome', 1, 'derived', {
   },
 });
 
-/** A chrome variant's id: of its part and its first member selector. */
-export const chromeId = (part, selectors) => makeId('chr', `${part}|${selectors[0]}`);
+/** A fragment's id: a template one of its part, an inline one of its name. */
+export const fragmentId = (placement, partOrName) => makeId('frg', `${placement}|${partOrName}`);
 
 /**
  * Rewrites website.json from the migration and the page table: discovery sources, counts
@@ -204,22 +232,34 @@ export async function writeAccess(cwd, {
 export const readAccess = (cwd) => openStore(cwd).read(ACCESS_FILE, ACCESS_SCHEMA);
 
 /**
- * The chrome variants a site has — any number, each a part (header, footer, or a named
- * other), its member selectors, optional members, the count of pages carrying it and its
- * evidence — with the method that found them and the candidates it rejected. Ids are
- * made here from part and first selector; a variant given an id keeps it.
+ * The shared documents a site has — header, footer and other template-placed parts, and
+ * the fragments embedded in pages — with the method that found them and the candidates
+ * it rejected. Ids are made here from placement and part or name; a fragment given an id
+ * keeps it. Two template fragments of one part are two designs: refused unless labelled.
  */
-export async function writeChrome(cwd, { method, variants, rejected = [], summary }) {
-  const withIds = variants.map((v) => ({ ...v, id: v.id ?? chromeId(v.part, v.selectors) }));
-  const parts = [...new Set(withIds.map((v) => v.part))];
-  return openStore(cwd).write(CHROME_FILE, {
-    schema: CHROME_SCHEMA, method, variants: withIds, rejected,
-    summary: summary ?? `${withIds.length} chrome variant(s) over ${parts.join(', ') || 'no part'};`
+export async function writeFragments(cwd, { method, fragments, rejected = [], summary }) {
+  const withIds = fragments.map((f) => ({
+    ...f, id: f.id ?? fragmentId(f.placement, f.placement === 'template' ? f.part : f.name),
+  }));
+  const parts = withIds.filter((f) => f.placement === 'template').map((f) => f.part);
+  const twice = parts.filter((p, i) => parts.indexOf(p) !== i);
+  for (const part of new Set(twice)) {
+    const same = withIds.filter((f) => f.placement === 'template' && f.part === part);
+    if (same.some((f) => !f.label) || new Set(same.map((f) => f.id)).size !== same.length) {
+      throw new Error(`two template fragments for part ${part}: one header is one document,`
+        + ' however many bands; a second design needs its own id and label');
+    }
+  }
+  const inline = withIds.filter((f) => f.placement === 'inline').length;
+  const named = [...new Set(parts)].join(', ') || 'none';
+  return openStore(cwd).write(FRAGMENTS_FILE, {
+    schema: FRAGMENTS_SCHEMA, method, fragments: withIds, rejected,
+    summary: summary ?? `${parts.length} template fragment(s) (${named}), ${inline} inline;`
       + ` ${rejected.length} candidate(s) rejected`,
   });
 }
 
-export const readChrome = (cwd) => openStore(cwd).read(CHROME_FILE, CHROME_SCHEMA);
+export const readFragments = (cwd) => openStore(cwd).read(FRAGMENTS_FILE, FRAGMENTS_SCHEMA);
 
-/** The pages carrying a chrome variant — a query over the table, never a stored list. */
-export const pagesWith = (cwd, chromeVariantId) => listPages(cwd, { chrome: chromeVariantId });
+/** The pages using a fragment — a query over the table, never a stored list. */
+export const pagesUsing = (cwd, fragmentIdValue) => listPages(cwd, { fragment: fragmentIdValue });

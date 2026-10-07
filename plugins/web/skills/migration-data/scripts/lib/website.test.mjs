@@ -8,8 +8,8 @@ import { init } from './migration.mjs';
 import { pageId, upsert } from './pages.mjs';
 import { classOf } from './schema.mjs';
 import {
-  ACCESS_SCHEMA, CHROME_SCHEMA, WEBSITE_SCHEMA, chromeId, pagesWith, readAccess, readChrome,
-  readWebsite, refresh, writeAccess, writeChrome,
+  ACCESS_SCHEMA, FRAGMENTS_SCHEMA, PLACEMENTS, WEBSITE_SCHEMA, fragmentId, pagesUsing,
+  readAccess, readFragments, readWebsite, refresh, writeAccess, writeFragments,
 } from './website.mjs';
 
 const ORIGIN = 'https://a.example/';
@@ -67,38 +67,55 @@ test('access.json: one decision on how to open a page', async () => {
   assert.deepEqual(await readAccess(cwd), a);
 });
 
-test('chrome.json defines variants; which pages carry one is a query over the table', async () => {
+test('fragments.json defines the shared documents; pages using one is a query', async () => {
   const cwd = await fresh();
-  assert.equal(classOf(CHROME_SCHEMA), 'derived');
+  assert.equal(classOf(FRAGMENTS_SCHEMA), 'derived');
+  assert.deepEqual(PLACEMENTS, ['template', 'inline']);
   await upsert(cwd, [found(`${ORIGIN}a`, { kind: 'page' }), found(`${ORIGIN}b`, { kind: 'page' })]);
-  const header = chromeId('header', ['#utility-nav-bar']);
-  const footer = chromeId('footer', ['body > footer']);
-  const c = await writeChrome(cwd, {
+  const header = fragmentId('template', 'header');
+  const footer = fragmentId('template', 'footer');
+  const cta = fragmentId('inline', 'contact-cta');
+  const f = await writeFragments(cwd, {
     method: { name: 'visual-tree', at: AT },
-    variants: [
-      { part: 'header', label: 'utility bar', selectors: ['#utility-nav-bar'], optional: [],
-        pages: 2 },
-      { part: 'footer', selectors: ['body > footer'], optional: ['body > footer > .legal'],
-        pages: 1, evidence: ['website/chrome/footer.png'] },
-      { id: 'chr-aaaaaaaaaaaa', part: 'subnav', selectors: ['nav.sub'], optional: [], pages: 1 },
+    fragments: [
+      { placement: 'template', part: 'header', label: 'utility bar + main nav',
+        selectors: ['#utility-nav-bar', '.component-nav-top'], optional: [], pages: 2 },
+      { placement: 'template', part: 'footer', selectors: ['body > footer'],
+        optional: ['body > footer > .legal'], pages: 1, evidence: ['website/footer.png'] },
+      { placement: 'inline', name: 'contact-cta', selectors: ['.cmp-experiencefragment--contact'],
+        type: 'typ-000000000001', pages: 1 },
     ],
     rejected: [{ selector: '#banner', reason: 'support 45 % is under the line' }],
   });
-  assert.deepEqual(c.variants.map((v) => v.id), [header, footer, 'chr-aaaaaaaaaaaa'],
-    'ids from part and first selector; a given id kept');
-  assert.equal(c.summary,
-    '3 chrome variant(s) over header, footer, subnav; 1 candidate(s) rejected');
-  assert.deepEqual(await readChrome(cwd), c);
-  await assert.rejects(writeChrome(cwd, { method: { name: 'x', at: AT },
-    variants: [{ part: 'Header', selectors: ['x'], optional: [], pages: 0 }] }),
-  /part: must match/);
-  const comp = (chrome) => (
-    { method: { name: 'visual-tree', at: AT }, chrome, sections: [], omitted: [] });
+  assert.deepEqual(f.fragments.map((x) => x.id), [header, footer, cta],
+    'ids from placement and part or name');
+  assert.equal(f.fragments[0].selectors.length, 2, 'one header, two bands');
+  assert.equal(f.summary,
+    '2 template fragment(s) (header, footer), 1 inline; 1 candidate(s) rejected');
+  assert.deepEqual(await readFragments(cwd), f);
+  await assert.rejects(writeFragments(cwd, { method: { name: 'x', at: AT }, fragments: [
+    { placement: 'template', part: 'header', selectors: ['a'], optional: [], pages: 1 },
+    { placement: 'template', part: 'header', selectors: ['b'], optional: [], pages: 1 },
+  ] }), /two template fragments for part header: one header is one document/);
+  const twoDesigns = await writeFragments(cwd, { method: { name: 'x', at: AT }, fragments: [
+    { id: 'frg-aaaaaaaaaaaa', placement: 'template', part: 'header', label: 'main site',
+      selectors: ['a'], optional: [], pages: 40 },
+    { id: 'frg-bbbbbbbbbbbb', placement: 'template', part: 'header', label: 'campaign',
+      selectors: ['b'], optional: [], pages: 8 },
+  ] });
+  assert.equal(twoDesigns.fragments.length, 2, 'two designs, each with an id and a label');
+  await assert.rejects(writeFragments(cwd, { method: { name: 'x', at: AT },
+    fragments: [{ placement: 'inline', name: 'Contact CTA', selectors: ['x'], pages: 1 }] }),
+  /must match exactly one shape/);
+  const comp = (fragments, items = []) => ({ method: { name: 'visual-tree', at: AT }, fragments,
+    sections: items.length ? [{ id: 's1', selector: 'main', items }] : [], omitted: [] });
   await writeComposition(cwd, pageId(`${ORIGIN}a`),
-    comp([{ ref: header, selector: '#utility-nav-bar' }, { ref: footer, selector: 'footer' }]));
+    comp([{ ref: header, selector: '#utility-nav-bar' }, { ref: footer, selector: 'footer' }],
+      [{ role: 'fragment', ref: cta, selector: '.cmp-experiencefragment--contact' }]));
   await writeComposition(cwd, pageId(`${ORIGIN}b`),
     comp([{ ref: header, selector: '#utility-nav-bar' }]));
-  assert.deepEqual((await pagesWith(cwd, header)).map((p) => p.url), [`${ORIGIN}a`, `${ORIGIN}b`]);
-  assert.deepEqual((await pagesWith(cwd, footer)).map((p) => p.url), [`${ORIGIN}a`]);
-  assert.deepEqual(await pagesWith(cwd, 'chr-aaaaaaaaaaaa'), []);
+  assert.deepEqual((await pagesUsing(cwd, header)).map((p) => p.url), [`${ORIGIN}a`, `${ORIGIN}b`]);
+  assert.deepEqual((await pagesUsing(cwd, footer)).map((p) => p.url), [`${ORIGIN}a`]);
+  assert.deepEqual((await pagesUsing(cwd, cta)).map((p) => p.url), [`${ORIGIN}a`], 'inline too');
+  assert.deepEqual(await pagesUsing(cwd, 'frg-aaaaaaaaaaaa'), []);
 });

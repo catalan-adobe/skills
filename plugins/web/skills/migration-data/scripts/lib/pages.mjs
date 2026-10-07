@@ -52,7 +52,7 @@ const REASON = {
 export const RECORD = {
   type: 'object',
   required: ['id', 'url', 'group', 'discovered', 'http', 'redirect', 'finalUrl', 'kind',
-    'verdict', 'cache', 'chrome', 'composition'],
+    'verdict', 'cache', 'fragments', 'composition'],
   additionalProperties: false,
   properties: {
     id: idPattern('pag'),
@@ -102,7 +102,7 @@ export const RECORD = {
         selection: nullable('string'),
       },
     },
-    chrome: { type: 'array', items: idPattern('chr') },
+    fragments: { type: 'array', items: idPattern('frg') },
     composition: {
       type: ['object', 'null'],
       required: ['method', 'at', 'sections', 'omitted'],
@@ -172,7 +172,7 @@ export function record(url, { from, source, at }, scope) {
     discovered: { from, at, ...(source ? { source } : {}) },
     http: null, redirect: null, finalUrl: null, kind: 'unknown',
     verdict: { status: 'undecided', reasons: [] },
-    cache: null, chrome: [], composition: null,
+    cache: null, fragments: [], composition: null,
   };
 }
 
@@ -338,7 +338,7 @@ export async function get(cwd, idOrUrl) {
 
 /** Records matching every given filter. */
 export async function list(cwd, {
-  group, kind, status, reason: code, cached, composed, chrome,
+  group, kind, status, reason: code, cached, composed, fragment,
 } = {}) {
   return (await read(cwd)).pages.filter((p) => (
     (group === undefined || p.group === group)
@@ -347,7 +347,7 @@ export async function list(cwd, {
     && (code === undefined || p.verdict.reasons.some((r) => r.code === code))
     && (cached === undefined || Boolean(p.cache) === cached)
     && (composed === undefined || Boolean(p.composition) === composed)
-    && (chrome === undefined || p.chrome.includes(chrome))));
+    && (fragment === undefined || p.fragments.includes(fragment))));
 }
 
 /** Records the operator's word on a page; `status` in or out, with the reason. */

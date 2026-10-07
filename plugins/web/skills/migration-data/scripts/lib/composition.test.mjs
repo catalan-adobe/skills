@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROLES, SCHEMA, file, items, read, write } from './composition.mjs';
+import {
+  DOCUMENT_KINDS, ROLES, SCHEMA, file, fragmentRefs, items, read, readFragment, write,
+  writeFragment,
+} from './composition.mjs';
 import { init } from './migration.mjs';
 import { get, pageId, upsert } from './pages.mjs';
 import { classOf, faults, schemaOf } from './schema.mjs';
@@ -19,9 +22,9 @@ const fresh = async () => {
 };
 const composition = {
   method: { name: 'visual-tree', version: '1.2', at: AT, inputs: 'sha-of-tree' },
-  chrome: [
-    { ref: 'chr-000000000001', selector: '#utility', bounds: box(0, 53) },
-    { ref: 'chr-000000000002', selector: 'footer', bounds: box(3000, 500) },
+  fragments: [
+    { ref: 'frg-000000000001', selector: '#utility', bounds: box(0, 53) },
+    { ref: 'frg-000000000002', selector: 'footer', bounds: box(3000, 500) },
   ],
   sections: [
     { id: 's1', selector: 'main > div:nth-child(1)', bounds: box(53, 900),
@@ -32,7 +35,7 @@ const composition = {
         { role: 'content', selector: '.text', bounds: box(553, 400) },
       ] },
     { id: 's2', selector: 'main > div:nth-child(2)',
-      items: [{ role: 'fragment', ref: 'frg-000000000001', selector: '#xf' }] },
+      items: [{ role: 'fragment', ref: 'frg-000000000003', selector: '#xf' }] },
   ],
   omitted: [{ selector: '.pb_table', bounds: box(128, 5), reason: 'hairline' }],
 };
@@ -40,8 +43,14 @@ const composition = {
 test('the schema is the EDS document shape: fixed depth, closed roles, located nodes', () => {
   assert.equal(classOf(SCHEMA), 'derived');
   assert.deepEqual(ROLES, ['content', 'block', 'fragment']);
+  assert.deepEqual(DOCUMENT_KINDS, ['page', 'fragment']);
   const { schema } = schemaOf(SCHEMA);
-  const full = { ...composition, schema: SCHEMA, page: 'pag-000000000001' };
+  const doc = (kind, id) => ({ kind, id });
+  const full = { ...composition, schema: SCHEMA, document: doc('page', 'pag-000000000001') };
+  assert.deepEqual(faults({ ...full, document: doc('fragment', 'frg-000000000009') }, schema),
+    [], 'a fragment is a document too');
+  assert.deepEqual(faults({ ...full, document: { kind: 'page', id: 'frg-000000000009' } }, schema),
+    ['$.document: must match exactly one shape (matched 0)'], 'a page has a page id');
   assert.deepEqual(faults(full, schema), []);
   const bad = (patch) => faults({ ...full, ...patch }, schema);
   const one = (item) => bad({ sections: [{ id: 's1', selector: 'x', items: [item] }] });
@@ -51,7 +60,7 @@ test('the schema is the EDS document shape: fixed depth, closed roles, located n
   assert.deepEqual(one({ role: 'content' }), noShape, 'a selector always');
   assert.deepEqual(bad({ sections: [{ id: 'one', selector: 'x', items: [] }] }),
     ['$.sections[0].id: must match ^s\\d+$']);
-  assert.deepEqual(bad({ chrome: [{ selector: 'x' }] }), ['$.chrome[0].ref: required']);
+  assert.deepEqual(bad({ fragments: [{ selector: 'x' }] }), ['$.fragments[0].ref: required']);
   assert.deepEqual(bad({ omitted: [{ selector: 'x' }] }), ['$.omitted[0].reason: required']);
   assert.deepEqual(bad({ method: { name: 'Visual Tree', at: AT } }),
     ['$.method.name: must match ^[a-z][a-z0-9-]*$']);
@@ -66,19 +75,21 @@ test('write lands the composition under the page and reflects it on the record',
   const id = pageId(`${ORIGIN}p`);
   await assert.rejects(write(cwd, 'pag-000000000009', composition), /no page pag-0000/);
   const written = await write(cwd, id, composition);
-  assert.deepEqual([written.schema, written.page], [SCHEMA, id]);
+  assert.deepEqual([written.schema, written.document], [SCHEMA, { kind: 'page', id }]);
   assert.deepEqual(await read(cwd, id), written);
   assert.deepEqual(await readdir(path.join(cwd, 'migration', 'pages', id)), ['composition.json']);
   const page = await get(cwd, id);
-  assert.deepEqual(page.chrome, ['chr-000000000001', 'chr-000000000002']);
+  assert.deepEqual(page.fragments, ['frg-000000000001', 'frg-000000000002', 'frg-000000000003'],
+    'template-placed and embedded fragments alike');
+  assert.deepEqual(fragmentRefs(written), page.fragments);
   assert.deepEqual(page.composition, { method: 'visual-tree', at: AT, sections: 2, omitted: 1 });
   assert.deepEqual(items(written).map((i) => [i.section, i.role]),
     [['s1', 'block'], ['s1', 'content'], ['s2', 'fragment']]);
   // Another method's reading sits beside the current one and leaves the record alone.
-  const other = { ...composition, method: { name: 'dom-only', at: AT }, chrome: [],
+  const other = { ...composition, method: { name: 'dom-only', at: AT }, fragments: [],
     sections: [{ id: 's1', selector: 'main', items: [{ role: 'content', selector: 'main' }] }] };
   await write(cwd, id, other, { current: false });
-  assert.equal(file(id, 'dom-only'), `pages/${id}/composition.dom-only.json`);
+  assert.equal(file('page', id, 'dom-only'), `pages/${id}/composition.dom-only.json`);
   assert.deepEqual((await readdir(path.join(cwd, 'migration', 'pages', id))).sort(),
     ['composition.dom-only.json', 'composition.json']);
   assert.equal((await read(cwd, id, 'dom-only')).method.name, 'dom-only');
@@ -86,4 +97,20 @@ test('write lands the composition under the page and reflects it on the record',
   assert.equal(await read(cwd, id, 'nope'), null);
   await assert.rejects(write(cwd, id, { ...composition, sections: 'x' }),
     /\$\.sections: must be array/);
+  // A header is a document: two bands, one fragment, its own composition.
+  const header = {
+    method: { name: 'visual-tree', at: AT }, fragments: [], omitted: [],
+    sections: [
+      { id: 's1', selector: '#utility',
+        items: [{ role: 'block', type: 'typ-000000000010', selector: '#utility' }] },
+      { id: 's2', selector: '.nav-top',
+        items: [{ role: 'block', type: 'typ-000000000011', selector: '.nav-top' }] },
+    ],
+  };
+  const h = await writeFragment(cwd, 'frg-000000000001', header);
+  assert.deepEqual(h.document, { kind: 'fragment', id: 'frg-000000000001' });
+  assert.equal(file('fragment', 'frg-000000000001'), 'fragments/frg-000000000001/composition.json');
+  assert.deepEqual(await readFragment(cwd, 'frg-000000000001'), h);
+  assert.equal((await readFragment(cwd, 'frg-000000000001')).sections.length, 2);
+  assert.deepEqual((await get(cwd, id)).fragments.length, 3, 'a fragment write leaves pages alone');
 });
