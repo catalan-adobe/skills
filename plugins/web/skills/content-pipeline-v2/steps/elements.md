@@ -1,8 +1,9 @@
 # elements
 
-Purpose: the **elements inventory** — every captured page decomposed into its sections,
-each resolved to an element type of the source markup, with coverage and compositions.
-Decomposition only; mapping a type to an EDS block is the mapping expert's work. Tier: medium.
+Run only after `status.mjs approve elements` (`ready`, not `waiting-operator`). Purpose: the
+**elements inventory** — every captured page decomposed into its sections, each resolved to
+an element type of the source markup, with coverage and compositions. Decomposition only;
+mapping a type to an EDS block is the mapping expert's work. Tier: medium.
 
 ## Inputs
 

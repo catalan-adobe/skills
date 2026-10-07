@@ -122,6 +122,10 @@ test('status follows the artefacts on disk; approve opens the operator gate', as
   assert.equal(s.cache.state, 'ready');
   const noGate = await cli(cwd, 'approve', 'probe').catch((e) => e);
   assert.match(noGate.stderr, /needs no approval/);
+  const elements = await cli(cwd, 'approve', 'elements');
+  assert.deepEqual(elements, { step: 'elements', approved: true });
+  assert.equal(JSON.parse(await readFile(path.join(m, 'project.json'), 'utf8')).approved.elements,
+    true, 'the yes for the inventory is recorded');
   const text = await cli(cwd, '--text');
   assert.match(text, /^step\s+state/);
   assert.match(text, /cache\s+ready/);

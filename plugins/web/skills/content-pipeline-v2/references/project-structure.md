@@ -11,7 +11,7 @@ approvals must be given again.
 `project.json`
 : Written by `status.mjs init` (`origin`, `created`, `cacheAllUpTo`) and by
   `status.mjs approve` (`approved`, `cacheSelection`).
-: Read by every step for `origin`, by `status.mjs` for the cache gate and by
+: Read by every step for `origin`, by `status.mjs` for the cache and elements gates and by
   `check cache` for the selection.
 
 `.gitignore`

@@ -109,8 +109,10 @@ Takes: wall time measured on a 50-page run at a 1500 ms pace, the agent's readin
 a timeout allows twice that, and never redoes a step a timeout cut short without
 `status.mjs --text` first. † an hour or more when the site has no sitemap and must be crawled.
 
-\* medium when the site has no usable sitemap. `cache` also needs the operator's yes
-(`status.mjs approve cache <subset>...|all`) and runs in the background: `scripts/warm.mjs`
+\* medium when the site has no usable sitemap. Two steps wait for the operator's yes:
+`cache` (`status.mjs approve cache <subset>...|all`) and `elements` (`status.mjs approve
+elements`) — a run that was not asked for the inventory ends at `chrome`, with the chrome
+documents as its last deliverable. `cache` runs in the background: `scripts/warm.mjs`
 queues the approved selection as a job and returns; one detached worker drives the proxy
 and the browser and writes the artefacts. Caching happens in phases — approve a subset, run
 `warm.mjs`, keep working; approve the next, run `warm.mjs` again, it queues behind.
@@ -172,9 +174,11 @@ After `scan`, put the proposal sentence from `urls/urls.md` to the operator and 
 
 - Never skip `setup` or `probe`; every browser step depends on the probe's recipe.
 - Never install globally; `setup --install` uses `--prefix migration/.work` and `upskill`.
-- Never start `cache` before `status.mjs approve cache`; `waiting-operator` means wait. A
-  prompt that pre-authorises "cache N pages" names a size, not a selection: build it with
-  `pick --count N --write <name>`, approve that name, record the operator's words.
+- Never start `cache` before `status.mjs approve cache`, nor `elements` before
+  `status.mjs approve elements`; `waiting-operator` means wait. A prompt that pre-authorises
+  "cache N pages" names a size, not a selection: build it with `pick --count N --write
+  <name>`, approve that name, record the operator's words; a prompt that asks for the
+  elements inventory or the mapping is the yes for `elements`.
 - Never delete anything under `migration/cache/`; the driver is idempotent.
 - Never wait for, poll in a loop, or run the cache worker yourself; `warm.mjs` returns at
   once and `status.mjs` shows the progress whenever it is asked.

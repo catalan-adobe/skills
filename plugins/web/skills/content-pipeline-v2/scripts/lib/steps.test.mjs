@@ -22,6 +22,15 @@ test('prep and scan open together after probe; cache waits for the operator', ()
   assert.equal(s.cache, 'waiting-operator');
   assert.equal(s.report, 'ready');
   assert.equal(states(stepStates(collected, { cache: true })).cache, 'ready');
+  // A run that was not asked for the inventory ends at chrome: elements waits for the
+  // operator, and mapping behind it.
+  const captured = { ...collected, 'prep-verify': true, cache: true, capture: true, chrome: true };
+  const atChrome = states(stepStates(captured, { cache: true }));
+  assert.equal(atChrome.elements, 'waiting-operator');
+  assert.equal(atChrome.mapping, 'blocked');
+  const asked = states(stepStates(captured, { cache: true, elements: true }));
+  assert.equal(asked.elements, 'ready');
+  assert.equal(asked.mapping, 'blocked', 'until elements is done');
   assert.equal(states(stepStates({ ...collected, cache: true })).cache, 'done');
 });
 
