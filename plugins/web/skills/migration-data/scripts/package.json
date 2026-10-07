@@ -1,0 +1,9 @@
+{
+  "name": "migration-data-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"lib/**/*.test.mjs\" \"*.test.mjs\"",
+    "check": "node check-lines.mjs"
+  }
+}
