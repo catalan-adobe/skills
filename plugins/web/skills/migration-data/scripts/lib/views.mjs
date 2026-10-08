@@ -8,8 +8,9 @@ import { open as openMigration } from './migration.mjs';
 import { index as notesIndex } from './notes.mjs';
 import { read as readTable } from './pages.mjs';
 import { HEAD, register } from './schema.mjs';
-import { compute as computeState } from './state.mjs';
+import { read as readState } from './state.mjs';
 import { openStore } from './store.mjs';
+import { renderHtml } from './report-html.mjs';
 import { readFragments, readWebsite } from './website.mjs';
 
 export const INDEX = 'views/views.json';
@@ -28,7 +29,7 @@ register('views/views', 1, 'derived', {
         required: ['file', 'from', 'at'],
         additionalProperties: false,
         properties: {
-          file: { type: 'string', pattern: '^views/[a-z-]+\\.md$' },
+          file: { type: 'string', pattern: '^views/[a-z-]+\\.(md|html)$' },
           from: { type: 'array', items: { type: 'string' } },
           at: { type: 'string', format: 'date-time' },
         },
@@ -45,9 +46,9 @@ const table = (headers, rows) => [row(headers), row(headers.map(() => '---')), .
  * shared documents, the inventory, then every note in order. Rendered from the data;
  * what is absent is said to be absent.
  */
-export async function renderReport(cwd, { checks = {}, now = new Date() } = {}) {
+export async function renderReport(cwd, { now = new Date() } = {}) {
   const migration = await openMigration(cwd);
-  const state = await computeState(cwd, checks, { now });
+  const state = await readState(cwd, { now });
   const site = await readWebsite(cwd);
   const pages = await readTable(cwd);
   const fragments = await readFragments(cwd);
@@ -83,10 +84,10 @@ export async function renderReport(cwd, { checks = {}, now = new Date() } = {}) 
   return out.join('\n');
 }
 
-/** Renders a view to `views/<name>.md` and indexes it with what it was rendered from. */
-export async function write(cwd, name, text, from) {
+/** Renders a view to `views/<name>.<ext>` and indexes it with what it was rendered from. */
+export async function write(cwd, name, text, from, ext = 'md') {
   const store = openStore(cwd);
-  const file = `views/${name}.md`;
+  const file = `views/${name}.${ext}`;
   await mkdir(path.dirname(store.path(file)), { recursive: true });
   await writeFile(store.path(file), text.endsWith('\n') ? text : `${text}\n`);
   const current = (await store.read(INDEX, SCHEMA)) ?? { schema: SCHEMA, views: [] };
@@ -96,9 +97,12 @@ export async function write(cwd, name, text, from) {
   return entry;
 }
 
-/** Renders and writes the report view. */
-export async function writeReport(cwd, options = {}) {
-  const text = await renderReport(cwd, options);
-  return write(cwd, 'report', text, ['state.json', 'website/website.json', 'pages/pages.json',
-    'website/fragments.json', 'elements/inventory.json', 'notes/notes.json']);
+const REPORT_FROM = ['state.json', 'website/website.json', 'pages/pages.json',
+  'pages/selections', 'website/fragments.json', 'elements/types.json',
+  'elements/inventory.json', 'runs', 'notes/notes.json'];
+
+/** Renders and writes the report view: Markdown, or the one-file HTML with `html`. */
+export async function writeReport(cwd, { html = false, ...options } = {}) {
+  if (html) return write(cwd, 'report', await renderHtml(cwd, options), REPORT_FROM, 'html');
+  return write(cwd, 'report', await renderReport(cwd, options), REPORT_FROM);
 }

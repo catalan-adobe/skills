@@ -121,6 +121,14 @@ export async function write(cwd, checks = NO_CHECKS, options = {}) {
   return openStore(cwd).write(FILE, state);
 }
 
+/**
+ * The state as last written by whoever owns the step checks (the pipeline); computed
+ * without checks only when nothing was written yet. Views read this.
+ */
+export async function read(cwd, options = {}) {
+  return (await openStore(cwd).read(FILE, SCHEMA)) ?? compute(cwd, NO_CHECKS, options);
+}
+
 /** The state as a table for people. */
 export function asText(state) {
   const width = Math.max(...state.steps.map((s) => s.id.length));

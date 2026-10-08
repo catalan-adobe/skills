@@ -38,7 +38,7 @@ export const COMMANDS = [
   { name: 'inventory', usage: '', help: 'the EDS reading of the site, derived and written' },
   { name: 'note', usage: '<step> <author> <text...> [--page <pag-id>]', help: 'add a note' },
   { name: 'notes', usage: '[--step <id>]', help: 'the notes index' },
-  { name: 'report', usage: '', help: 'render views/report.md' },
+  { name: 'report', usage: '[--html]', help: 'render views/report.md, or views/report.html' },
 ];
 
 const FLAGS = {
@@ -46,9 +46,10 @@ const FLAGS = {
   show: [], plan: ['--pages', '--selection'], approve: [], runs: ['--step'], state: ['--text'],
   pages: ['--group', '--status', '--reason', '--cached', '--uncached', '--fragment', '--text'],
   page: [], 'decide-page': [], selections: [], website: [], types: ['--undecided'],
-  'decide-type': ['--notes'], inventory: [], note: ['--page'], notes: ['--step'], report: [],
+  'decide-type': ['--notes'], inventory: [], note: ['--page'], notes: ['--step'],
+  report: ['--html'],
 };
-const BOOLEAN = new Set(['--text', '--cached', '--uncached', '--undecided']);
+const BOOLEAN = new Set(['--text', '--cached', '--uncached', '--undecided', '--html']);
 
 export function parse(argv) {
   const [name, ...rest] = argv;
@@ -167,7 +168,7 @@ export async function main(argv, cwd = process.cwd()) {
     case 'notes':
       return notes.list(cwd, { step: flags['--step'] });
     case 'report':
-      return views.writeReport(cwd);
+      return views.writeReport(cwd, { html: Boolean(flags['--html']) });
     default:
       throw new Error(`usage:\n${usage()}`);
   }

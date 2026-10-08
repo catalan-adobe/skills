@@ -7,6 +7,7 @@ import { init } from './migration.mjs';
 import { AUTHORS, SCHEMA, add, body, index, list } from './notes.mjs';
 import { upsert } from './pages.mjs';
 import { classOf } from './schema.mjs';
+import { write as writeState } from './state.mjs';
 import { INDEX, SCHEMA as VIEWS_SCHEMA, renderReport, write, writeReport } from './views.mjs';
 import { openStore } from './store.mjs';
 
@@ -54,7 +55,8 @@ test('the report is rendered from the data and the notes, indexed as a view, nev
     assert.match(empty, /## Notes\n\nNone yet\./);
     await upsert(cwd, [{ url: `${O}a`, discovered: { from: 'list', at: '2026-09-22T10:00:00Z' } }]);
     await add(cwd, { step: 'discover', author: 'runner', body: 'One URL from the operator list.' });
-    const entry = await writeReport(cwd, { checks: { discover: async () => ({ pass: true }) } });
+    await writeState(cwd, { discover: async () => ({ pass: true }) });
+    const entry = await writeReport(cwd);
     assert.equal(entry.file, 'views/report.md');
     assert.ok(entry.from.includes('notes/notes.json'));
     const text = await readFile(openStore(cwd).path('views/report.md'), 'utf8');

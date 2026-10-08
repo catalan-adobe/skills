@@ -72,7 +72,7 @@ migration/
     notes.json              index: id, step, author, at, file, summary              history
     <id>.md                 the note
   views/                    rendered documents                                       derived
-    report.md, pages.md, website.md, elements.md, inventory.md
+    report.md, report.html   the migration on one page, in words and as one HTML file
 ```
 
 Four entities carry the domain — **migration**, **website**, **pages**, **elements** —
@@ -301,8 +301,9 @@ item's type is decided, nothing on it is undecided or skipped, and it is not emp
 
 Every piece of prose: what an agent decided and why, what the operator said, what a step
 reports in words. `notes.json` indexes them (`id`, `step`, `author: agent | operator |
-runner`, `at`, `file`, `summary`); the body is a Markdown file. `views/report.md` is
-rendered from the notes and the data — it is never edited.
+runner`, `at`, `file`, `summary`); the body is a Markdown file. `views/report.md` and
+`views/report.html` are rendered from the notes and the data — never edited. The HTML
+is one file without script, its images referenced relatively, so it opens from disk.
 
 ### views/ — *derived*
 

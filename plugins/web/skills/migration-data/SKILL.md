@@ -70,7 +70,7 @@ node $M runs [--step <id>] | state [--text]
 node $M pages [--group g] [--status in|out|undecided] [--reason code] [--cached] [--text]
 node $M page <id-or-url> | decide-page <id-or-url> in|out <reason...> | selections
 node $M website | types [--undecided] | decide-type <typ-id> <kind> [<name>] | inventory
-node $M note <step> <author> <text...> [--page <pag-id>] | notes [--step] | report
+node $M note <step> <author> <text...> [--page <pag-id>] | notes [--step] | report [--html]
 ```
 
 JSON on stdout, `--text` for people, errors on stderr with the usage, exit 1. Run from the
