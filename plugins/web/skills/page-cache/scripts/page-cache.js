@@ -293,8 +293,10 @@ async function handle(req, res) {
     return;
   }
 
-  reqUrl.searchParams.delete('_origin');
-  const qs = reqUrl.searchParams.toString();
+  // The query goes upstream as the browser sent it, minus _origin: re-serialising it
+  // would turn a bare `$responsive$` into `%24responsive%24=`, another URL to the origin.
+  const qs = reqUrl.search.slice(1).split('&').filter((p) => p && !p.startsWith('_origin='))
+    .join('&');
   const originUrl = `${origin}${reqUrl.pathname}${qs ? `?${qs}` : ''}`;
   // An --also origin's asset never becomes the page's origin: no cookie.
   const cookie = ALSO.has(origin)

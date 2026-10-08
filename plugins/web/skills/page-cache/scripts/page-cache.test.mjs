@@ -38,8 +38,10 @@ test('--also: another origin\'s assets go through the proxy, cached, served offl
     res.writeHead(200, { 'content-type': 'image/jpeg' });
     res.end(`jpeg:${req.url}`);
   });
+  const seenBySite = [];
   const site = await listen((req, res) => {
     hits.site += 1;
+    seenBySite.push(req.url);
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(`<html><body><img src="${cdn.origin}/a.jpg">`
       + `<img srcset="${cdn.origin}/b.jpg?w=1 1x, ${cdn.origin}/b.jpg?w=2 2x">`
@@ -89,6 +91,15 @@ test('--also: another origin\'s assets go through the proxy, cached, served offl
     assert.equal((await fetch(`${offline.url}/zzz.jpg?_origin=${enc}`)).status, 504);
     assert.equal(hits.cdn, 2, 'nothing fetched offline');
     await offline.stop();
+
+    // 4. The query goes upstream verbatim: a bare `$responsive$` stays what it was.
+    const verbatim = await proxy(['--cache', dir]);
+    await fetch(`${verbatim.url}/img?qlt=82&$responsive$&fit=constrain&_origin=${site.origin}`)
+      .then((r) => r.arrayBuffer());
+    assert.equal(seenBySite.at(-1), '/img?qlt=82&$responsive$&fit=constrain');
+    await fetch(`${verbatim.url}/img?_origin=${site.origin}&a=1`).then((r) => r.arrayBuffer());
+    assert.equal(seenBySite.at(-1), '/img?a=1');
+    await verbatim.stop();
   } finally {
     cdn.server.close();
     site.server.close();
