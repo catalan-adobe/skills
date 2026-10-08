@@ -198,6 +198,8 @@ async function visit(cwd, { name, targets, input, io, pace }) {
       } catch (err) {
         failures.set(page.id, firstLine(err.message));
         streak += 1;
+        // A browser that is gone (crashed, closed) is opened again for the next page.
+        if (/not open|closed|Target page, context or browser/i.test(err.message)) opened = false;
         // eslint-disable-next-line no-await-in-loop
         await runs.update(cwd, run.id, { fail: { id: page.id, error: firstLine(err.message) } });
         if (streak >= MAX_CONSECUTIVE_FAILURES) {
@@ -214,14 +216,18 @@ async function visit(cwd, { name, targets, input, io, pace }) {
   } catch (err) {
     await io.browser.close().catch(() => {});
     await online.stop();
-    await record(cwd, { targets: targets.slice(0, visited), finals, dir, origin, name, io });
+    const asked = targets.slice(0, visited).filter((p) => !failures.has(p.id));
+    await record(cwd, { targets: asked, finals, dir, origin, name, io });
     await runs.finish(cwd, run.id, { state: 'failed', error: firstLine(err.message),
       summary: `${visited} of ${targets.length} visited before the failure; recorded` });
     throw err;
   }
   await io.browser.close().catch(() => {});
   await online.stop();
-  const kinds = await record(cwd, { targets, finals, dir, origin, name, io });
+  // A page whose navigation failed was never asked of the site: no fact, no verdict; it
+  // stays uncached and the next run visits it.
+  const asked = targets.filter((p) => !failures.has(p.id));
+  const kinds = await record(cwd, { targets: asked, finals, dir, origin, name, io });
   const counts = Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(', ');
   const summary = `${targets.length} URLs of ${name} visited (${counts}); `
     + `${failures.size} navigation failure(s).`;

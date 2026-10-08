@@ -27,11 +27,14 @@ async function fakeSite(cwd, answers) {
   }
 }
 
-const fakeIo = ({ failOn = [], landings = {} } = {}) => {
+const fakeIo = ({ failOn = [], dieOn = [], landings = {} } = {}) => {
   const calls = { opened: [], gone: [], evals: 0, proxies: [], fetched: [] };
+  let current = null;
   const visit = (list) => async (url) => {
     list.push(url);
+    current = url;
     if (failOn.some((f) => url.includes(f))) throw new Error('net::ERR_FAILED');
+    if (dieOn.some((f) => url.includes(f))) throw new Error("The browser 'x' is not open");
   };
   return {
     calls,
@@ -49,9 +52,8 @@ const fakeIo = ({ failOn = [], landings = {} } = {}) => {
       goto: visit(calls.gone),
       eval: async () => {
         calls.evals += 1;
-        const last = [...calls.opened, ...calls.gone].at(-1);
-        const landed = Object.entries(landings).find(([k]) => last.includes(k))?.[1];
-        return JSON.stringify(JSON.stringify(landed ?? last));
+        const landed = Object.entries(landings).find(([k]) => current.includes(k))?.[1];
+        return JSON.stringify(JSON.stringify(landed ?? current));
       },
       close: async () => {},
     },
@@ -117,7 +119,8 @@ test('a selection is cached in one session, verified offline, recorded with verd
   const io = fakeIo({ failOn: ['/gone'], landings: { '/jump': `${O}a` } });
   const out = await cacheSelection(cwd, 'all', { io, pace: 0 });
   assert.equal(out.visited, 6);
-  assert.deepEqual(out.kinds, { page: 2, redirect: 2, binary: 1, unreachable: 1 });
+  assert.deepEqual(out.kinds, { page: 2, redirect: 2, binary: 1 },
+    'the page whose navigation failed was never asked: no kind');
   const gone = (await data(cwd)).pages.pageId(`${O}gone`);
   assert.deepEqual(out.failures, [[gone, 'net::ERR_FAILED']]);
   assert.deepEqual(io.calls.proxies, [false, true], 'online, then offline');
@@ -132,14 +135,14 @@ test('a selection is cached in one session, verified offline, recorded with verd
   assert.deepEqual(by['/old'].verdict.reasons.map((r) => [r.code, r.detail]),
     [['redirect', `${O}a`]]);
   assert.equal(by['/doc.pdf'].verdict.status, 'out');
-  assert.equal(by['/gone'].kind, 'unreachable');
+  assert.equal(by['/gone'].kind, 'unknown', 'no fact recorded for a failed navigation');
   assert.equal(by['/gone'].cache, null);
   assert.deepEqual(by['/jump'].verdict.reasons.map((r) => r.code), ['redirect'], 'landed on /a');
   assert.equal(by['/a'].verdict.status, 'in');
   const [run] = await runs.list(cwd, { step: 'cache' });
   assert.equal(run.state, 'done');
   assert.match(run.summary,
-    /^6 URLs of all visited \(2 page, 2 redirect, 1 binary, 1 unreachable\); 1 navigation/);
+    /^6 URLs of all visited \(2 page, 2 redirect, 1 binary\); 1 navigation/);
   assert.equal((await website.readWebsite(cwd)).counts.cached, 5);
   assert.deepEqual(await check(cwd), { pass: false, note: 'no selection approved for the cache' });
 });
@@ -232,4 +235,16 @@ test('the proxy is started with the named origins', async () => {
     '--also', 'https://images.example']);
   await proxyStarter('/p.js', '/c', io)({ offline: false });
   assert.deepEqual(spawned[1], ['/p.js', '--port', '4321', '--cache', '/c']);
+});
+
+test('a browser that is gone is opened again for the next page', async () => {
+  const cwd = await project([`${O}a`, `${O}b`, `${O}c`]);
+  await fakeSite(cwd, Object.fromEntries(['a', 'b', 'c'].map((n) => (
+    [`${O}${n}`, { status: 200, type: 'text/html' }]))));
+  const io = fakeIo({ dieOn: ['/b'] });
+  const out = await cacheSelection(cwd, 'all', { io, pace: 0 });
+  assert.equal(io.calls.opened.length, 2, 'opened for a, again for c after b killed it');
+  assert.equal(io.calls.gone.length, 1);
+  assert.equal(out.failures.length, 1);
+  assert.deepEqual(out.kinds, { page: 2 });
 });
