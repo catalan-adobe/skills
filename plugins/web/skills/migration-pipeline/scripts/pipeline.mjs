@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { writeAccess } from './lib/access.mjs';
 import { pendingSelections, workerMain as cacheWorker } from './lib/cache.mjs';
 import { pending as chromePending, workerMain as chromeWorker } from './lib/chrome.mjs';
+import { render as renderReport } from './lib/report.mjs';
 import { command as workerCommand } from './lib/worker.mjs';
 import { CHECKS } from './lib/checks.mjs';
 import { data } from './lib/data.mjs';
@@ -31,13 +32,14 @@ export const COMMANDS = [
     help: 'cache every approved selection not yet cached, in a detached worker; status; stop' },
   { name: 'chrome', usage: '[status|stop]',
     help: 'capture the visual trees and detect header and footer, in a worker; status; stop' },
+  { name: 'report', usage: '', help: 'render views/report.md and views/report.html' },
   { name: 'website', usage: '', help: 'refresh the website summary from the table' },
   { name: 'state', usage: '[--text]', help: 'every step\'s state, computed and written' },
 ];
 const FLAGS = {
   setup: ['--install'], discover: ['--strategy', '--list'], access: ['--write'],
   pick: ['--count', '--exclude', '--audit', '--write'], cache: ['--worker'],
-  chrome: ['--worker'], website: [],
+  chrome: ['--worker'], report: [], website: [],
   state: ['--text'],
 };
 const BOOLEAN = new Set(['--install', '--text', '--write', '--worker']);
@@ -125,6 +127,11 @@ export async function main(argv, cwd = process.cwd()) {
     case 'chrome': {
       const out = await workerCommand(cwd, 'chrome', positional,
         { pending: chromePending, worker: chromeWorker, flags });
+      await writeState(cwd);
+      return out;
+    }
+    case 'report': {
+      const out = await renderReport(cwd);
       await writeState(cwd);
       return out;
     }

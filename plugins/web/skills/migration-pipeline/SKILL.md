@@ -46,7 +46,7 @@ waits for `migration.mjs approve <step>`.
 | `chrome` | medium | visual trees, `website/fragments.json`, compositions' template fragments |
 | `elements` | medium | `elements/types.json`, compositions' sections — coming |
 | `blocks` | medium | `elements/elements.json` decisions, `elements/inventory.json` — coming |
-| `report` | medium | `views/report.md` — coming |
+| `report` | low | `views/report.md`, `views/report.html` |
 
 ## Rules
 
