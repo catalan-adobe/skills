@@ -57,6 +57,7 @@ migration/
     <id>/                   one page's artefacts
       composition.json      the page in EDS shape: fragments, sections, items     derived
       visual-tree.json      the rendered page measured by the page-tree bundle      derived
+      triage.json           what a System 1 model saw: header, footer, broken        derived
       shots/                crops taken on this page                                evidence
   fragments/<id>/           a shared document's artefacts
       composition.json      the fragment in EDS shape (a header has its bands here) derived
@@ -196,11 +197,15 @@ page in scope not yet chosen (`plan.selection` unset), else `in`; an operator de
 overrides. Each reason is a fact with a `code` from the schema's closed vocabulary — the
 one place reasons are documented —, a `kind` (`exclude`: the page is out; `flag`: odd,
 still in until someone decides), the unit that found it (`by`: `discover`, `plan`, `cache`,
-`chrome`, `composition`, `operator`) so that re-running a unit refreshes its reasons and
-no other's, `at` and a `detail`. Codes: `off-scope` (not under `source.scope`),
+`chrome`, `triage`, `composition`, `operator`) so that re-running a unit refreshes its
+reasons and no other's, `at` and a `detail`. Two units may say the same thing about one
+page by different means — `chrome` finds no header in the structure, `triage` sees none
+in the picture — and both reasons stand side by side: agreement and disagreement are
+read off the record, not decided for it. Codes: `off-scope` (not under `source.scope`),
 `over-budget` (beyond `plan.pages` in the plan's selection), `not-a-page` (binary, asset),
 `redirect`, `http-error`, `unreachable`, `duplicate` (same final URL as another page),
-`no-header`, `no-footer`, `empty` (nothing between the chrome), `broken` (capture failed),
+`no-header`, `no-footer`, `empty` (nothing between the chrome), `broken` (an error, a
+blank page, a login or cookie wall or a bot check where content should be),
 `too-tall` (taller than a browser screenshots whole, ~16 384 px: parked, no picture to
 judge it by), `operator`. `over-budget` exists only once `plan.selection` names the frozen set.
 
@@ -268,6 +273,26 @@ current.
 Mapping to a document is then mechanical: sections → sections, `block` → a block table,
 `content` → default content, `fragment` → a fragment reference.
 
+### pages/<id>/triage.json — *derived*
+
+What a System 1 model saw on the page's screenshot, three questions and nothing else: a
+site header at the very top, a site footer at the very bottom, a broken page (an error,
+a blank, a login or cookie wall, a bot check) instead of content — each a probability.
+With `method` (name, model, when, the hash of the picture), `images` (how many slices,
+at what scale and JPEG quality: a page scaled far down was not really seen) and `usage`.
+The triage step reads the answers at a threshold (0.5) into reasons on the table by
+`triage` — `no-header`, `no-footer`, `broken`, each a flag — beside what `chrome` found
+in the structure; the numbers stay here. Pages flagged by either are parked: not read
+further until someone looks.
+
+```json
+{ "schema": "pages/triage@1",
+  "method": { "name": "system1", "model": "@cf/cloudflare/clef", "at": "…", "inputs": "sha…" },
+  "answers": { "header": 0.97, "footer": 0.91, "broken": 0.02 },
+  "images": { "slices": 3, "scale": 1, "quality": 80, "bytes": 310000 },
+  "usage": { "inputTokens": 3100, "ms": 2400 } }
+```
+
 ### elements/types.json — *derived*
 
 The site's element types: id, identity, pages (count), instances, support, recurring,
@@ -329,7 +354,8 @@ it exists and that it is disposable.
 - `pages.mjs` — the table: `upsert`, `setReasons`, `decide`, `rejudge`, `get`, `list`;
   `selections.mjs` — `create`, `read`, `list`, `pagesOf`; `composition.mjs` — `write`,
   `writeMany`, `read`, `writeFragment`, `readFragment`, `items`, `fragmentRefs`;
-  `trees.mjs` — `write`, `read`, `head`, `list` (the visual tree, a method's artefact).
+  `trees.mjs` — `write`, `read`, `head`, `list` (the visual tree, a method's artefact);
+  `triage.mjs` — `write`, `read`, `list`, `flagsOf` (what a System 1 model saw).
 - `website.mjs` — `refresh`, `writeAccess`/`readAccess`, `writeFragments`/`readFragments`,
   `pagesUsing`.
 - `elements.mjs` — `writeTypes`/`readTypes`, `decide`, `undecided`, `writeMethod`/

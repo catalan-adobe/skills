@@ -15,7 +15,8 @@ export const KINDS = ['page', 'binary', 'redirect', 'error', 'unreachable', 'unk
 export const DISCOVERED_FROM = ['sitemap', 'crawl', 'list', 'link'];
 export const STATUSES = ['in', 'out', 'undecided'];
 export const REASON_KINDS = ['exclude', 'flag'];
-export const REASON_BY = ['discover', 'plan', 'cache', 'chrome', 'composition', 'operator'];
+export const REASON_BY = ['discover', 'plan', 'cache', 'chrome', 'triage', 'composition',
+  'operator'];
 /** The closed vocabulary of reasons; the schema is their documentation. */
 export const REASONS = {
   'off-scope': 'the URL is not under source.scope',
@@ -28,7 +29,7 @@ export const REASONS = {
   'no-header': 'no header chrome found on the page',
   'no-footer': 'no footer chrome found on the page',
   empty: 'nothing between the chrome',
-  broken: 'the capture failed',
+  broken: 'an error, a blank page, a login or cookie wall or a bot check, not content',
   'too-tall': 'the rendered page is taller than a browser can screenshot whole',
   operator: 'the operator decided',
 };
