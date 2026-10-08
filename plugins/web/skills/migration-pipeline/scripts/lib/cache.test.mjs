@@ -4,10 +4,10 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  cacheRelativePath, cacheSelection, check, classify, pageExpression, pendingSelections,
-  siteUrl, storedFacts,
+  assetOriginsInCache, assetsInWords, cacheRelativePath, cacheSelection, check, classify,
+  fill, pageExpression, pending, pendingSelections, siteUrl, storedFacts,
 } from './cache.mjs';
-import { cacheDir } from './browser.mjs';
+import { cacheDir, proxyStarter } from './browser.mjs';
 import { data } from './data.mjs';
 
 const O = 'https://a.example/';
@@ -175,4 +175,61 @@ test('pending selections, the check, resumption without force, failure recorded'
   const last = (await runs.list(many, { step: 'cache' })).at(-1);
   assert.equal(last.state, 'failed');
   assert.match(last.summary, /^4 of 6 visited before the failure; recorded/);
+});
+
+test('assets from other origins: counted from the cached HTML, named, filled', async () => {
+  const cwd = await project([`${O}a`, `${O}b`]);
+  const cdn = 'https://images.example';
+  const html = `<html><img src="${cdn}/1.jpg"><img srcset="${cdn}/2.jpg 1x, ${O}3.jpg 2x">`
+    + `<script src="https://tags.example/t.js"></script><script src="${cdn}/x.js"></script>`
+    + `<link href="https://fonts.example/f.css"></html>`;
+  await fakeSite(cwd, { [`${O}a`]: { status: 200, type: 'text/html', body: html },
+    [`${O}b`]: { status: 200, type: 'text/html', body: `<img src="${cdn}/4.jpg">` } });
+  const first = await cacheSelection(cwd, 'all', { io: fakeIo(), pace: 0 });
+  assert.deepEqual(first.assets, [
+    { origin: cdn, assets: 3, scripts: 1 },
+    { origin: 'https://fonts.example', assets: 1, scripts: 0 },
+    { origin: 'https://tags.example', assets: 0, scripts: 1 },
+  ], 'references per origin, the site itself left out, scripts apart');
+  const { notes, migration } = await data(cwd);
+  const [note] = await notes.list(cwd, { step: 'cache' });
+  assert.match(await notes.body(cwd, note.id), /\| https:\/\/images.example \| 3 \| 1 \| no \|/);
+  const words = assetsInWords([{ origin: cdn, assets: 12, scripts: 0 }], { assetOrigins: [] });
+  assert.match(words, /Not stored: https:\/\/images.example\. An origin that serves images/);
+  assert.doesNotMatch(assetsInWords([{ origin: cdn, assets: 12, scripts: 0 }],
+    { assetOrigins: [cdn] }), /Not stored/);
+  assert.doesNotMatch(assetsInWords([{ origin: cdn, assets: 3, scripts: 0 }],
+    { assetOrigins: [] }), /Not stored/, 'three references are not worth a word');
+  // Fill: refused without named origins; with them, every cached page visited once more.
+  await assert.rejects(pending(cwd, 'fill'), /no asset origins named/);
+  await assert.rejects(pending(cwd, 'bogus'), /knows no mode bogus/);
+  await migration.assetOrigins(cwd, [cdn]);
+  assert.equal((await pending(cwd, 'fill')).length, 2);
+  const io = fakeIo();
+  const filled = await fill(cwd, { io, pace: 0 });
+  assert.equal(filled.visited, 2);
+  assert.equal(io.calls.opened.length + io.calls.gone.length, 2);
+  const { runs } = await data(cwd);
+  const last = (await runs.list(cwd, { step: 'cache' })).at(-1);
+  assert.deepEqual([last.input.fill, last.input.assetOrigins], [true, [cdn]]);
+  assert.deepEqual(await assetOriginsInCache(cwd), first.assets, 'the same HTML, the same count');
+});
+
+test('the proxy is started with the named origins', async () => {
+  const spawned = [];
+  const io = {
+    freePort: async () => 4321,
+    spawn: (_, args) => {
+      spawned.push(args);
+      return { stderr: { on() {} }, exitCode: null, once() {}, kill() {} };
+    },
+    fetch: async () => ({ ok: true, json: async () => ({ dir: '/c' }) }),
+    sleep: async () => {},
+  };
+  const start = proxyStarter('/p.js', '/c', io, { also: ['https://images.example'] });
+  await start({ offline: true });
+  assert.deepEqual(spawned[0], ['/p.js', '--port', '4321', '--cache', '/c', '--offline',
+    '--also', 'https://images.example']);
+  await proxyStarter('/p.js', '/c', io)({ offline: false });
+  assert.deepEqual(spawned[1], ['/p.js', '--port', '4321', '--cache', '/c']);
 });

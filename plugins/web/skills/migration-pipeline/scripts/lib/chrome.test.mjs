@@ -214,6 +214,19 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   assert.match(second.summary, /^1 tree\(s\) captured/);
   assert.equal((await trees.list(cwd)).length, 11);
   assert.deepEqual(await check(cwd), { pass: true });
+  // What a capture renders changed: an overlay rule added, a cache run done → all stale.
+  await new Promise((r) => { setTimeout(r, 5); });
+  await website.addOverlay(cwd, { selector: '#chat', action: 'hide' });
+  assert.equal((await pagesToCapture(cwd)).length, 11, 'every tree older than the rule');
+  const thirdIo = fakeIo(siteTree, { pageOf: (u) => numberOf(u) || 3 });
+  const third = await workerMain(cwd, { io: thirdIo });
+  assert.match(third.summary, /^11 tree\(s\) captured/);
+  assert.deepEqual(await pagesToCapture(cwd), []);
+  await new Promise((r) => { setTimeout(r, 5); });
+  const { runs: runsOf } = await data(cwd);
+  const filled = await runsOf.start(cwd, 'cache', { fill: true });
+  await runsOf.finish(cwd, filled.id, { state: 'done', summary: 'filled' });
+  assert.equal((await pagesToCapture(cwd)).length, 11, 'every tree older than the fill');
 });
 
 test('capture failures: a dead page is skipped, five in a row end the run as failed', async () => {

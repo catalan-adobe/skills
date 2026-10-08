@@ -178,7 +178,7 @@ export async function install(detection, {
 }
 
 /** Where setup records what it found and installed: run-class, outside the model. */
-export const setupFile = (cwd) => path.join(workDir(cwd), 'setup.json');
+export const setupFile = (cwd) => path.join(cwd, 'migration', '.work', 'setup.json');
 
 /**
  * Writes `migration/.work/setup.json`: the resolved paths from a `detect()` result, and

@@ -5,7 +5,7 @@ import { realpathSync } from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { writeAccess } from './lib/access.mjs';
-import { pendingSelections, workerMain as cacheWorker } from './lib/cache.mjs';
+import { pending as cachePending, workerMain as cacheWorker } from './lib/cache.mjs';
 import { pending as chromePending, workerMain as chromeWorker } from './lib/chrome.mjs';
 import { render as renderReport } from './lib/report.mjs';
 import { command as workerCommand } from './lib/worker.mjs';
@@ -28,8 +28,9 @@ export const COMMANDS = [
       + ' website/access.json' },
   { name: 'pick', usage: '[--count 2] [--exclude <group>]... [--audit 0] [--write <selection>]',
     help: 'representative uncached pages, one per largest group in turn; --write a selection' },
-  { name: 'cache', usage: '[status|stop]',
-    help: 'cache every approved selection not yet cached, in a detached worker; status; stop' },
+  { name: 'cache', usage: '[fill|status|stop]',
+    help: 'cache every approved selection not yet cached, in a detached worker; fill the'
+      + ' cached pages\' assets from the named origins; status; stop' },
   { name: 'chrome', usage: '[status|stop]',
     help: 'capture the visual trees and detect header and footer, in a worker; status; stop' },
   { name: 'report', usage: '', help: 'render views/report.md and views/report.html' },
@@ -120,7 +121,7 @@ export async function main(argv, cwd = process.cwd()) {
       });
     case 'cache': {
       const out = await workerCommand(cwd, 'cache', positional,
-        { pending: pendingSelections, worker: cacheWorker, flags });
+        { pending: cachePending, worker: cacheWorker, flags });
       await writeState(cwd);
       return out;
     }

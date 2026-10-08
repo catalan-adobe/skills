@@ -89,7 +89,8 @@ writes into it (layout contract, brand, blocks).
   "schema": "migration/migration@1",
   "id": "mig-5f2a9c1e3b7d",
   "created": "…",
-  "source": { "origin": "https://www.example.com/", "scope": "https://www.example.com/" },
+  "source": { "origin": "https://www.example.com/", "scope": "https://www.example.com/",
+              "assetOrigins": ["https://images.example.com"] },
   "target": { "repo": ".", "kind": "eds", "owner": null, "site": null },
   "plan": { "pages": 500, "selection": null },
   "settings": { "cacheAllUpTo": 500, "captureMinWidth": 250, "pace": 1500,
@@ -101,6 +102,9 @@ writes into it (layout contract, brand, blocks).
 - `source.scope` bounds the website: only URLs under it are pages of the migration;
   groups are the first path segment below it; the rest is off-scope, recorded and not
   migrated. Explicit, default the origin — a migration of one section of a site is common.
+- `source.assetOrigins`: other origins whose assets the pages use (an image CDN). The
+  cache stores them too; without them an offline render shows empty image boxes. A
+  decision taken on seeing the cache step's count of cross-origin assets, or a render.
 - `plan` is how much to migrate: `pages` a budget (drives what `pick` proposes, what
   progress means, the estimate) until the operator decides *which* — then `selection`
   names the frozen selection and the count follows from it.
@@ -325,7 +329,7 @@ it exists and that it is disposable.
 - `pages.mjs` — the table: `upsert`, `setReasons`, `decide`, `rejudge`, `get`, `list`;
   `selections.mjs` — `create`, `read`, `list`, `pagesOf`; `composition.mjs` — `write`,
   `writeMany`, `read`, `writeFragment`, `readFragment`, `items`, `fragmentRefs`;
-  `trees.mjs` — `write`, `read`, `minWidth`, `list` (the visual tree, a method's artefact).
+  `trees.mjs` — `write`, `read`, `head`, `list` (the visual tree, a method's artefact).
 - `website.mjs` — `refresh`, `writeAccess`/`readAccess`, `writeFragments`/`readFragments`,
   `pagesUsing`.
 - `elements.mjs` — `writeTypes`/`readTypes`, `decide`, `undecided`, `writeMethod`/

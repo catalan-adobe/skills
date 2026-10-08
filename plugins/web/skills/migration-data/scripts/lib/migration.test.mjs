@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  DEFAULT_SETTINGS, FILE, SCHEMA, approve, init, open, plan, setting,
+  DEFAULT_SETTINGS, FILE, SCHEMA, approve, assetOrigins, init, open, plan, setting,
 } from './migration.mjs';
 import { classOf } from './schema.mjs';
 
@@ -18,7 +18,7 @@ test('init writes the one decision file with defaults; refuses a second init', a
   assert.equal(classOf(SCHEMA), 'decision');
   assert.match(m.id, /^mig-[0-9a-f]{12}$/);
   assert.deepEqual(m.source,
-    { origin: 'https://www.example.com/', scope: 'https://www.example.com/' },
+    { origin: 'https://www.example.com/', scope: 'https://www.example.com/', assetOrigins: [] },
     'a bare origin is canonical with its slash; the scope defaults to the origin');
   assert.deepEqual(m.target, { kind: 'eds', repo: '.', owner: null, site: null });
   assert.deepEqual(m.plan, { pages: null, selection: null });
@@ -28,6 +28,10 @@ test('init writes the one decision file with defaults; refuses a second init', a
   await assert.rejects(init(cwd, { origin: 'https://www.example.com/' }),
     /migration\.json exists; a migration is created once/);
   assert.deepEqual(await open(cwd), m);
+  const withAssets = await assetOrigins(cwd,
+    ['https://images.example.com/x/y', 'https://images.example.com']);
+  assert.deepEqual(withAssets.source.assetOrigins, ['https://images.example.com'], 'origins, once');
+  await assert.rejects(assetOrigins(cwd, ['not a url']), /Invalid URL/);
 });
 
 test('init takes a scope under the origin, a target, a plan and settings', async () => {

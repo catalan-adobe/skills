@@ -24,6 +24,7 @@ register('migration/migration', 1, 'decision', {
       properties: {
         origin: { type: 'string', pattern: URL_LIKE },
         scope: { type: 'string', pattern: URL_LIKE },
+        assetOrigins: { type: 'array', items: { type: 'string', pattern: '^https?://[^/]+$' } },
       },
     },
     target: {
@@ -92,7 +93,7 @@ export async function init(cwd, { origin, scope, target = {}, plan = {}, setting
       + ' through the setters');
   }
   if (!origin) throw new Error('init needs the source origin, e.g. https://www.example.com/');
-  const source = { origin: canonical(origin), scope: canonical(scope ?? origin) };
+  const source = { origin: canonical(origin), scope: canonical(scope ?? origin), assetOrigins: [] };
   if (!source.scope.startsWith(source.origin)) {
     throw new Error(`scope ${source.scope} is not under the origin ${source.origin}`);
   }
@@ -130,6 +131,15 @@ export const setting = (cwd, name, value) => update(cwd, (m) => ({
   ...m,
   settings: { ...m.settings,
     [name]: name === 'skills' ? { ...m.settings.skills, ...value } : value },
+}));
+
+/**
+ * Names the other origins whose assets the pages use (an image CDN), so the cache stores
+ * them too: a decision taken on seeing images missing from an offline render.
+ */
+export const assetOrigins = (cwd, origins) => update(cwd, (m) => ({
+  ...m,
+  source: { ...m.source, assetOrigins: [...new Set(origins.map((o) => new URL(o).origin))] },
 }));
 
 /** Changes the plan: how many pages, or which selection. */

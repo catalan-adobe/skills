@@ -68,13 +68,31 @@ export async function readablePages(cwd) {
     .filter((p) => p.kind === 'page' && p.cache && p.verdict.status !== 'out');
 }
 
-/** Readable pages without a tree at `minWidth` (all of them with `force`). */
-export async function pagesToCapture(cwd, { force = false, minWidth = MIN_WIDTH } = {}) {
+/**
+ * When what a capture renders last changed: the access decision (an overlay rule added)
+ * or the cache (a selection cached, a fill). A tree older than that is stale.
+ */
+export async function renderingChangedAt(cwd) {
+  const { runs, website } = await data(cwd);
+  const access = await website.readAccess(cwd);
+  const cacheRuns = (await runs.list(cwd, { step: 'cache' })).filter((r) => r.state === 'done');
+  return [access?.updatedAt, ...cacheRuns.map((r) => r.finished)].filter(Boolean).sort().at(-1)
+    ?? null;
+}
+
+/**
+ * Readable pages without a current tree: none, one at another width, one without the
+ * page facts, or one older than the last change to what a capture renders.
+ */
+export async function pagesToCapture(cwd, { minWidth = MIN_WIDTH } = {}) {
   const { trees } = await data(cwd);
   const readable = await readablePages(cwd);
-  if (force) return readable;
-  const widths = await Promise.all(readable.map((p) => trees.minWidth(cwd, p.id)));
-  return readable.filter((_, i) => widths[i] !== minWidth);
+  const since = await renderingChangedAt(cwd);
+  const heads = await Promise.all(readable.map((p) => trees.head(cwd, p.id)));
+  return readable.filter((_, i) => {
+    const h = heads[i];
+    return !h || h.minWidth !== minWidth || !h.facts || (since && h.capturedAt < since);
+  });
 }
 
 const firstLine = (text) => String(text ?? '').split('\n').find((l) => l.trim()) ?? '';

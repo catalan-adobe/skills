@@ -33,7 +33,7 @@ test('website.json is a summary of the table: discovery, counts, groups in scope
     found('https://other.example/x'),
   ]);
   const site = await refresh(cwd);
-  assert.deepEqual(site.source, { origin: ORIGIN, scope: ORIGIN });
+  assert.deepEqual(site.source, { origin: ORIGIN, scope: ORIGIN, assetOrigins: [] });
   assert.deepEqual(site.discovery,
     [{ from: 'sitemap', source: 'sitemap.xml', urls: 4 }, { from: 'crawl', urls: 1 }]);
   assert.deepEqual(site.counts,

@@ -31,7 +31,10 @@ register('website/website', 1, 'derived', {
       type: 'object',
       required: ['origin', 'scope'],
       additionalProperties: false,
-      properties: { origin: { type: 'string' }, scope: { type: 'string' } },
+      properties: {
+        origin: { type: 'string' }, scope: { type: 'string' },
+        assetOrigins: { type: 'array', items: { type: 'string' } },
+      },
     },
     discovery: {
       type: 'array',

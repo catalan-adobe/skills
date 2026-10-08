@@ -50,19 +50,23 @@ export function write(cwd, pageId, { minWidth, url, capturedAt, tree, text, node
 export const read = (cwd, pageId) => openStore(cwd).read(file(pageId), SCHEMA);
 
 /**
- * The width a stored tree was taken at, from the head of the file; null without a tree;
- * 0 for a tree without the page facts (height, screenshot) — taken before they were
- * recorded, to be captured again.
+ * What a stored tree says about itself, from the head of the file: the width it was taken
+ * at, when, and whether the page facts (height, screenshot) are there — a tree taken
+ * before they were recorded is to be captured again. Null without a tree.
  */
-export async function minWidth(cwd, pageId) {
+export async function head(cwd, pageId) {
   const fh = await openFile(openStore(cwd).path(file(pageId))).catch(() => null);
   if (!fh) return null;
   try {
     const { buffer, bytesRead } = await fh.read(Buffer.alloc(512), 0, 512, 0);
-    const head = buffer.toString('utf8', 0, bytesRead);
-    const m = head.match(/"minWidth":\s*(\d+)/);
-    const facts = head.includes('"page"') && !head.includes('"page": null');
-    return m && facts ? Number(m[1]) : 0;
+    const text = buffer.toString('utf8', 0, bytesRead);
+    const width = text.match(/"minWidth":\s*(\d+)/);
+    const at = text.match(/"capturedAt":\s*"([^"]+)"/);
+    return {
+      minWidth: width ? Number(width[1]) : 0,
+      capturedAt: at ? at[1] : null,
+      facts: text.includes('"page"') && !text.includes('"page": null'),
+    };
   } finally {
     await fh.close();
   }

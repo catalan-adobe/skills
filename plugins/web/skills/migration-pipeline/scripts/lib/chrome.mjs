@@ -315,11 +315,13 @@ export async function check(cwd) {
 /** The real io: offline proxy, playwright-cli with the page-tree bundle injected. */
 export async function realIo(cwd) {
   const { proxyScript, treeBundle, cli } = await tools(cwd);
+  const { migration } = await data(cwd);
+  const also = (await migration.open(cwd)).source.assetOrigins ?? [];
   const work = path.join(cwd, 'migration', '.work');
   return {
     ...defaultIo,
     treeBundle,
-    startProxy: proxyStarter(proxyScript, cacheDir(cwd), defaultIo),
+    startProxy: proxyStarter(proxyScript, cacheDir(cwd), defaultIo, { also }),
     browser: playwright(cli, { io: defaultIo, cwd: work, session: sessionName(cwd, 'chrome') }),
   };
 }

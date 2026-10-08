@@ -3,7 +3,7 @@
 // the page table (http, redirect, final URL, kind, cache), the verdicts following. One run
 // per selection, heartbeating; a detached worker so the caller returns at once.
 import { createHash } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import {
   cacheDir, defaultIo, parseEval, playwright, proxyStarter, sessionName, tools, viaProxy,
@@ -131,18 +131,39 @@ const firstLine = (text) => String(text ?? '').split('\n').find((l) => l.trim())
  * browser and proxy, injectable: `startProxy({ offline })`, `browser`, `sleep`.
  */
 export async function cacheSelection(cwd, name, { io, force = false, pace } = {}) {
-  const { migration, pages, selections, runs, website, notes } = await data(cwd);
-  const m = await migration.open(cwd);
+  const { pages, selections } = await data(cwd);
   const sel = await selections.read(cwd, name);
   if (!sel) throw new Error(`no selection ${name}`);
-  const access = await website.readAccess(cwd);
-  if (!access) throw new Error('no website/access.json; run the access step first');
   const table = await pages.read(cwd);
   const byId = new Map(table.pages.map((p) => [p.id, p]));
   const targets = sel.pages.map((id) => byId.get(id)).filter(Boolean)
     .filter((p) => force || !p.cache);
-  const run = await runs.start(cwd, 'cache', { selection: name, pace: pace ?? m.settings.pace,
-    force }, { pid: process.pid });
+  return visit(cwd, { name, targets, input: { selection: name, force }, io, pace });
+}
+
+/**
+ * Fills the cache for the pages already in it: one more online pass, so the assets on
+ * origins named since (`source.assetOrigins`) are stored. The pages themselves are served
+ * from the cache; only what is missing is fetched.
+ */
+export async function fill(cwd, { io, pace } = {}) {
+  const { migration, pages } = await data(cwd);
+  const m = await migration.open(cwd);
+  if (!(m.source.assetOrigins ?? []).length) {
+    throw new Error('no asset origins named: migration.mjs assets <origin>... first');
+  }
+  const targets = (await pages.read(cwd)).pages.filter((p) => p.cache && p.kind === 'page');
+  return visit(cwd, { name: 'fill', targets, input: { fill: true,
+    assetOrigins: m.source.assetOrigins }, io, pace });
+}
+
+async function visit(cwd, { name, targets, input, io, pace }) {
+  const { migration, runs, website, notes } = await data(cwd);
+  const m = await migration.open(cwd);
+  const access = await website.readAccess(cwd);
+  if (!access) throw new Error('no website/access.json; run the access step first');
+  const run = await runs.start(cwd, 'cache', { ...input, pace: pace ?? m.settings.pace },
+    { pid: process.pid });
   await runs.update(cwd, run.id, { state: 'running', total: targets.length });
   const origin = new URL(m.source.origin).origin;
   const dir = cacheDir(cwd);
@@ -204,10 +225,73 @@ export async function cacheSelection(cwd, name, { io, force = false, pace } = {}
   const counts = Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(', ');
   const summary = `${targets.length} URLs of ${name} visited (${counts}); `
     + `${failures.size} navigation failure(s).`;
+  const assets = await assetOriginsInCache(cwd);
   await notes.add(cwd, { step: 'cache', author: 'runner', summary: `cached ${name}`,
-    body: `# Cache ${name}\n\n${summary}\n` });
+    body: `# Cache ${name}\n\n${summary}\n\n${assetsInWords(assets, m.source)}\n` });
   await runs.finish(cwd, run.id, { state: 'done', summary });
-  return { run: run.id, visited: targets.length, kinds, failures: [...failures.entries()] };
+  return { run: run.id, visited: targets.length, kinds, failures: [...failures.entries()],
+    assets };
+}
+
+const HTML_URL = /\b(?:src|srcset|href|poster|data-src|data-srcset)=["']?(https?:\/\/[^/"'\s>]+)/g;
+const SCRIPT_TAG = /<script\b[^>]*\bsrc=["']?(https?:\/\/[^/"'\s>]+)/g;
+
+/**
+ * The other origins the cached pages reference, from their HTML: how many references each
+ * carries, scripts counted apart (analytics and tag managers lose nothing offline; an
+ * image CDN loses every picture). What `migration.mjs assets` decides on.
+ */
+export async function assetOriginsInCache(cwd) {
+  const { migration } = await data(cwd);
+  const m = await migration.open(cwd);
+  const origin = new URL(m.source.origin).origin;
+  const root = path.join(cacheDir(cwd), cacheRelativePath(origin).split('/')[0]);
+  const counts = new Map();
+  const bump = (o, kind) => {
+    const c = counts.get(o) ?? { assets: 0, scripts: 0 };
+    c[kind] += 1;
+    counts.set(o, c);
+  };
+  for (const file of await htmlFiles(root)) {
+    // eslint-disable-next-line no-await-in-loop
+    const text = await readFile(file, 'utf8').catch(() => '');
+    const scripts = [...text.matchAll(SCRIPT_TAG)].map(([, o]) => o).filter((o) => o !== origin);
+    for (const o of scripts) bump(o, 'scripts');
+    const refs = [...text.matchAll(HTML_URL)].map(([, o]) => o).filter((o) => o !== origin);
+    for (const o of refs) bump(o, 'assets');
+    for (const o of scripts) counts.get(o).assets -= 1;
+  }
+  return [...counts].map(([o, c]) => ({ origin: o, ...c }))
+    .sort((a, b) => b.assets - a.assets || b.scripts - a.scripts);
+}
+
+async function htmlFiles(dir) {
+  const out = [];
+  for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const file = path.join(dir, entry.name);
+    // eslint-disable-next-line no-await-in-loop
+    if (entry.isDirectory()) out.push(...await htmlFiles(file));
+    else if (entry.name.endsWith('.html')) out.push(file);
+  }
+  return out;
+}
+
+/** The asset origins as words for the note: named ones, and the ones worth naming. */
+export function assetsInWords(assets, source) {
+  const named = new Set(source.assetOrigins ?? []);
+  const lines = ['## Assets from other origins', ''];
+  if (!assets.length) return `${lines.join('\n')}None referenced.`;
+  lines.push('| origin | references | scripts | stored |', '|---|---|---|---|',
+    ...assets.slice(0, 12).map((a) => (
+      `| ${a.origin} | ${a.assets} | ${a.scripts} | ${named.has(a.origin) ? 'yes' : 'no'} |`)), '');
+  const missing = assets.filter((a) => a.assets >= 10 && !named.has(a.origin));
+  if (missing.length) {
+    lines.push(`Not stored: ${missing.map((a) => a.origin).join(', ')}. An origin that serves`
+      + ' images or fonts leaves them out of every offline render: name it with'
+      + ' `migration.mjs assets <origin>...`, then `pipeline cache fill`. Analytics and tag'
+      + ' managers lose nothing.');
+  }
+  return lines.join('\n');
 }
 
 /** Verifies offline and records every visited page on the table; kinds counted. */
@@ -269,7 +353,7 @@ export async function check(cwd) {
   if (!approved.length) return { pass: false, note: 'no selection approved for the cache' };
   const newest = await runs.newest(cwd, 'cache');
   if (newest && ['queued', 'running'].includes(runs.liveness(newest))) {
-    return { pass: false, note: `caching ${newest.input.selection}` };
+    return { pass: false, note: `caching ${newest.input.selection ?? 'the assets (fill)'}` };
   }
   const pending = await pendingSelections(cwd);
   if (pending.length) return { pass: false, note: `not yet cached: ${pending.join(', ')}` };
@@ -279,17 +363,36 @@ export async function check(cwd) {
 /** The real io: the proxy from setup, playwright-cli in this project's session. */
 export async function realIo(cwd) {
   const { proxyScript, cli } = await tools(cwd);
+  const { migration } = await data(cwd);
+  const also = (await migration.open(cwd)).source.assetOrigins ?? [];
   const work = path.join(cwd, 'migration', '.work');
   return {
     ...defaultIo,
-    startProxy: proxyStarter(proxyScript, cacheDir(cwd), defaultIo),
+    startProxy: proxyStarter(proxyScript, cacheDir(cwd), defaultIo, { also }),
     browser: playwright(cli, { io: defaultIo, cwd: work, session: sessionName(cwd, 'cache') }),
   };
 }
 
-/** The worker: caches every pending selection in turn, then exits. */
-export async function workerMain(cwd) {
+/** What `cache [fill]` has to do: the pending selections, or the cached pages to fill. */
+export async function pending(cwd, mode) {
+  if (mode === undefined) return pendingSelections(cwd);
+  if (mode !== 'fill') throw new Error(`cache knows no mode ${mode}; fill, status or stop`);
+  const { migration, pages } = await data(cwd);
+  const m = await migration.open(cwd);
+  if (!(m.source.assetOrigins ?? []).length) {
+    throw new Error('no asset origins named: migration.mjs assets <origin>... first');
+  }
+  return (await pages.read(cwd)).pages.filter((p) => p.cache && p.kind === 'page')
+    .map((p) => p.id);
+}
+
+/** The worker: caches every pending selection in turn, or fills, then exits. */
+export async function workerMain(cwd, mode) {
   const io = await realIo(cwd);
+  if (mode === 'fill') {
+    await fill(cwd, { io });
+    return;
+  }
   for (const name of await pendingSelections(cwd)) {
     // eslint-disable-next-line no-await-in-loop
     await cacheSelection(cwd, name, { io });

@@ -20,6 +20,8 @@ export const COMMANDS = [
     help: 'create migration/migration.json; once' },
   { name: 'show', usage: '', help: 'the migration file' },
   { name: 'plan', usage: '[--pages <n>] [--selection <name>]', help: 'how much to migrate' },
+  { name: 'assets', usage: '<origin>...',
+    help: 'the other origins whose assets the pages use; the cache stores them too' },
   { name: 'approve', usage: '<step> [<selection>...]',
     help: 'the operator\'s yes at a gate: selections for cache, bare for the others' },
   { name: 'runs', usage: '[--step <id>]', help: 'every run, oldest first' },
@@ -45,7 +47,8 @@ export const COMMANDS = [
 
 const FLAGS = {
   init: ['--origin', '--scope', '--pages', '--target-repo', '--skills-repo', '--skills-ref'],
-  show: [], plan: ['--pages', '--selection'], approve: [], runs: ['--step'], state: ['--text'],
+  show: [], plan: ['--pages', '--selection'], assets: [], approve: [], runs: ['--step'],
+  state: ['--text'],
   pages: ['--group', '--status', '--reason', '--cached', '--uncached', '--fragment', '--text'],
   page: [], 'decide-page': [], selections: [], website: [], types: ['--undecided'],
   'decide-type': ['--notes'], inventory: [], note: ['--page'], notes: ['--step'],
@@ -98,6 +101,9 @@ export async function main(argv, cwd = process.cwd()) {
       });
     case 'show':
       return migration.open(cwd);
+    case 'assets':
+      if (!positional.length) throw new Error('usage: assets <origin>...');
+      return migration.assetOrigins(cwd, positional);
     case 'plan':
       return migration.plan(cwd, {
         ...(flags['--pages'] ? { pages: integer('--pages', flags['--pages']) } : {}),

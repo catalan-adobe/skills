@@ -64,13 +64,15 @@ export const cacheDir = (cwd) => path.join(cwd, 'migration', 'cache');
 
 /**
  * Starts the proxy on a free port and waits for `/__status`; a child that exits first
- * is reported with its stderr; `stop` sends SIGTERM, then SIGKILL after a delay.
+ * is reported with its stderr; `stop` sends SIGTERM, then SIGKILL after a delay. `also`:
+ * the other origins whose assets the proxy stores and serves (the migration's
+ * `source.assetOrigins`).
  */
-export function proxyStarter(script, dir, io = defaultIo) {
+export function proxyStarter(script, dir, io = defaultIo, { also = [] } = {}) {
   return async ({ offline }) => {
     const port = await io.freePort(3001);
     const args = [script, '--port', String(port), '--cache', dir,
-      ...(offline ? ['--offline'] : [])];
+      ...(offline ? ['--offline'] : []), ...(also.length ? ['--also', also.join(',')] : [])];
     const child = io.spawn(io.execPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (d) => { stderr += d; });
