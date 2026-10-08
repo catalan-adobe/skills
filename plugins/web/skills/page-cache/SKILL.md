@@ -70,6 +70,8 @@ node "$PAGE_CACHE_SCRIPT" [options]
   --cache, -c <dir>    Cache directory             (default: .page-cache)
   --offline            Only serve from cache, never fetch from origin
   --timeout, -t <ms>   Upstream fetch deadline     (default: 30000)
+  --also <origins>     Other origins whose assets the pages use (comma-separated,
+                       e.g. an image CDN): cached and served like the page's own
 ```
 
 ## Control Endpoints
@@ -196,7 +198,15 @@ characters).
   assets that the browser requests through the proxy are cached.
 - **Cross-origin resources:** Assets loaded from different domains (CDNs,
   Google Fonts, analytics) are fetched directly by the browser and NOT
-  cached. These still require network access during replay.
+  cached. These still require network access during replay — unless the
+  origin is named with `--also`.
+- **`--also` origins:** Every absolute URL on a named origin, wherever it
+  sits in HTML, CSS or JavaScript text (attribute, `srcset` entry, `url()`,
+  inline script, JSON), is rewritten to a proxy path carrying its origin
+  (`https://cdn.example/a.jpg?w=1` → `/a.jpg?w=1&_origin=https%3A%2F%2Fcdn.example`),
+  at cache time and at serve time — so pages cached before the origin was
+  named are served rewritten too, and one more online pass fills the
+  assets. Serving an `--also` asset never sets the origin cookie.
 - **Only GET:** POST and other mutating methods return 405 (the proxy is
   read-only archival).
 - **Redirects:** The redirect response itself is cached; the `Location`

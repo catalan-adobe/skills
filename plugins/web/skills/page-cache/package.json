@@ -1,1 +1,7 @@
-{ "name": "page-cache", "version": "0.0.0-semantically-released", "private": true, "type": "module" }
+{
+  "name": "page-cache",
+  "version": "0.0.0-semantically-released",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test scripts/page-cache.test.mjs" }
+}

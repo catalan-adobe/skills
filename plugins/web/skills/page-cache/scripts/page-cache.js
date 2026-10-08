@@ -10,6 +10,11 @@
  * file plus a JSON sidecar ({ headers, status }). The browser sets an origin
  * cookie on the first ?_origin= request; subsequent sub-resource requests
  * reuse it so every asset flows through the proxy and gets cached.
+ *
+ * --also names other origins whose assets the pages use (an image CDN):
+ * their absolute URLs in HTML and CSS are rewritten to flow through the
+ * proxy with an explicit ?_origin=, at cache time and at serve time, so
+ * they are fetched once and served offline like the page's own.
  */
 
 import { createServer } from 'node:http';
@@ -31,6 +36,7 @@ const { values: opts } = parseArgs({
     cache: { type: 'string', short: 'c', default: '.page-cache' },
     offline: { type: 'boolean', default: false },
     timeout: { type: 'string', short: 't', default: '30000' },
+    also: { type: 'string', default: '' },
   },
   strict: true,
 });
@@ -39,6 +45,8 @@ const PORT = parseInt(opts.port, 10);
 const CACHE_DIR = resolve(opts.cache);
 const OFFLINE = opts.offline;
 const FETCH_TIMEOUT = parseInt(opts.timeout, 10);
+const ALSO = new Set(opts.also.split(',').map((o) => o.trim()).filter(Boolean)
+  .map((o) => new URL(o).origin));
 
 mkdirSync(CACHE_DIR, { recursive: true });
 
@@ -49,7 +57,7 @@ const stats = { hits: 0, misses: 0, errors: 0 };
 // page JS from using the proxy to probe arbitrary hosts (SSRF guard).
 // In offline mode the check is skipped: no fetch ever reaches the
 // network, so SSRF is impossible.
-const allowedOrigins = new Set();
+const allowedOrigins = new Set(ALSO);
 
 // URLs currently being fetched. Prevents concurrent duplicate fetches
 // for the same resource from producing split body/metadata files.
@@ -157,6 +165,33 @@ function rewriteUrls(buf, origin, contentType) {
   return Buffer.from(text, 'utf-8');
 }
 
+/**
+ * Every absolute URL on an --also origin, wherever it sits in the text
+ * (attribute, srcset entry, CSS url(), inline script or JSON), becomes
+ * a proxy path carrying its origin: https://cdn.example/a.jpg?w=1 →
+ * /a.jpg?w=1&_origin=https%3A%2F%2Fcdn.example. Idempotent: a rewritten
+ * URL no longer matches. Applied at cache time and at serve time, so
+ * pages cached before the origin was named are served rewritten too.
+ */
+function rewriteAlsoUrls(buf, contentType) {
+  if (!ALSO.size) return buf;
+  const charset = getCharset(contentType);
+  if (charset && charset !== 'utf-8' && charset !== 'utf8') return buf;
+  let text = buf.toString('utf-8');
+  for (const also of ALSO) {
+    const esc = also.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`${esc}(/[^\\s"'<>)\\\\]*)?(?![\\w.-])`, 'g');
+    const param = `_origin=${encodeURIComponent(also)}`;
+    text = text.replace(re, (_, p) => {
+      const path = p || '/';
+      return `${path}${path.includes('?') ? '&' : '?'}${param}`;
+    });
+  }
+  return Buffer.from(text, 'utf-8');
+}
+
+const isText = (ct) => ct.includes('html') || ct.includes('css') || ct.includes('javascript');
+
 /* ------------------------------------------------------------------ */
 /*  Cookie helper                                                      */
 /* ------------------------------------------------------------------ */
@@ -205,6 +240,7 @@ async function handle(req, res) {
       cached: cacheCount(),
       dir: CACHE_DIR,
       offline: OFFLINE,
+      also: [...ALSO],
     }));
     return;
   }
@@ -260,20 +296,26 @@ async function handle(req, res) {
   reqUrl.searchParams.delete('_origin');
   const qs = reqUrl.searchParams.toString();
   const originUrl = `${origin}${reqUrl.pathname}${qs ? `?${qs}` : ''}`;
-  const cookie = `page-cache-origin=${encodeURIComponent(origin)}; Path=/`;
+  // An --also origin's asset never becomes the page's origin: no cookie.
+  const cookie = ALSO.has(origin)
+    ? undefined : `page-cache-origin=${encodeURIComponent(origin)}; Path=/`;
+  const withCookie = (headers) => (cookie ? { ...headers, 'set-cookie': cookie } : headers);
+  const serveBody = (entry) => {
+    const ct = entry.headers['content-type'] || '';
+    return isText(ct) ? rewriteAlsoUrls(entry.body, ct) : entry.body;
+  };
 
   // ---- serve from cache ----
   const cached = cacheRead(originUrl);
   if (cached) {
     stats.hits += 1;
     console.log(`\x1b[32m[hit]\x1b[0m  ${originUrl}`);
-    res.writeHead(cached.status, {
+    res.writeHead(cached.status, withCookie({
       ...cached.headers,
       'x-page-cache': 'hit',
       'access-control-allow-origin': '*',
-      'set-cookie': cookie,
-    });
-    res.end(req.method === 'HEAD' ? undefined : cached.body);
+    }));
+    res.end(req.method === 'HEAD' ? undefined : serveBody(cached));
     return;
   }
 
@@ -295,13 +337,12 @@ async function handle(req, res) {
       if (fresh) {
         stats.hits += 1;
         console.log(`\x1b[32m[hit]\x1b[0m  ${originUrl} (waited)`);
-        res.writeHead(fresh.status, {
+        res.writeHead(fresh.status, withCookie({
           ...fresh.headers,
           'x-page-cache': 'hit',
           'access-control-allow-origin': '*',
-          'set-cookie': cookie,
-        });
-        res.end(req.method === 'HEAD' ? undefined : fresh.body);
+        }));
+        res.end(req.method === 'HEAD' ? undefined : serveBody(fresh));
         return;
       }
     } catch { /* first fetch failed — fall through and retry */ }
@@ -354,6 +395,7 @@ async function handle(req, res) {
     if (ct.includes('html') || ct.includes('css')) {
       body = rewriteUrls(body, origin, ct);
     }
+    if (isText(ct)) body = rewriteAlsoUrls(body, ct);
 
     // persist to cache — errors must not block the response
     try {
@@ -375,8 +417,7 @@ async function handle(req, res) {
     const result = await promise;
     inFlight.delete(originUrl);
 
-    result.headers['set-cookie'] = cookie;
-    res.writeHead(result.status, result.headers);
+    res.writeHead(result.status, withCookie(result.headers));
     res.end(req.method === 'HEAD' ? undefined : result.body);
   } catch (err) {
     inFlight.delete(originUrl);
@@ -405,12 +446,14 @@ async function handle(req, res) {
 const server = createServer(handle);
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`\n\x1b[1mpage-cache\x1b[0m proxy on http://localhost:${PORT}`);
+  const port = server.address().port; // the real one when --port 0 asked for any
+  console.log(`\n\x1b[1mpage-cache\x1b[0m proxy on http://localhost:${port}`);
   console.log(`  Cache:   ${CACHE_DIR}`);
   console.log(`  Mode:    ${OFFLINE ? 'offline (cache only)' : 'online (fetch + cache)'}`);
+  if (ALSO.size) console.log(`  Also:    ${[...ALSO].join(', ')}`);
   console.log(`  Timeout: ${FETCH_TIMEOUT}ms`);
   console.log(
-    `\nUsage: http://localhost:${PORT}/path?_origin=https://example.com\n`,
+    `\nUsage: http://localhost:${port}/path?_origin=https://example.com\n`,
   );
 });
 
