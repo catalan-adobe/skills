@@ -197,7 +197,8 @@ no other's, `at` and a `detail`. Codes: `off-scope` (not under `source.scope`),
 `over-budget` (beyond `plan.pages` in the plan's selection), `not-a-page` (binary, asset),
 `redirect`, `http-error`, `unreachable`, `duplicate` (same final URL as another page),
 `no-header`, `no-footer`, `empty` (nothing between the chrome), `broken` (capture failed),
-`operator`. `over-budget` exists only once `plan.selection` names the frozen set.
+`too-tall` (taller than a browser screenshots whole, ~16 384 px: parked, no picture to
+judge it by), `operator`. `over-budget` exists only once `plan.selection` names the frozen set.
 
 ### pages/decisions.json — *decision*
 

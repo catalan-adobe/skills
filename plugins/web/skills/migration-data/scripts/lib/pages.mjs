@@ -29,6 +29,7 @@ export const REASONS = {
   'no-footer': 'no footer chrome found on the page',
   empty: 'nothing between the chrome',
   broken: 'the capture failed',
+  'too-tall': 'the rendered page is taller than a browser can screenshot whole',
   operator: 'the operator decided',
 };
 export const REASON_CODES = Object.keys(REASONS);

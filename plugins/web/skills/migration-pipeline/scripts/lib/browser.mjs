@@ -160,8 +160,8 @@ export function playwright(cli, { io = defaultIo, cwd, session }) {
       ...(persistent ? ['--persistent'] : []), url),
     goto: (url) => run('goto', url),
     eval: async (expression) => evalResult((await run('eval', expression)).stdout),
-    screenshot: (file, target) => run('screenshot', ...(target ? [target] : []),
-      '--filename', file, ...(target ? [] : ['--full-page'])),
+    screenshot: (file, target, { type } = {}) => run('screenshot', ...(target ? [target] : []),
+      '--filename', file, ...(type ? ['--type', type] : []), ...(target ? [] : ['--full-page'])),
     close: () => run('close'),
   };
 }

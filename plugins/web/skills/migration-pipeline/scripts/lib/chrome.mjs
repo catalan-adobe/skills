@@ -29,7 +29,9 @@ async function captures(cwd) {
   const stored = new Set(await trees.list(cwd));
   const pages = readable.filter((p) => stored.has(p.id));
   const all = await Promise.all(pages.map((p) => trees.read(cwd, p.id)));
-  return pages.map((p, i) => ({ page: p, url: p.url, tree: all[i].tree }));
+  return pages.map((p, i) => ({
+    page: p, url: p.url, tree: all[i].tree, scrollHeight: all[i].page?.scrollHeight ?? null,
+  }));
 }
 
 /** The hash of what detection read: which trees, at which width. */
@@ -110,16 +112,21 @@ export function pageComposition(capture, fragments, at) {
   return { method: { name: METHOD, at }, fragments: placed, sections: [], omitted: [] };
 }
 
-/** The flags: a page the detection saw without a header, without a footer. */
-export function flagsOf(detection, byUrl) {
+/**
+ * The flags: a page the detection saw without a header, without a footer; a page too tall
+ * for a browser to screenshot whole (no picture to judge it by — parked).
+ */
+export function flagsOf(detection, byUrl, { tall = [], limit } = {}) {
   const flags = {};
+  const add = (id, code, detail) => {
+    flags[id] = [...(flags[id] ?? []), { code, kind: 'flag', ...(detail ? { detail } : {}) }];
+  };
   for (const part of PARTS) {
     for (const url of detection.without[part]) {
-      const id = byUrl.get(url);
-      if (!id) continue;
-      flags[id] = [...(flags[id] ?? []), { code: `no-${part}`, kind: 'flag' }];
+      if (byUrl.has(url)) add(byUrl.get(url), `no-${part}`);
     }
   }
+  for (const { id, scrollHeight } of tall) add(id, 'too-tall', `${scrollHeight} px > ${limit}`);
   return flags;
 }
 
@@ -231,7 +238,7 @@ export function renderNote(detection, fragments, defects) {
 export async function detect(cwd, { io, run, access, visit, minWidth = MIN_WIDTH,
   now = () => new Date() }) {
   const {
-    runs, store, website, composition, pages, notes,
+    runs, store, website, composition, pages, notes, trees,
   } = await data(cwd);
   await runs.update(cwd, run.id, { current: 'detect' });
   const all = await captures(cwd);
@@ -267,11 +274,14 @@ export async function detect(cwd, { io, run, access, visit, minWidth = MIN_WIDTH
   }
   await composition.writeMany(cwd, all.map((c) => (
     { pageId: c.page.id, composition: pageComposition(c, fragments, at) })));
-  await pages.setReasons(cwd, 'chrome', flagsOf(detection, byUrl));
+  const limit = trees.SCREENSHOT_LIMIT;
+  const tall = all.filter((c) => c.scrollHeight > limit)
+    .map((c) => ({ id: c.page.id, scrollHeight: c.scrollHeight }));
+  await pages.setReasons(cwd, 'chrome', flagsOf(detection, byUrl, { tall, limit }));
   await website.refresh(cwd);
   const summary = `${all.length} pages read; ${PARTS.map((p) => `${p}: `
     + `${fragments.filter((f) => f.part === p).length}, ${detection.without[p].length} without`)
-    .join('; ')}; ${detection.rejected.length} candidate(s) rejected.`;
+    .join('; ')}; ${tall.length} too tall; ${detection.rejected.length} candidate(s) rejected.`;
   await notes.add(cwd, { step: 'chrome', author: 'runner', summary,
     body: renderNote(detection, fragments, defects) });
   return { summary, fragments: fragments.length };

@@ -64,6 +64,8 @@ test('the HTML report shows every unit, says what is absent, opens from disk', a
   assert.match(html, /<span class="tag ">redirect<\/span> 1/);
   assert.match(html, /redirect → https:\/\/a.example\//, 'the reason with its detail');
   assert.match(html, /<a href="https:\/\/a.example\/old">\/old<\/a>/, 'the URL linked');
+  assert.match(html, /<th>shot<\/th>/);
+  assert.equal((html.match(/shots\/page.jpg/g) ?? []).length, 0, 'no screenshot taken yet');
   assert.match(html, /<h3>header <span class="tag ">template<\/span>/);
   assert.match(html, /<img src="\.\.\/fragments\/frg-x\/shots\/page.png"/, 'relative to views/');
   assert.match(html, /Optional: <code class="sel">\.promo<\/code>/);

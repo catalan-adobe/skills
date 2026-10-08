@@ -1,6 +1,8 @@
 // The report as one HTML file: every unit of the migration on one page, for a person —
 // rendered from the data, regenerated, never edited. Images are referenced relatively,
 // so the file opens from disk. No script, no dependency: plain HTML and a few rules of CSS.
+import { access } from 'node:fs/promises';
+import path from 'node:path';
 import { readTypes } from './elements.mjs';
 import { read as readInventory } from './inventory.mjs';
 import { open as openMigration } from './migration.mjs';
@@ -9,6 +11,8 @@ import { composed, read as readTable } from './pages.mjs';
 import { list as listRuns, liveness } from './runs.mjs';
 import { list as listSelections } from './selections.mjs';
 import { read as readState } from './state.mjs';
+import { openStore } from './store.mjs';
+import { shotFile } from './trees.mjs';
 import { readFragments, readWebsite } from './website.mjs';
 
 export const MAX_ROWS = 300;
@@ -155,7 +159,9 @@ function sectionWebsite(site) {
   ];
 }
 
-function sectionPages(pages, selections) {
+const exists = (file) => access(file).then(() => true, () => false);
+
+async function sectionPages(cwd, pages, selections) {
   const out = ['<h2 id="pages">Pages</h2>', `<div class="summary">${esc(pages.summary)}</div>`];
   if (selections.length) {
     out.push('<h3>Selections</h3>', tableOf(['name', 'pages', 'criteria', 'created'],
@@ -166,16 +172,20 @@ function sectionPages(pages, selections) {
   for (const p of pages.pages) kinds[p.kind] = (kinds[p.kind] ?? 0) + 1;
   out.push('<h3>Kinds</h3>', `<p>${Object.entries(kinds).sort((a, b) => b[1] - a[1])
     .map(([k, v]) => `${tag(k)} ${v}`).join(' &nbsp; ')}</p>`);
-  const seen = pages.pages.filter((p) => p.cache || p.verdict.status === 'out');
+  const seen = pages.pages.filter((p) => p.cache || p.verdict.status === 'out')
+    .slice(0, MAX_ROWS);
   out.push(`<h3>Pages visited or decided (${seen.length})</h3>`);
-  if (seen.length > MAX_ROWS) out.push(`<p>The first ${MAX_ROWS} are shown.</p>`);
+  if (seen.length === MAX_ROWS) out.push(`<p>The first ${MAX_ROWS} are shown.</p>`);
+  const root = openStore(cwd).root;
+  const shots = await Promise.all(seen.map((p) => exists(path.join(root, shotFile(p.id)))));
   out.push(tableOf(['url', 'group', 'kind', 'http', 'verdict', 'reasons', 'fragments',
-    'sections'], seen.slice(0, MAX_ROWS).map((p) => [
+    'sections', 'shot'], seen.map((p, i) => [
     `<a href="${esc(p.url)}">${esc(new URL(p.url).pathname + new URL(p.url).search)}</a>`,
     p.group === null ? '—' : code(p.group || '/'), esc(p.kind), n(p.http?.status ?? '—'),
     tag(p.verdict.status, VERDICT_TONE[p.verdict.status]),
     esc(p.verdict.reasons.map((r) => r.code + (r.detail ? ` → ${r.detail}` : '')).join('; ')),
     n(p.fragments?.length ?? 0), composed(p) ? n(p.composition.sections) : '—',
+    shots[i] ? `<a href="../${esc(shotFile(p.id))}">page</a>` : '—',
   ]), { numeric: [3, 6, 7] }));
   return out;
 }
@@ -262,7 +272,8 @@ export async function renderHtml(cwd, { now = new Date() } = {}) {
   const body = [
     `<h1>${esc(migration.source.scope)}</h1>`,
     `<p class="lead">Migration ${code(migration.id)} · ${nav}</p>`,
-    ...sectionState(state), ...sectionWebsite(site), ...sectionPages(pages, selections),
+    ...sectionState(state), ...sectionWebsite(site),
+    ...await sectionPages(cwd, pages, selections),
     ...sectionFragments(fragments), ...sectionElements(types, inventory), ...sectionRuns(runs),
     ...await sectionNotes(cwd, notes),
     `<footer>Rendered ${when(now.toISOString())} from migration/ — regenerate with`

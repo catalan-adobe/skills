@@ -1,6 +1,9 @@
 // The capture phase: every cached page still in the migration rendered from the cache,
-// offline, with the page-tree bundle injected; its visual tree stored under the page. A
-// rerun captures only what is missing or taken at another width.
+// offline, with the page-tree bundle injected; its visual tree stored under the page with
+// the page's height and, when the page is not too tall for one, its full-page screenshot.
+// A rerun captures only what is missing or taken at another width.
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
 import { parseEval } from './browser.mjs';
 import { pageExpression } from './cache.mjs';
 import { data } from './data.mjs';
@@ -11,6 +14,7 @@ export const MIN_WIDTH = 250;
 export const MAX_CONSECUTIVE_FAILURES = 5;
 export const captureExpression = (minWidth = MIN_WIDTH) => (
   `JSON.stringify(window.__visualTree.captureVisualTree(${minWidth}))`);
+export const HEIGHT_EXPRESSION = 'document.documentElement.scrollHeight';
 
 /**
  * The page is settled when samples this far apart agree and no hole is left; give up after
@@ -76,6 +80,20 @@ export async function pagesToCapture(cwd, { force = false, minWidth = MIN_WIDTH 
 const firstLine = (text) => String(text ?? '').split('\n').find((l) => l.trim()) ?? '';
 
 /**
+ * The page's scroll height and its full-page screenshot — none above the height a browser
+ * screenshots whole: past it the picture repeats the top and loses the bottom.
+ */
+async function screenshot(cwd, pageId, io, trees) {
+  const scrollHeight = Number(parseEval(await io.browser.eval(HEIGHT_EXPRESSION))) || 0;
+  if (scrollHeight > trees.SCREENSHOT_LIMIT) return { scrollHeight, shot: null };
+  const rel = trees.shotFile(pageId);
+  const abs = path.join(cwd, 'migration', rel);
+  await mkdir(path.dirname(abs), { recursive: true });
+  await io.browser.screenshot(abs, null, { type: 'jpeg' });
+  return { scrollHeight, shot: rel };
+}
+
+/**
  * Renders each page offline and stores its tree. `browser` is open on the offline proxy
  * with the bundle injected; `visit(page)` navigates. Progress goes to the run after every
  * page; five failures in a row end the phase.
@@ -102,10 +120,12 @@ export async function captureTrees(cwd, targets, {
         throw new Error('the page-tree bundle returned no tree (was it injected?)');
       }
       // eslint-disable-next-line no-await-in-loop
+      const shot = await screenshot(cwd, page.id, io, trees);
+      // eslint-disable-next-line no-await-in-loop
       await trees.write(cwd, page.id, {
         minWidth, url: page.url, capturedAt: now().toISOString(), tree: captured.data,
         text: captured.textFormat, nodeMap: captured.nodeMap,
-        rootBackground: captured.rootBackground ?? null,
+        rootBackground: captured.rootBackground ?? null, page: shot,
       });
       streak = 0;
     } catch (err) {

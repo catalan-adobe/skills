@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { captureExpression, pagesToCapture, preparedAtTop } from './capture.mjs';
+import {
+  HEIGHT_EXPRESSION, captureExpression, pagesToCapture, preparedAtTop,
+} from './capture.mjs';
 import {
   check, findNode, flagsOf, fragmentsOf, outlineExpression, pageComposition, pending,
   resolveExpression, workerMain,
@@ -66,6 +68,10 @@ function fakeIo(treeOf, { failOn = [], pageOf = numberOf } = {}) {
       },
       eval: async (expression) => {
         if (expression.startsWith('(async')) return '"top"';
+        if (expression === HEIGHT_EXPRESSION) {
+          const n = pageOf(current);
+          return JSON.stringify(n === 5 ? 20000 : treeOf(n).bounds.height);
+        }
         if (expression.includes('captureVisualTree')) {
           const tree = treeOf(pageOf(current));
           return JSON.stringify(JSON.stringify({ data: tree, textFormat: 'BODY', nodeMap: {} }));
@@ -178,6 +184,16 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   const landing = table.pages.find((p) => p.url === urlOf(10));
   assert.deepEqual(landing.verdict.reasons.map((r) => [r.code, r.kind, r.by]),
     [['no-header', 'flag', 'chrome'], ['no-footer', 'flag', 'chrome']]);
+  const tall = table.pages.find((p) => p.url === urlOf(5));
+  assert.deepEqual(tall.verdict.reasons.map((r) => [r.code, r.detail]),
+    [['too-tall', '20000 px > 16384']], 'parked: no honest picture of it');
+  assert.deepEqual((await trees.read(cwd, tall.id)).page, { scrollHeight: 20000, shot: null });
+  assert.deepEqual((await trees.read(cwd, p1.id)).page,
+    { scrollHeight: 3131, shot: `pages/${p1.id}/shots/page.jpg` });
+  assert.ok(io.calls.shots.some(([f]) => f.endsWith(`${p1.id}/shots/page.jpg`)));
+  assert.equal(io.calls.shots.filter(([f]) => f.endsWith('page.jpg')).length, 9,
+    'not the tall one');
+  assert.match(out.summary, /1 too tall/);
   assert.equal(landing.verdict.status, 'in', 'a flag is a flag, not an exclusion');
   assert.equal((await website.readWebsite(cwd)).counts.composed, 0, 'fragments only: not read');
   const [note] = await notes.list(cwd, { step: 'chrome' });

@@ -13,9 +13,14 @@ test('a tree is stored under its page, its width readable from the head, listed'
   const tree = { tag: 'BODY', bounds: { x: 0, y: 0, width: 1280, height: 3000 }, children: [] };
   await write(cwd, id, { minWidth: 250, url: 'https://a.example/', capturedAt:
     '2026-09-22T10:00:00.000Z', tree, text: 'BODY', nodeMap: { 1: 'body' } });
-  assert.equal(await minWidth(cwd, id), 250);
+  assert.equal(await minWidth(cwd, id), 0, 'no page facts: to be captured again');
   assert.deepEqual((await read(cwd, id)).tree, tree);
   assert.equal((await read(cwd, id)).rootBackground, null);
   assert.deepEqual(await list(cwd), [id]);
+  await write(cwd, id, { minWidth: 250, url: 'https://a.example/', capturedAt:
+    '2026-09-22T10:00:00.000Z', tree, text: 'BODY', nodeMap: {},
+    page: { scrollHeight: 17000, shot: null } });
+  assert.deepEqual((await read(cwd, id)).page, { scrollHeight: 17000, shot: null });
+  assert.equal(await minWidth(cwd, id), 250);
   await assert.rejects(write(cwd, id, { url: 'x', tree }), /minWidth|capturedAt/);
 });

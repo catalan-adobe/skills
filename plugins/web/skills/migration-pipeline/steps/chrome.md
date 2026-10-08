@@ -16,8 +16,10 @@ composition. Nothing leaves the machine: the pages come from the cache. Tier: me
    chrome`. Two phases, one offline browser session. **Capture**: every readable page
    without a visual tree is rendered from the cache with the page-tree bundle injected, the
    overlay rules applied, a scroll through the page and a bounded wait for it to settle;
-   its tree is stored under the page. **Detect**: elements recurring across the trees at a
-   stable position at the top or bottom are the chrome; what the detection found is written
+   its tree is stored under the page with the page's height and a full-page screenshot —
+   none above 16 384 px, where a browser's picture repeats the top and loses the bottom:
+   such a page is flagged `too-tall` and parked. **Detect**: elements recurring across the
+   trees at a stable position at the top or bottom are the chrome; the finding is written
    in EDS terms: `website/fragments.json` grouped by part (one header is one document,
    however many bands; a second design only with a label), each fragment's composition
    (its bands as sections), every page's composition with the fragments it carries and
@@ -38,7 +40,8 @@ composition. Nothing leaves the machine: the pages come from the cache. Tier: me
 
 ## Outputs
 
-- `pages/<id>/visual-tree.json` per readable page; `website/fragments.json`;
+- `pages/<id>/visual-tree.json` and `shots/page.jpg` per readable page;
+  `website/fragments.json`;
   `fragments/<id>/composition.json` and `shots/`; `pages/<id>/composition.json` with
   template fragments; `chrome` reasons on the table; a run; a runner note.
 
