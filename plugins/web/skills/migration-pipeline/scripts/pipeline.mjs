@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 // The pipeline CLI: setup, the steps, state. A client of migration-data: everything it
 // knows is read and written through the layer. JSON on stdout, --text for people.
-import { spawn } from 'node:child_process';
-import { openSync, realpathSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeAccess } from './lib/access.mjs';
-import { WORKER_SCRIPT, pendingSelections, workerMain } from './lib/cache.mjs';
+import { pendingSelections, workerMain as cacheWorker } from './lib/cache.mjs';
+import { pending as chromePending, workerMain as chromeWorker } from './lib/chrome.mjs';
+import { command as workerCommand } from './lib/worker.mjs';
 import { CHECKS } from './lib/checks.mjs';
 import { data } from './lib/data.mjs';
 import { discover } from './lib/discover.mjs';
@@ -30,12 +29,15 @@ export const COMMANDS = [
     help: 'representative uncached pages, one per largest group in turn; --write a selection' },
   { name: 'cache', usage: '[status|stop]',
     help: 'cache every approved selection not yet cached, in a detached worker; status; stop' },
+  { name: 'chrome', usage: '[status|stop]',
+    help: 'capture the visual trees and detect header and footer, in a worker; status; stop' },
   { name: 'website', usage: '', help: 'refresh the website summary from the table' },
   { name: 'state', usage: '[--text]', help: 'every step\'s state, computed and written' },
 ];
 const FLAGS = {
   setup: ['--install'], discover: ['--strategy', '--list'], access: ['--write'],
-  pick: ['--count', '--exclude', '--audit', '--write'], cache: ['--worker'], website: [],
+  pick: ['--count', '--exclude', '--audit', '--write'], cache: ['--worker'],
+  chrome: ['--worker'], website: [],
   state: ['--text'],
 };
 const BOOLEAN = new Set(['--install', '--text', '--write', '--worker']);
@@ -89,41 +91,6 @@ export async function setup(cwd, { shouldInstall, exec = defaultExec, nodeVersio
   return { reasons, installs, unknown, setup: written };
 }
 
-/**
- * cache: starts one detached worker for the pending selections unless a run is alive;
- * `status` the newest run and liveness; `stop` ends an alive worker.
- */
-export async function cache(cwd, positional, flags) {
-  const { runs } = await data(cwd);
-  if (flags['--worker']) {
-    await workerMain(cwd);
-    return { worker: 'done' };
-  }
-  const newest = await runs.newest(cwd, 'cache');
-  const live = newest ? runs.liveness(newest) : null;
-  if (positional[0] === 'status') {
-    return newest ? { ...newest, liveness: live } : { runs: 0 };
-  }
-  if (positional[0] === 'stop') {
-    if (!newest || !['queued', 'running'].includes(live) || !newest.pid) return { stopped: false };
-    process.kill(newest.pid, 'SIGTERM');
-    await runs.finish(cwd, newest.id, { state: 'stopped', summary: 'stopped by the operator' });
-    return { stopped: true, run: newest.id };
-  }
-  if (newest && ['queued', 'running'].includes(live)) {
-    return { started: false, run: newest.id, note: 'a cache run is alive' };
-  }
-  const pending = await pendingSelections(cwd);
-  if (!pending.length) return { started: false, note: 'nothing to cache: approve a selection' };
-  const work = path.join(cwd, 'migration', '.work', 'cache');
-  await mkdir(work, { recursive: true });
-  const log = openSync(path.join(work, 'worker.log'), 'a');
-  const child = spawn(process.execPath, [WORKER_SCRIPT, 'cache', '--worker'],
-    { cwd, detached: true, stdio: ['ignore', log, log] });
-  child.unref();
-  return { started: true, pid: child.pid, selections: pending };
-}
-
 export async function main(argv, cwd = process.cwd()) {
   const { name, flags, positional } = parse(argv);
   switch (name) {
@@ -150,7 +117,14 @@ export async function main(argv, cwd = process.cwd()) {
         write: typeof flags['--write'] === 'string' ? flags['--write'] : undefined,
       });
     case 'cache': {
-      const out = await cache(cwd, positional, flags);
+      const out = await workerCommand(cwd, 'cache', positional,
+        { pending: pendingSelections, worker: cacheWorker, flags });
+      await writeState(cwd);
+      return out;
+    }
+    case 'chrome': {
+      const out = await workerCommand(cwd, 'chrome', positional,
+        { pending: chromePending, worker: chromeWorker, flags });
       await writeState(cwd);
       return out;
     }

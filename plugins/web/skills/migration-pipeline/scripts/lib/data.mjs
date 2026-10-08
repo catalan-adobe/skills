@@ -38,7 +38,7 @@ export async function layer(name, cwd = process.cwd()) {
 /** The whole layer at once, for a script that uses several modules. */
 export async function data(cwd = process.cwd()) {
   const names = ['migration', 'runs', 'state', 'pages', 'selections', 'composition', 'website',
-    'elements', 'inventory', 'notes', 'views', 'store'];
+    'elements', 'inventory', 'notes', 'views', 'store', 'trees'];
   const modules = await Promise.all(names.map((n) => layer(n, cwd)));
   return Object.fromEntries(names.map((n, i) => [n, modules[i]]));
 }

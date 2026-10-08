@@ -43,7 +43,7 @@ waits for `migration.mjs approve <step>`.
 | `discover` | low | `pages/pages.json`, `website/website.json`, a note with the proposal |
 | `access` | medium | `website/access.json`: how to open a page, verified on three |
 | `cache` | low | page records' `cache`, `http`, `kind`, verdicts; `migration/cache/` |
-| `chrome` | medium | `website/fragments.json`, compositions' template fragments — coming |
+| `chrome` | medium | visual trees, `website/fragments.json`, compositions' template fragments |
 | `elements` | medium | `elements/types.json`, compositions' sections — coming |
 | `blocks` | medium | `elements/elements.json` decisions, `elements/inventory.json` — coming |
 | `report` | medium | `views/report.md` — coming |

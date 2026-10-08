@@ -5,7 +5,6 @@
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   cacheDir, defaultIo, parseEval, playwright, proxyStarter, sessionName, tools, viaProxy,
   writeBrowserConfig,
@@ -296,5 +295,3 @@ export async function workerMain(cwd) {
     await cacheSelection(cwd, name, { io });
   }
 }
-
-export const WORKER_SCRIPT = fileURLToPath(new URL('../pipeline.mjs', import.meta.url));

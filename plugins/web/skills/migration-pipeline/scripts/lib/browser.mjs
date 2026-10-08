@@ -38,14 +38,25 @@ export const defaultIo = {
 export const sessionName = (cwd, kind) => (
   `${kind}-${createHash('sha256').update(cwd).digest('hex').slice(0, 8)}`);
 
-/** The page-cache proxy script and the playwright-cli binary, as setup recorded them. */
+/**
+ * The page-cache proxy script, the page-tree bundle and the playwright-cli binary, as
+ * setup recorded them.
+ */
 export async function tools(cwd) {
   const setup = await readSetupJson(cwd);
   if (!setup) throw new Error('no migration/.work/setup.json; run pipeline setup --install');
-  const skill = setup.skills?.['page-cache']?.path;
+  const script = (name, file) => {
+    const skill = setup.skills?.[name]?.path;
+    if (!skill) throw new Error(`setup lacks the ${name} skill; run pipeline setup --install`);
+    return path.join(path.dirname(skill), 'scripts', file);
+  };
   const cli = setup.playwrightCli?.path;
-  if (!skill || !cli) throw new Error('setup lacks the page-cache skill or playwright-cli');
-  return { proxyScript: path.join(path.dirname(skill), 'scripts', 'page-cache.js'), cli };
+  if (!cli) throw new Error('setup lacks playwright-cli; run pipeline setup --install');
+  return {
+    proxyScript: script('page-cache', 'page-cache.js'),
+    treeBundle: script('page-tree', 'page-tree-bundle.js'),
+    cli,
+  };
 }
 
 /** Where the cache lives: the proxy's own layout under migration/cache/. */

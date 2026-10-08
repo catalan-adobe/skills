@@ -2,6 +2,7 @@
 // outcome is in the data. One function per step; each returns { pass, note? }.
 import { check as access } from './access.mjs';
 import { check as cache } from './cache.mjs';
+import { check as chrome } from './chrome.mjs';
 import { data } from './data.mjs';
 
 export async function discover(cwd) {
@@ -17,4 +18,4 @@ export async function discover(cwd) {
 }
 
 /** The table of checks; steps without one are not done until their part lands. */
-export const CHECKS = { discover, access, cache };
+export const CHECKS = { discover, access, cache, chrome };
