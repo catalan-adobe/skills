@@ -232,6 +232,28 @@ export async function writeAccess(cwd, {
 export const readAccess = (cwd) => openStore(cwd).read(ACCESS_FILE, ACCESS_SCHEMA);
 
 /**
+ * Adds one overlay rule to the access decision — what an agent does on seeing, in a
+ * capture, an element the recipe should have hidden: a chat widget, a late banner. A
+ * `hide` rule without CSS gets the plain one; a rule for a selector already there is
+ * replaced. The rule is not verified: `verifiedOn` stays as it was.
+ */
+export async function addOverlay(cwd, { selector, action, css, note }) {
+  const access = await readAccess(cwd);
+  if (!access) throw new Error('no website/access.json yet; run the access step first');
+  if (!selector || !OVERLAY_ACTIONS.includes(action)) {
+    throw new Error(`an overlay needs a selector and one of ${OVERLAY_ACTIONS.join(', ')}`);
+  }
+  const rule = {
+    selector, action,
+    ...(action === 'hide' ? { css: css ?? [`${selector} { display: none !important; }`] } : {}),
+    ...(note ? { note } : {}),
+  };
+  const overlays = [...access.overlays.filter((o) => o.selector !== selector), rule];
+  const { schema, updatedAt, summary, ...rest } = access;
+  return writeAccess(cwd, { ...rest, overlays });
+}
+
+/**
  * The shared documents a site has — header, footer and other template-placed parts, and
  * the fragments embedded in pages — with the method that found them and the candidates
  * it rejected. Ids are made here from placement and part or name; a fragment given an id

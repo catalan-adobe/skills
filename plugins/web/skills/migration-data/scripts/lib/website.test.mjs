@@ -8,8 +8,8 @@ import { init } from './migration.mjs';
 import { pageId, upsert } from './pages.mjs';
 import { classOf } from './schema.mjs';
 import {
-  ACCESS_SCHEMA, FRAGMENTS_SCHEMA, PLACEMENTS, WEBSITE_SCHEMA, fragmentId, pagesUsing,
-  readAccess, readFragments, readWebsite, refresh, writeAccess, writeFragments,
+  ACCESS_SCHEMA, FRAGMENTS_SCHEMA, PLACEMENTS, WEBSITE_SCHEMA, addOverlay, fragmentId,
+  pagesUsing, readAccess, readFragments, readWebsite, refresh, writeAccess, writeFragments,
 } from './website.mjs';
 
 const ORIGIN = 'https://a.example/';
@@ -73,6 +73,18 @@ test('access.json: one decision on how to open a page', async () => {
   assert.deepEqual(a.verifiedOn, ['pag-000000000001', 'pag-000000000002']);
   assert.equal(a.summary, 'chromium; 2 overlay rule(s); verified on 2 page(s)');
   assert.deepEqual(await readAccess(cwd), a);
+  // An agent saw a chat widget in a capture: one rule added, nothing else touched.
+  const added = await addOverlay(cwd, { selector: '#chat-bar', action: 'hide',
+    note: 'floating chat widget over the content' });
+  assert.deepEqual(added.overlays.at(-1), { selector: '#chat-bar', action: 'hide',
+    css: ['#chat-bar { display: none !important; }'],
+    note: 'floating chat widget over the content' });
+  assert.equal(added.overlays.length, a.overlays.length + 1);
+  assert.deepEqual(added.verifiedOn, a.verifiedOn, 'not verified by adding');
+  const replaced = await addOverlay(cwd, { selector: '#chat-bar', action: 'remove' });
+  assert.equal(replaced.overlays.filter((o) => o.selector === '#chat-bar').length, 1);
+  assert.equal(replaced.overlays.at(-1).css, undefined);
+  await assert.rejects(addOverlay(cwd, { selector: '#x', action: 'nuke' }), /one of hide/);
 });
 
 test('fragments.json defines the shared documents; pages using one is a query', async () => {

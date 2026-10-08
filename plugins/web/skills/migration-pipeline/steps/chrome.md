@@ -29,12 +29,15 @@ composition. Nothing leaves the machine: the pages come from the cache. Tier: me
 2. Do not wait or poll in a loop. `pipeline state --text` shows the step's progress;
    `pipeline chrome status` the run; `pipeline chrome stop` ends it. A rerun captures only
    what is missing and detects again when the trees changed.
-3. Read the note (`migration.mjs notes chrome`) and look at each fragment's `page.png`
-   (every band outlined) before telling the operator what the site's chrome is: which
-   designs, how many pages each, which pages have none and why that may be (a campaign
-   template, a page the capture misread). A header drawn over a hero image can be folded
-   into the hero by the capture; a hover-only mega-menu is not in a plain render. Say what
-   the note's limits say when they apply.
+3. Look before you report. Read the note (`migration.mjs notes chrome`), each fragment's
+   `page.png` (every band outlined) and three or four pages' `shots/page.jpg` from
+   different groups. Tell the operator what the site's chrome is — designs, pages each,
+   pages with none and why that may be (a campaign template, a misread capture) — and
+   what the pictures show about the capture: an element over the content the recipe
+   should hide (`access overlay`, then capture again), images missing because they come
+   from another host, a page that is not a page. A header drawn over a hero can be folded
+   into it; a hover-only mega-menu is not in a plain render. Say what the note's limits
+   say when they apply.
 4. The step decides nothing: the fragments are the method's finding. An operator who
    disagrees says so in a note; the next method or an edit of `fragments.json` follows.
 

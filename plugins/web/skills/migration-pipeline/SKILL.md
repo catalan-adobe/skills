@@ -48,6 +48,26 @@ waits for `migration.mjs approve <step>`.
 | `blocks` | medium | `elements/elements.json` decisions, `elements/inventory.json` — coming |
 | `report` | low | `views/report.md`, `views/report.html` |
 
+## Look, then act
+
+The commands do the mechanical work on every page; the agent's work is to look at what
+they left — the screenshots, the crops, the notes, the summaries — and to act on what is
+particular to this site, before reporting. Every step leaves artefacts a reader can
+judge, and the data has a place for the reaction:
+
+- an element the recipe should have hidden (a chat widget, a late banner):
+  `migration.mjs access overlay <selector> hide --note "…"`, then capture again;
+- a page that is not what its record says (a cookie wall, an empty template):
+  `migration.mjs decide-page <url> out <why>`;
+- a fact about the site the next step needs (assets on another host, a second design,
+  a group that is a different product): `migration.mjs note <step> agent "…"`, and the
+  setting or decision it calls for;
+- a doubt about the method's finding: say so in the note; never edit a derived file.
+
+What is site-specific is for the agent to notice and name; what is the same on every
+site is in the commands. A step is not done because its command ran: it is done when
+the artefacts were looked at and nothing seen was left unsaid.
+
 ## Rules
 
 - Never write under `migration/` except through the two CLIs; never edit a JSON by hand.

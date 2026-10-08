@@ -32,6 +32,8 @@ export const COMMANDS = [
     help: 'the operator\'s word on a page' },
   { name: 'selections', usage: '', help: 'every selection' },
   { name: 'website', usage: '', help: 'the website summary, refreshed from the table' },
+  { name: 'access', usage: 'overlay <selector> hide|click|remove [--note <text>]',
+    help: 'add an overlay rule to the access decision' },
   { name: 'types', usage: '[--undecided]', help: 'the element types, or the ones to decide' },
   { name: 'decide-type', usage: '<typ-id> <kind> [<name-or-style>] [--notes <text>]',
     help: 'what a type is: section|block|default-content|fragment|wrapper|skip' },
@@ -47,6 +49,7 @@ const FLAGS = {
   pages: ['--group', '--status', '--reason', '--cached', '--uncached', '--fragment', '--text'],
   page: [], 'decide-page': [], selections: [], website: [], types: ['--undecided'],
   'decide-type': ['--notes'], inventory: [], note: ['--page'], notes: ['--step'],
+  access: ['--note'],
   report: ['--html'],
 };
 const BOOLEAN = new Set(['--text', '--cached', '--uncached', '--undecided', '--html']);
@@ -139,6 +142,11 @@ export async function main(argv, cwd = process.cwd()) {
       return selections.list(cwd);
     case 'website':
       return website.refresh(cwd);
+    case 'access': {
+      const [verb, selector, action] = positional;
+      if (verb !== 'overlay') throw new Error('usage: access overlay <selector> <action>');
+      return website.addOverlay(cwd, { selector, action, note: flags['--note'] });
+    }
     case 'types': {
       if (flags['--undecided']) return elements.undecided(cwd);
       const types = await elements.readTypes(cwd);
