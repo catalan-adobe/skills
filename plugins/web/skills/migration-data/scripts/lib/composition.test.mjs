@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   DOCUMENT_KINDS, ROLES, SCHEMA, file, fragmentRefs, items, read, readFragment, write,
-  writeFragment,
+  writeFragment, writeMany,
 } from './composition.mjs';
 import { init } from './migration.mjs';
 import { get, pageId, upsert } from './pages.mjs';
@@ -17,7 +17,8 @@ const box = (y, height) => ({ x: 0, y, width: 1280, height });
 const fresh = async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'mdata-comp-'));
   await init(cwd, { origin: ORIGIN });
-  await upsert(cwd, [{ url: `${ORIGIN}p`, discovered: { from: 'list', at: AT }, kind: 'page' }]);
+  await upsert(cwd, ['p', 'q'].map((n) => (
+    { url: `${ORIGIN}${n}`, discovered: { from: 'list', at: AT }, kind: 'page' })));
   return cwd;
 };
 const composition = {
@@ -113,4 +114,13 @@ test('write lands the composition under the page and reflects it on the record',
   assert.deepEqual(await readFragment(cwd, 'frg-000000000001'), h);
   assert.equal((await readFragment(cwd, 'frg-000000000001')).sections.length, 2);
   assert.deepEqual((await get(cwd, id)).fragments.length, 3, 'a fragment write leaves pages alone');
+  // Many pages in one pass over the table; a composition of fragments only has no sections.
+  const q = pageId(`${ORIGIN}q`);
+  const chromeOnly = { ...composition, sections: [], omitted: [] };
+  assert.equal(await writeMany(cwd, [{ pageId: id, composition: chromeOnly },
+    { pageId: q, composition: chromeOnly }]), 2);
+  assert.deepEqual((await get(cwd, q)).composition, { method: 'visual-tree', at: AT, sections: 0,
+    omitted: 0 });
+  assert.deepEqual((await get(cwd, q)).fragments, ['frg-000000000001', 'frg-000000000002']);
+  await assert.rejects(writeMany(cwd, [{ pageId: 'pag-000000000009', composition }]), /no page/);
 });

@@ -146,6 +146,30 @@ export async function write(cwd, pageId, composition, { current = true } = {}) {
 }
 
 /**
+ * Writes many pages' compositions with one pass over the table: `entries` are
+ * `{ pageId, composition }`; all current.
+ */
+export async function writeMany(cwd, entries) {
+  const store = openStore(cwd);
+  const table = await readTable(cwd);
+  const byId = new Map(table.pages.map((p) => [p.id, p]));
+  const summaries = new Map();
+  for (const { pageId, composition } of entries) {
+    if (!byId.has(pageId)) throw new Error(`no page ${pageId} in the table`);
+    const data = { ...composition, schema: SCHEMA, document: { kind: 'page', id: pageId } };
+    // eslint-disable-next-line no-await-in-loop
+    const written = await store.write(file('page', pageId), data);
+    summaries.set(pageId, { fragments: fragmentRefs(written), composition: {
+      method: written.method.name, at: written.method.at,
+      sections: written.sections.length, omitted: written.omitted.length,
+    } });
+  }
+  await writeTable(cwd, table.pages.map((p) => (
+    summaries.has(p.id) ? { ...p, ...summaries.get(p.id) } : p)));
+  return entries.length;
+}
+
+/**
  * Writes a fragment's composition: a shared document has sections and items like a page;
  * a fragment placed by the template (a header) does not itself place others.
  */

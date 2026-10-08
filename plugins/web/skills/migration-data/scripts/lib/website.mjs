@@ -175,6 +175,9 @@ export const fragmentId = (placement, partOrName) => makeId('frg', `${placement}
  * Rewrites website.json from the migration and the page table: discovery sources, counts
  * by verdict, cache and composition, the groups (in-scope pages only), a summary.
  */
+/** Composed: a composition with sections — one of fragments only is not the page read. */
+const composed = (p) => (p.composition?.sections ?? 0) > 0;
+
 export async function refresh(cwd) {
   const migration = await openMigration(cwd);
   const { pages } = await readTable(cwd);
@@ -193,7 +196,7 @@ export async function refresh(cwd) {
     return {
       name, urls: members.length,
       in: by(members, (p) => p.verdict.status === 'in'),
-      cached: by(members, (p) => p.cache), composed: by(members, (p) => p.composition),
+      cached: by(members, (p) => p.cache), composed: by(members, composed),
     };
   }).sort((a, b) => b.urls - a.urls || a.name.localeCompare(b.name));
   const counts = {
@@ -201,7 +204,7 @@ export async function refresh(cwd) {
     in: by(pages, (p) => p.verdict.status === 'in'),
     out: by(pages, (p) => p.verdict.status === 'out'),
     undecided: by(pages, (p) => p.verdict.status === 'undecided'),
-    cached: by(pages, (p) => p.cache), composed: by(pages, (p) => p.composition),
+    cached: by(pages, (p) => p.cache), composed: by(pages, composed),
   };
   const summary = `${migration.source.scope}: ${counts.inScope} URLs in scope`
     + ` (${pages.length} known) in ${groups.length} groups; ${counts.in} in, ${counts.out} out,`

@@ -56,9 +56,11 @@ migration/
     decisions.json          the operator's word on single pages: in or out, why     decision
     <id>/                   one page's artefacts
       composition.json      the page in EDS shape: fragments, sections, items     derived
+      visual-tree.json      the rendered page measured by the page-tree bundle      derived
       shots/                crops taken on this page                                evidence
   fragments/<id>/           a shared document's artefacts
       composition.json      the fragment in EDS shape (a header has its bands here) derived
+      shots/                crops of the fragment on a page that carries it         evidence
   cache/                    the site's bodies and assets (the proxy's own layout)   raw
   elements/                 the site's vocabulary
     types.json              element types as a method found them: variants, sample  derived
@@ -320,7 +322,8 @@ it exists and that it is disposable.
 - `state.mjs` — `STEPS`, `compute(cwd, checks)`, `write`, `asText`.
 - `pages.mjs` — the table: `upsert`, `setReasons`, `decide`, `rejudge`, `get`, `list`;
   `selections.mjs` — `create`, `read`, `list`, `pagesOf`; `composition.mjs` — `write`,
-  `read`, `writeFragment`, `readFragment`, `items`, `fragmentRefs`.
+  `writeMany`, `read`, `writeFragment`, `readFragment`, `items`, `fragmentRefs`;
+  `trees.mjs` — `write`, `read`, `minWidth`, `list` (the visual tree, a method's artefact).
 - `website.mjs` — `refresh`, `writeAccess`/`readAccess`, `writeFragments`/`readFragments`,
   `pagesUsing`.
 - `elements.mjs` — `writeTypes`/`readTypes`, `decide`, `undecided`, `writeMethod`/
