@@ -53,7 +53,7 @@ async function project(pages) {
 }
 
 test('the questions are three and frozen; slices follow the height and the budget', async () => {
-  assert.deepEqual(Object.keys(QUESTIONS), ['header', 'footer', 'broken']);
+  assert.deepEqual(Object.keys(QUESTIONS), ['header', 'footer', 'broken', 'empty']);
   assert.match(asked().header, /site header at the very top.*cut into slices/s);
   const short = fakeSharp(2000);
   const a = await slices(short, '/s.jpg');
@@ -78,7 +78,7 @@ test('ask: one request, probabilities back, retries, errors named', async () => 
   });
   const replies = [reply(429, {}, { 'retry-after': '0' }),
     reply(200, { result: { model: 'clef', answers: { header: { noul: 0.9 }, footer: { noul: 0.1 },
-      broken: { noul: 0.05 } }, usage: { input_tokens: 3000 } } })];
+      broken: { noul: 0.05 }, empty: { noul: 0.01 } }, usage: { input_tokens: 3000 } } })];
   const fetchImpl = async (url, init) => {
     seen.push([url, JSON.parse(init.body)]);
     return replies.shift();
@@ -86,10 +86,10 @@ test('ask: one request, probabilities back, retries, errors named', async () => 
   const dep = { url: 'https://s1.example/run', model: 'clef', key: 'k' };
   const out = await ask(dep, ['data:image/jpeg;base64,AA'], asked(),
     { fetchImpl, sleep: async () => {} });
-  assert.deepEqual(out.answers, { header: 0.9, footer: 0.1, broken: 0.05 });
+  assert.deepEqual(out.answers, { header: 0.9, footer: 0.1, broken: 0.05, empty: 0.01 });
   assert.equal(out.usage.inputTokens, 3000);
   assert.equal(seen.length, 2, 'retried once');
-  assert.deepEqual(Object.keys(seen[1][1].questions), ['header', 'footer', 'broken']);
+  assert.deepEqual(Object.keys(seen[1][1].questions), ['header', 'footer', 'broken', 'empty']);
   assert.equal(seen[1][1].questions.header.type, 'noul');
   assert.equal(seen[1][1].model, 'clef');
   await assert.rejects(ask(dep, [], {}, { fetchImpl: async () => reply(401, 'no') }),
@@ -101,16 +101,16 @@ test('ask: one request, probabilities back, retries, errors named', async () => 
 
 test('the worker: every screenshot looked at once, flags beside chrome\'s, buckets', async () => {
   const cwd = await project([{ path: 'a' }, { path: 'b' }, { path: 'c' }, { path: 'd' },
-    { path: 'no-shot', shot: false }]);
+    { path: 'e' }, { path: 'no-shot', shot: false }]);
   const { pages, triage, notes, runs } = await data(cwd);
   const id = (p) => pages.pageId(`${O}${p}`);
   // chrome's structural opinion: c has no footer, d has no header.
   await pages.setReasons(cwd, 'chrome', { [id('c')]: [{ code: 'no-footer', kind: 'flag' }],
     [id('d')]: [{ code: 'no-header', kind: 'flag' }] });
-  assert.equal((await pending(cwd)).length, 4, 'the page without a screenshot is not looked at');
-  assert.match((await check(cwd)).note, /4 page\(s\) to look at/);
-  const answersFor = { a: [0.95, 0.9, 0.02], b: [0.9, 0.9, 0.8], c: [0.9, 0.2, 0.1],
-    d: [0.9, 0.9, 0.05] };
+  assert.equal((await pending(cwd)).length, 5, 'the page without a screenshot is not looked at');
+  assert.match((await check(cwd)).note, /5 page\(s\) to look at/);
+  const answersFor = { a: [0.95, 0.9, 0.02, 0.1], b: [0.9, 0.9, 0.8, 0.1], c: [0.9, 0.2, 0.1, 0.1],
+    d: [0.9, 0.9, 0.05, 0.1], e: [0.95, 0.95, 0.1, 0.85] };
   const askedFor = [];
   const io = {
     model: 'clef', sharp: fakeSharp(2000), now: () => new Date(AT),
@@ -118,17 +118,18 @@ test('the worker: every screenshot looked at once, flags beside chrome\'s, bucke
       askedFor.push(images.length);
       const current = (await runs.newest(cwd, 'triage')).current;
       const p = Object.keys(answersFor).find((k) => id(k) === current);
-      const [header, footer, broken] = answersFor[p];
-      return { answers: { header, footer, broken }, usage: { inputTokens: 3000, ms: 10 } };
+      const [header, footer, broken, empty] = answersFor[p];
+      return { answers: { header, footer, broken, empty }, usage: { inputTokens: 3000, ms: 10 } };
     },
   };
   const out = await workerMain(cwd, { io });
-  assert.deepEqual(askedFor, [3, 3, 3, 3]);
-  assert.match(out.summary, /^4 page\(s\) looked at \(0 failed, 12000 input tokens\); of all/);
-  assert.match(out.summary, /of all triaged: 1 normal, 1 odd, 1 review, 1 broken\./);
+  assert.deepEqual(askedFor, [3, 3, 3, 3, 3]);
+  assert.match(out.summary, /^5 page\(s\) looked at \(0 failed, 15000 input tokens\); of all/);
+  assert.match(out.summary, /of all triaged: 1 normal, 1 odd, 1 review, 1 broken, 1 empty\./);
   const t = await triage.read(cwd, id('a'));
   assert.deepEqual([t.method.model, t.answers, t.images.slices],
-    ['clef', { header: 0.95, footer: 0.9, broken: 0.02 }, 3]);
+    ['clef', { header: 0.95, footer: 0.9, broken: 0.02, empty: 0.1 }, 3]);
+  assert.match(t.method.inputs, /^[0-9a-f]{16}-[0-9a-f]{8}$/, 'the picture and the questions');
   const by = Object.fromEntries((await pages.read(cwd)).pages
     .map((p) => [p.url.replace(O, ''), p]));
   assert.deepEqual(opinions(by.c), { structure: ['no-footer'], picture: ['no-footer'] });
@@ -136,6 +137,8 @@ test('the worker: every screenshot looked at once, flags beside chrome\'s, bucke
   assert.equal(bucketOf(by.d), 'review', 'the structure says no header, the picture sees one');
   assert.equal(bucketOf(by.b), 'broken');
   assert.equal(bucketOf(by.a), 'normal');
+  assert.equal(bucketOf(by.e), 'empty');
+  assert.deepEqual(by.e.verdict.reasons.map((r) => r.code), ['empty']);
   assert.equal(by.b.verdict.status, 'in', 'flags park, they do not exclude');
   assert.deepEqual(by.c.verdict.reasons.map((r) => `${r.code}@${r.by}`),
     ['no-footer@chrome', 'no-footer@triage']);
@@ -144,8 +147,20 @@ test('the worker: every screenshot looked at once, flags beside chrome\'s, bucke
   assert.match(body,
     /## review: 1\n[^#]*site.example\/d — structure: no-header; picture: header and footer/);
   assert.match(body, /## broken: 1/);
+  assert.match(body, /## empty: 1\n\nThe picture shows nothing where the content should be/);
   assert.deepEqual(await pending(cwd), [], 'every picture looked at');
   assert.deepEqual(await check(cwd), { pass: true });
+  // A triage that no longer validates (older questions) is none: asked again, not counted.
+  const old = path.join(cwd, 'migration', 'pages', id('b'), 'triage.json');
+  await writeFile(old, JSON.stringify({ schema: 'pages/triage@1', method: t.method,
+    answers: { header: 1, footer: 1, broken: 1 }, images: t.images }));
+  assert.deepEqual((await pending(cwd)).map((x) => x.page.url), [`${O}b`]);
+  assert.equal((await flag(cwd)).broken.length, 0, 'the stale broken flag is gone');
+  const [bPending] = await pending(cwd);
+  await triage.write(cwd, id('b'), { ...t, method: { ...t.method, inputs: bPending.inputs },
+    answers: { header: 0.9, footer: 0.9, broken: 0.8, empty: 0.1 } });
+  await flag(cwd);
+  assert.deepEqual(await pending(cwd), []);
   // The same picture again is not asked; a new picture is.
   await writeFile(path.join(cwd, 'migration', (await data(cwd)).trees.shotFile(id('a'))), 'new');
   assert.deepEqual((await pending(cwd)).map((t) => t.page.url), [`${O}a`]);

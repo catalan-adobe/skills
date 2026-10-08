@@ -1,7 +1,7 @@
 // triage: the first look at every captured page by a System 1 model, on its screenshot —
-// three questions, frozen: a site header at the top, a site footer at the bottom, a
-// broken page. The answers become flags on the table beside what chrome found in the
-// structure; a page flagged by either is parked — odd, specific — until someone looks.
+// four questions, frozen: a site header at the top, a site footer at the bottom, a broken
+// page, an empty one. The answers become flags on the table beside what chrome found in
+// the structure; a page flagged by either is parked — odd, specific — until someone looks.
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -19,7 +19,7 @@ export const QUALITIES = [80, 70, 60, 50, 40, 30, 20];
 const LOOK = 'Judge by what is visible in the images, which are the page cut into slices from'
   + ' top to bottom.';
 
-/** The three questions, frozen: answers shift when the set around them changes. */
+/** The four questions, frozen: answers shift when the set around them changes. */
 export const QUESTIONS = {
   header: 'Does the page have a site header at the very top: a bar holding the logo and the'
     + ' main navigation menu, usually with language, search or sign-in links?',
@@ -27,7 +27,13 @@ export const QUESTIONS = {
     + ' notices, copyright or social icons?',
   broken: 'Is the page broken or blocked: an error message, a blank page, a login wall, a'
     + ' cookie wall or a bot check instead of normal content?',
+  empty: 'Between the header and the footer, is the page empty or nearly empty: a blank area,'
+    + ' or only a heading, a breadcrumb, a side menu or a few links, where the main content'
+    + ' (an article, a listing, images, a form) should be?',
 };
+/** What a triage is of: this picture, asked these questions. */
+export const QUESTIONS_HASH = createHash('sha256').update(JSON.stringify(QUESTIONS))
+  .digest('hex').slice(0, 8);
 export const asked = () => Object.fromEntries(Object.entries(QUESTIONS)
   .map(([id, q]) => [id, `${q} ${LOOK}`]));
 
@@ -71,7 +77,11 @@ export async function slices(sharp, shot, { budget = BODY_BUDGET } = {}) {
   throw new Error('unreachable');
 }
 
-const sha = (buf) => createHash('sha256').update(buf).digest('hex').slice(0, 16);
+const sha = (buf) => `${createHash('sha256').update(buf).digest('hex').slice(0, 16)}`
+  + `-${QUESTIONS_HASH}`;
+
+/** A stored triage; one that no longer validates (older questions) is none. */
+const stored = (triage, cwd, id) => triage.read(cwd, id).catch(() => null);
 
 /**
  * The pages to triage: readable, with a screenshot, and without a triage of that very
@@ -88,7 +98,7 @@ export async function pending(cwd) {
     if (!bytes) continue;
     const inputs = sha(bytes);
     // eslint-disable-next-line no-await-in-loop
-    const seen = await triage.read(cwd, page.id);
+    const seen = await stored(triage, cwd, page.id);
     if (seen?.method.inputs !== inputs) out.push({ page, shot, inputs });
   }
   return out;
@@ -101,12 +111,13 @@ export function opinions(page) {
 }
 
 /**
- * The bucket a page lands in: `broken` (the picture says so), `odd` (both say chrome is
- * missing), `review` (the two disagree), `normal`.
+ * The bucket a page lands in: `broken` (the picture says so), `empty` (the picture says
+ * so), `odd` (both say chrome is missing), `review` (the two disagree), `normal`.
  */
 export function bucketOf(page) {
   const { structure, picture } = opinions(page);
   if (picture.includes('broken')) return 'broken';
+  if (picture.includes('empty')) return 'empty';
   const s = new Set(structure.filter((c) => c.startsWith('no-')));
   const p = new Set(picture.filter((c) => c.startsWith('no-')));
   if (!s.size && !p.size) return 'normal';
@@ -180,17 +191,19 @@ export async function workerMain(cwd, { io: given } = {}) {
 export async function flag(cwd) {
   const { pages, triage, website } = await data(cwd);
   const flags = {};
+  const triaged = new Set();
   for (const id of await triage.list(cwd)) {
     // eslint-disable-next-line no-await-in-loop
-    const t = await triage.read(cwd, id);
+    const t = await stored(triage, cwd, id);
+    if (!t) continue;
+    triaged.add(id);
     const f = triage.flagsOf(t.answers);
     if (f.length) flags[id] = f;
   }
   await pages.setReasons(cwd, 'triage', flags);
   await website.refresh(cwd);
-  const triaged = new Set(await triage.list(cwd));
   const table = await pages.read(cwd);
-  const buckets = { normal: [], odd: [], review: [], broken: [] };
+  const buckets = { normal: [], odd: [], review: [], broken: [], empty: [] };
   for (const p of table.pages.filter((x) => triaged.has(x.id))) buckets[bucketOf(p)].push(p);
   return buckets;
 }
@@ -200,12 +213,15 @@ function renderNote(buckets, summary, model) {
   const say = (p) => {
     const { structure, picture } = opinions(p);
     return `- ${p.url} — structure: ${structure.join(', ') || 'header and footer'};`
-      + ` picture: ${picture.join(', ') || 'header and footer, not broken'}`;
+      + ` picture: ${picture.join(', ') || 'header and footer, content, not broken'}`;
   };
   for (const [bucket, words] of [
     ['broken', 'The picture shows an error, a blank, a wall or a bot check. Parked: look at the'
       + ' screenshot; a capture defect is fixed in access.json and captured again, a real'
       + ' error page is decided out.'],
+    ['empty', 'The picture shows nothing where the content should be. Parked: a listing a'
+      + ' script fills from an endpoint the cache has not got, a form from another origin,'
+      + ' or a page that really is a shell. Look; name the origin or decide the page.'],
     ['review', 'Structure and picture disagree. Parked: one of them is wrong about this page —'
       + ' a header folded into a hero, a header in the DOM but not drawn. Look, then say which.'],
     ['odd', 'Both agree a header or a footer is missing. Parked as a page of its own kind:'
@@ -215,7 +231,8 @@ function renderNote(buckets, summary, model) {
       ...buckets[bucket].slice(0, 40).map(say), '');
   }
   lines.push(`## normal: ${buckets.normal.length}`, '',
-    'Header and footer in the structure and in the picture, nothing broken: read further.', '');
+    'Header and footer in the structure and in the picture, content, nothing broken: read'
+      + ' further.', '');
   return lines.join('\n');
 }
 

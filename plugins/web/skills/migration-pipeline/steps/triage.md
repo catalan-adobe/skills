@@ -1,10 +1,11 @@
 # triage
 
 Purpose: the first look at every captured page, by a System 1 model on its screenshot —
-three questions and no more: a site header at the top, a site footer at the bottom, a
-broken page (an error, a blank, a login or cookie wall, a bot check). Beside what `chrome`
-found in the structure, the answers sort the pages: the normal ones go on to be read, the
-odd ones are parked until someone looks. Tier: low.
+four questions and no more: a site header at the top, a site footer at the bottom, a
+broken page (an error, a blank, a login or cookie wall, a bot check), an empty page
+(nothing where the content should be). Beside what `chrome` found in the structure, the
+answers sort the pages: the normal ones go on to be read, the odd ones are parked until
+someone looks. Tier: low.
 
 ## Inputs
 
@@ -17,10 +18,10 @@ odd ones are parked until someone looks. Tier: low.
 
 1. Start the worker: `node --env-file=<file> <skill>/scripts/pipeline.mjs triage`. Each
    screenshot is cut into at most four slices of 1280 × 768 (1:1 up to 3 072 px, scaled
-   down above) and asked the three questions in one request; the answers are stored
+   down above) and asked the four questions in one request; the answers are stored
    under the page with how the picture was given. Then every page's flags are set from
-   its answers — `no-header`, `no-footer`, `broken` by `triage` — beside `chrome`'s, and
-   a note sorts the triaged pages into four buckets. Do not poll in a loop:
+   its answers — `no-header`, `no-footer`, `broken`, `empty` by `triage` — beside
+   `chrome`'s, and a note sorts the triaged pages into five buckets. Do not poll in a loop:
    `pipeline state --text`, `pipeline triage status`, `pipeline triage stop`.
 2. Read the note (`migration.mjs notes triage`). The buckets:
    - **normal** — header and footer in the structure and in the picture, nothing broken.
@@ -34,6 +35,9 @@ odd ones are parked until someone looks. Tier: low.
      capture defect (a cookie dialog the recipe missed, a page that needed longer) is
      fixed with `access overlay` and captured again; a real error page or a wall the site
      puts up is decided out (`decide-page <url> out <why>`).
+   - **empty** — header, footer, and nothing where the content should be. Look: a listing
+     a script fills from an endpoint the cache has not got, a form from another origin
+     (`assets`, then `cache fill`), or a page that really is a shell (decide it).
 3. The flags park; they never exclude. The operator's word on a page wins over both.
 4. Look before you report, as always: three or four screenshots from the normal bucket
    too — the model is not the only reader of the page.
@@ -46,8 +50,8 @@ odd ones are parked until someone looks. Tier: low.
 ## Done
 
 Fails while a run is alive, while a page with a screenshot has no triage of that picture
-(a recapture makes the old one stale), or — with that said — while the environment names
-no model.
+with these questions (a recapture, or a change to the questions, makes the old one
+stale), or — with that said — while the environment names no model.
 
 ```bash
 node <skill>/scripts/pipeline.mjs state --text

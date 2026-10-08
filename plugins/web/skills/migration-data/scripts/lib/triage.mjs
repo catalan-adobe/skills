@@ -1,12 +1,13 @@
-// What a System 1 model saw on a page's screenshot: three answers — a site header at the
-// top, a site footer at the bottom, a broken page (an error, a blank, a wall) — each a
-// probability, with how the picture was given and what it cost. A method's artefact
-// under the page; the table gets reasons from it, never the numbers.
+// What a System 1 model saw on a page's screenshot: four answers — a site header at the
+// top, a site footer at the bottom, a broken page (an error, a blank, a wall), an empty
+// page (nothing where the content should be) — each a probability, with how the picture
+// was given and what it cost. A method's artefact under the page; the table gets reasons
+// from it, never the numbers.
 import { HEAD, register } from './schema.mjs';
 import { openStore } from './store.mjs';
 
 export const SCHEMA = 'pages/triage@1';
-export const QUESTIONS = ['header', 'footer', 'broken'];
+export const QUESTIONS = ['header', 'footer', 'broken', 'empty'];
 export const file = (pageId) => `pages/${pageId}/triage.json`;
 
 const probability = { type: 'number', minimum: 0, maximum: 1 };
@@ -32,7 +33,9 @@ register('pages/triage', 1, 'derived', {
       type: 'object',
       required: QUESTIONS,
       additionalProperties: false,
-      properties: { header: probability, footer: probability, broken: probability },
+      properties: {
+        header: probability, footer: probability, broken: probability, empty: probability,
+      },
     },
     images: {
       type: 'object',
@@ -56,7 +59,7 @@ register('pages/triage', 1, 'derived', {
 /** The threshold at which a probability reads as yes. */
 export const YES = 0.5;
 
-/** The flags the answers give: no header, no footer, broken — at the threshold. */
+/** The flags the answers give: no header, no footer, broken, empty — at the threshold. */
 export function flagsOf(answers, threshold = YES) {
   const flags = [];
   const pct = (p) => `${Math.round(p * 100)} %`;
@@ -66,6 +69,8 @@ export function flagsOf(answers, threshold = YES) {
     detail: `seen in the picture: ${pct(answers.footer)}` });
   if (answers.broken >= threshold) flags.push({ code: 'broken', kind: 'flag',
     detail: `seen in the picture: ${pct(answers.broken)}` });
+  if (answers.empty >= threshold) flags.push({ code: 'empty', kind: 'flag',
+    detail: `seen in the picture: ${pct(answers.empty)}` });
   return flags;
 }
 

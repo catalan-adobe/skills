@@ -57,7 +57,7 @@ migration/
     <id>/                   one page's artefacts
       composition.json      the page in EDS shape: fragments, sections, items     derived
       visual-tree.json      the rendered page measured by the page-tree bundle      derived
-      triage.json           what a System 1 model saw: header, footer, broken        derived
+      triage.json           what a System 1 model saw: header, footer, broken, empty derived
       shots/                crops taken on this page                                evidence
   fragments/<id>/           a shared document's artefacts
       composition.json      the fragment in EDS shape (a header has its bands here) derived
@@ -275,20 +275,21 @@ Mapping to a document is then mechanical: sections → sections, `block` → a b
 
 ### pages/<id>/triage.json — *derived*
 
-What a System 1 model saw on the page's screenshot, three questions and nothing else: a
+What a System 1 model saw on the page's screenshot, four questions and nothing else: a
 site header at the very top, a site footer at the very bottom, a broken page (an error,
-a blank, a login or cookie wall, a bot check) instead of content — each a probability.
+a blank, a login or cookie wall, a bot check) instead of content, an empty page (nothing
+where the content should be: a listing a script never filled) — each a probability.
 With `method` (name, model, when, the hash of the picture), `images` (how many slices,
 at what scale and JPEG quality: a page scaled far down was not really seen) and `usage`.
 The triage step reads the answers at a threshold (0.5) into reasons on the table by
-`triage` — `no-header`, `no-footer`, `broken`, each a flag — beside what `chrome` found
-in the structure; the numbers stay here. Pages flagged by either are parked: not read
-further until someone looks.
+`triage` — `no-header`, `no-footer`, `broken`, `empty`, each a flag — beside what `chrome`
+found in the structure; the numbers stay here. Pages flagged by either are parked: not
+read further until someone looks.
 
 ```json
 { "schema": "pages/triage@1",
   "method": { "name": "system1", "model": "@cf/cloudflare/clef", "at": "…", "inputs": "sha…" },
-  "answers": { "header": 0.97, "footer": 0.91, "broken": 0.02 },
+  "answers": { "header": 0.97, "footer": 0.91, "broken": 0.02, "empty": 0.03 },
   "images": { "slices": 3, "scale": 1, "quality": 80, "bytes": 310000 },
   "usage": { "inputTokens": 3100, "ms": 2400 } }
 ```
