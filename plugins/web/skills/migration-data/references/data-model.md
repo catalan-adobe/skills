@@ -94,7 +94,7 @@ writes into it (layout contract, brand, blocks).
               "assetOrigins": ["https://images.example.com"] },
   "target": { "repo": ".", "kind": "eds", "owner": null, "site": null },
   "plan": { "pages": 500, "selection": null },
-  "settings": { "cacheAllUpTo": 500, "captureMinWidth": 250, "pace": 1500,
+  "settings": { "cacheAllUpTo": 500, "captureMinWidth": 250, "pace": 1500, "sessions": 4,
                 "skills": { "repo": "adobe/skills", "ref": null } },
   "approvals": { "cache": ["sample-50"], "elements": true }
 }
@@ -112,7 +112,11 @@ writes into it (layout contract, brand, blocks).
 - `approvals` is the operator's recorded yes at the gated steps, with what was approved
   (selection names for `cache`, `true` for `elements`): what lets the state say
   `waiting-operator` and keeps an agent from going on alone.
-- The skills source is a setting of the migration, not of a step.
+- `settings`: `pace` (ms between two pages read from the live site: the only place the
+  site is read, and bot detection watches it), `sessions` (browser sessions reading the
+  *cache* side by side — chrome, later any offline step; the local proxy has no such
+  limit), `captureMinWidth`, `cacheAllUpTo`, and the skills source — a setting of the
+  migration, not of a step. `migration.mjs setting <name> <value>`.
 
 ### state.json — *derived*
 

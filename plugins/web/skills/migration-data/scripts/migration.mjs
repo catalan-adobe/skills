@@ -20,6 +20,8 @@ export const COMMANDS = [
     help: 'create migration/migration.json; once' },
   { name: 'show', usage: '', help: 'the migration file' },
   { name: 'plan', usage: '[--pages <n>] [--selection <name>]', help: 'how much to migrate' },
+  { name: 'setting', usage: '<name> <value>',
+    help: 'change one setting: pace, sessions, captureMinWidth, cacheAllUpTo' },
   { name: 'assets', usage: '<origin>...',
     help: 'the other origins whose assets the pages use; the cache stores them too' },
   { name: 'approve', usage: '<step> [<selection>...]',
@@ -47,7 +49,8 @@ export const COMMANDS = [
 
 const FLAGS = {
   init: ['--origin', '--scope', '--pages', '--target-repo', '--skills-repo', '--skills-ref'],
-  show: [], plan: ['--pages', '--selection'], assets: [], approve: [], runs: ['--step'],
+  show: [], plan: ['--pages', '--selection'], setting: [], assets: [], approve: [],
+  runs: ['--step'],
   state: ['--text'],
   pages: ['--group', '--status', '--reason', '--cached', '--uncached', '--fragment', '--text'],
   page: [], 'decide-page': [], selections: [], website: [], types: ['--undecided'],
@@ -101,6 +104,11 @@ export async function main(argv, cwd = process.cwd()) {
       });
     case 'show':
       return migration.open(cwd);
+    case 'setting': {
+      const [name, value] = positional;
+      if (!name || value === undefined) throw new Error('usage: setting <name> <value>');
+      return migration.setting(cwd, name, /^\d+$/.test(value) ? Number(value) : value);
+    }
     case 'assets':
       if (!positional.length) throw new Error('usage: assets <origin>...');
       return migration.assetOrigins(cwd, positional);

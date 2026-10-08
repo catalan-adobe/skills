@@ -30,6 +30,7 @@ register('pages/visual-tree', 1, 'derived', {
       properties: {
         scrollHeight: { type: 'integer', minimum: 0 },
         shot: { type: ['string', 'null'] },
+        timings: { type: 'object', additionalProperties: { type: 'integer', minimum: 0 } },
       },
     },
   },

@@ -101,63 +101,95 @@ const firstLine = (text) => String(text ?? '').split('\n').find((l) => l.trim())
  * The page's scroll height and its full-page screenshot — none above the height a browser
  * screenshots whole: past it the picture repeats the top and loses the bottom.
  */
-async function screenshot(cwd, pageId, io, trees) {
-  const scrollHeight = Number(parseEval(await io.browser.eval(HEIGHT_EXPRESSION))) || 0;
+async function screenshot(cwd, pageId, browser, trees) {
+  const scrollHeight = Number(parseEval(await browser.eval(HEIGHT_EXPRESSION))) || 0;
   if (scrollHeight > trees.SCREENSHOT_LIMIT) return { scrollHeight, shot: null };
   const rel = trees.shotFile(pageId);
   const abs = path.join(cwd, 'migration', rel);
   await mkdir(path.dirname(abs), { recursive: true });
-  await io.browser.screenshot(abs, null, { type: 'jpeg' });
+  await browser.screenshot(abs, null, { type: 'jpeg' });
   return { scrollHeight, shot: rel };
 }
 
+/** Runs async steps one after another, whoever calls: the run file is read-modify-write. */
+export function serial() {
+  let tail = Promise.resolve();
+  return (fn) => {
+    const next = tail.then(fn, fn);
+    tail = next.catch(() => {});
+    return next;
+  };
+}
+
+/** One page: visit, prepare, tree, shot — each phase timed, the times kept with the facts. */
+async function captureOne(cwd, page, { browser, visit, prepare, minWidth, now, trees }) {
+  const timings = {};
+  const timed = async (name, fn) => {
+    const t0 = Date.now();
+    const out = await fn();
+    timings[name] = Date.now() - t0;
+    return out;
+  };
+  await timed('goto', () => visit(browser, page));
+  await timed('prepare', () => browser.eval(prepare));
+  const captured = await timed('tree', async () => (
+    parseEval(await browser.eval(captureExpression(minWidth)))));
+  if (!captured?.data?.tag) {
+    throw new Error('the page-tree bundle returned no tree (was it injected?)');
+  }
+  const facts = await timed('shot', () => screenshot(cwd, page.id, browser, trees));
+  await trees.write(cwd, page.id, {
+    minWidth, url: page.url, capturedAt: now().toISOString(), tree: captured.data,
+    text: captured.textFormat, nodeMap: captured.nodeMap,
+    rootBackground: captured.rootBackground ?? null, page: { ...facts, timings },
+  });
+}
+
 /**
- * Renders each page offline and stores its tree. `browser` is open on the offline proxy
- * with the bundle injected; `visit(page)` navigates. Progress goes to the run after every
- * page; five failures in a row end the phase.
+ * Renders each page offline and stores its tree. `io.browsers` are sessions open on the
+ * offline proxy with the bundle injected, as many as the migration's `sessions` setting;
+ * `visit(browser, page)` navigates one of them. The pages are dealt from one queue;
+ * progress goes to the run after every page; five failures in a row end the phase.
  */
 export async function captureTrees(cwd, targets, {
   io, run, access, visit, minWidth = MIN_WIDTH, now = () => new Date(),
 }) {
   const { runs, trees } = await data(cwd);
   const prepare = preparedAtTop(pageExpression(access));
+  const browsers = io.browsers ?? [io.browser];
+  const queue = [...targets];
   const failures = [];
+  const busy = new Set();
+  const update = serial();
   let streak = 0;
   let done = 0;
-  for (const page of targets) {
-    // eslint-disable-next-line no-await-in-loop
-    await runs.update(cwd, run.id, { current: page.id });
-    try {
+  let fatal = null;
+  const session = async (browser) => {
+    while (queue.length && !fatal) {
+      const page = queue.shift();
+      busy.add(page.id);
       // eslint-disable-next-line no-await-in-loop
-      await visit(page);
-      // eslint-disable-next-line no-await-in-loop
-      await io.browser.eval(prepare);
-      // eslint-disable-next-line no-await-in-loop
-      const captured = parseEval(await io.browser.eval(captureExpression(minWidth)));
-      if (!captured?.data?.tag) {
-        throw new Error('the page-tree bundle returned no tree (was it injected?)');
+      await update(() => runs.update(cwd, run.id, { current: [...busy].join(' ') }));
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await captureOne(cwd, page, { browser, visit, prepare, minWidth, now, trees });
+        streak = 0;
+      } catch (err) {
+        failures.push({ id: page.id, error: firstLine(err.message) });
+        streak += 1;
+        // eslint-disable-next-line no-await-in-loop
+        await update(() => runs.update(cwd, run.id, { fail: failures.at(-1) }));
+        if (streak >= MAX_CONSECUTIVE_FAILURES) {
+          fatal = new Error(`${streak} captures failed in a row; last: ${firstLine(err.message)}`);
+        }
       }
+      busy.delete(page.id);
+      done += 1;
       // eslint-disable-next-line no-await-in-loop
-      const shot = await screenshot(cwd, page.id, io, trees);
-      // eslint-disable-next-line no-await-in-loop
-      await trees.write(cwd, page.id, {
-        minWidth, url: page.url, capturedAt: now().toISOString(), tree: captured.data,
-        text: captured.textFormat, nodeMap: captured.nodeMap,
-        rootBackground: captured.rootBackground ?? null, page: shot,
-      });
-      streak = 0;
-    } catch (err) {
-      failures.push({ id: page.id, error: firstLine(err.message) });
-      streak += 1;
-      // eslint-disable-next-line no-await-in-loop
-      await runs.update(cwd, run.id, { fail: failures.at(-1) });
-      if (streak >= MAX_CONSECUTIVE_FAILURES) {
-        throw new Error(`${streak} captures failed in a row; last: ${firstLine(err.message)}`);
-      }
+      await update(() => runs.update(cwd, run.id, { done, current: [...busy].join(' ') || null }));
     }
-    done += 1;
-    // eslint-disable-next-line no-await-in-loop
-    await runs.update(cwd, run.id, { done, current: null });
-  }
+  };
+  await Promise.all(browsers.map(session));
+  if (fatal) throw fatal;
   return { captured: targets.length - failures.length, failures };
 }

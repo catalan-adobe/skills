@@ -312,17 +312,24 @@ export async function check(cwd) {
   return { pass: false, note: `${work.length} page(s) without a visual tree` };
 }
 
-/** The real io: offline proxy, playwright-cli with the page-tree bundle injected. */
+/**
+ * The real io: offline proxy, playwright-cli with the page-tree bundle injected — as many
+ * sessions as the migration's `sessions` setting, the first of them for the evidence.
+ */
 export async function realIo(cwd) {
   const { proxyScript, treeBundle, cli } = await tools(cwd);
   const { migration } = await data(cwd);
-  const also = (await migration.open(cwd)).source.assetOrigins ?? [];
+  const m = await migration.open(cwd);
+  const also = m.source.assetOrigins ?? [];
   const work = path.join(cwd, 'migration', '.work');
+  const browsers = Array.from({ length: m.settings.sessions ?? 1 }, (_, i) => playwright(cli,
+    { io: defaultIo, cwd: work, session: `${sessionName(cwd, 'chrome')}-${i + 1}` }));
   return {
     ...defaultIo,
     treeBundle,
     startProxy: proxyStarter(proxyScript, cacheDir(cwd), defaultIo, { also }),
-    browser: playwright(cli, { io: defaultIo, cwd: work, session: sessionName(cwd, 'chrome') }),
+    browsers,
+    browser: browsers[0],
   };
 }
 
@@ -344,16 +351,18 @@ export async function workerMain(cwd, { io: given } = {}) {
   const proxy = await io.startProxy({ offline: true });
   const config = await writeBrowserConfig(cwd, 'chrome', access, proxy.port,
     { initScript: io.treeBundle, onlyProxy: true });
-  let opened = false;
-  const visit = async (page) => {
+  const browsers = io.browsers ?? [io.browser];
+  const opened = new Set();
+  const visit = async (browser, page) => {
     const url = viaProxy(page.url, origin, proxy.port);
-    if (opened) return io.browser.goto(url);
-    opened = true;
-    return io.browser.open(url, { config, persistent: access.browser.persistent === true });
+    if (opened.has(browser)) return browser.goto(url);
+    opened.add(browser);
+    return browser.open(url, { config, persistent: access.browser.persistent === true });
   };
   try {
     const captured = await captureTrees(cwd, targets, { io, run, access, visit });
-    const detected = await detect(cwd, { io, run, access, visit });
+    const detected = await detect(cwd, { io, run, access,
+      visit: (page) => visit(browsers[0], page) });
     const summary = `${captured.captured} tree(s) captured, ${captured.failures.length} failed; `
       + detected.summary;
     await runs.finish(cwd, run.id, { state: 'done', summary });
@@ -363,7 +372,7 @@ export async function workerMain(cwd, { io: given } = {}) {
     await runs.finish(cwd, run.id, { state: 'failed', error, summary: 'see error' });
     throw err;
   } finally {
-    await io.browser.close().catch(() => {});
+    await Promise.all(browsers.map((b) => b.close().catch(() => {})));
     await proxy.stop();
   }
 }

@@ -187,9 +187,13 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   const tall = table.pages.find((p) => p.url === urlOf(5));
   assert.deepEqual(tall.verdict.reasons.map((r) => [r.code, r.detail]),
     [['too-tall', '20000 px > 16384']], 'parked: no honest picture of it');
-  assert.deepEqual((await trees.read(cwd, tall.id)).page, { scrollHeight: 20000, shot: null });
-  assert.deepEqual((await trees.read(cwd, p1.id)).page,
-    { scrollHeight: 3131, shot: `pages/${p1.id}/shots/page.jpg` });
+  const facts = (id) => trees.read(cwd, id).then((t) => t.page);
+  const tallFacts = await facts(tall.id);
+  assert.deepEqual([tallFacts.scrollHeight, tallFacts.shot], [20000, null]);
+  const p1Facts = await facts(p1.id);
+  assert.deepEqual([p1Facts.scrollHeight, p1Facts.shot], [3131, `pages/${p1.id}/shots/page.jpg`]);
+  assert.deepEqual(Object.keys(p1Facts.timings), ['goto', 'prepare', 'tree', 'shot'],
+    'every phase timed');
   assert.ok(io.calls.shots.some(([f]) => f.endsWith(`${p1.id}/shots/page.jpg`)));
   assert.equal(io.calls.shots.filter(([f]) => f.endsWith('page.jpg')).length, 9,
     'not the tall one');
@@ -242,4 +246,27 @@ test('capture failures: a dead page is skipped, five in a row end the run as fai
   const [run] = await runs.list(fresh, { step: 'chrome' });
   assert.equal(run.state, 'failed');
   assert.equal(run.failed.length, 5);
+});
+
+test('several sessions deal the pages from one queue; the run counts stay whole', async () => {
+  const cwd = await project();
+  const { migration } = await data(cwd);
+  await migration.setting(cwd, 'sessions', 3);
+  const io = fakeIo(siteTree);
+  const seen = [];
+  io.browsers = [1, 2, 3].map((n) => ({
+    ...io.browser,
+    open: async (url) => { seen.push([n, 'open']); await io.browser.open(url); },
+    goto: async (url) => { seen.push([n, 'goto']); await io.browser.goto(url); },
+  }));
+  const out = await workerMain(cwd, { io });
+  assert.match(out.summary, /^10 tree\(s\) captured, 0 failed/);
+  assert.deepEqual(seen.filter(([, k]) => k === 'open').map(([n]) => n).sort(), [1, 2, 3],
+    'each session opened once');
+  const bySession = [1, 2, 3].map((n) => seen.filter(([s]) => s === n).length);
+  assert.ok(bySession.every((c) => c >= 1) && bySession.reduce((a, b) => a + b) >= 10,
+    `every session took pages: ${bySession}`);
+  const { runs } = await data(cwd);
+  const [run] = await runs.list(cwd, { step: 'chrome' });
+  assert.deepEqual([run.done, run.total, run.failed.length], [10, 10, 0]);
 });

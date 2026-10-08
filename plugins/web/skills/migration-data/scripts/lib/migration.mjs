@@ -55,6 +55,7 @@ register('migration/migration', 1, 'decision', {
         cacheAllUpTo: { type: 'integer', minimum: 0 },
         captureMinWidth: { type: 'integer', minimum: 1 },
         pace: { type: 'integer', minimum: 0 },
+        sessions: { type: 'integer', minimum: 1, maximum: 16 },
         skills: {
           type: 'object',
           required: ['repo', 'ref'],
@@ -73,7 +74,8 @@ register('migration/migration', 1, 'decision', {
 });
 
 export const DEFAULT_SETTINGS = {
-  cacheAllUpTo: 500, captureMinWidth: 250, pace: 1500, skills: { repo: 'adobe/skills', ref: null },
+  cacheAllUpTo: 500, captureMinWidth: 250, pace: 1500, sessions: 4,
+  skills: { repo: 'adobe/skills', ref: null },
 };
 
 /** A URL normalised to its canonical form (trailing slash on a bare origin). */
