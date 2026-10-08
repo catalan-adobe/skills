@@ -4,7 +4,7 @@
 // template, banners embedded in pages (derived: definitions, not page lists — a page says
 // which fragments it uses; "pages using fragment X" is a query).
 import { open as openMigration } from './migration.mjs';
-import { list as listPages, read as readTable } from './pages.mjs';
+import { composed, list as listPages, read as readTable } from './pages.mjs';
 import { HEAD, register } from './schema.mjs';
 import { id as makeId, openStore } from './store.mjs';
 
@@ -175,9 +175,6 @@ export const fragmentId = (placement, partOrName) => makeId('frg', `${placement}
  * Rewrites website.json from the migration and the page table: discovery sources, counts
  * by verdict, cache and composition, the groups (in-scope pages only), a summary.
  */
-/** Composed: a composition with sections — one of fragments only is not the page read. */
-const composed = (p) => (p.composition?.sections ?? 0) > 0;
-
 export async function refresh(cwd) {
   const migration = await openMigration(cwd);
   const { pages } = await readTable(cwd);

@@ -20,7 +20,7 @@ register('pages/visual-tree', 1, 'derived', {
     tree: { type: 'object' },
     text: { type: 'string' },
     nodeMap: { type: 'object' },
-    rootBackground: { type: ['object', 'null'] },
+    rootBackground: { type: ['object', 'string', 'null'] },
   },
 });
 

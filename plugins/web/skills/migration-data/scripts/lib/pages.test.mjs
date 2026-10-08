@@ -153,6 +153,9 @@ test('the operator decides a page, with a reason, and wins; get and list answer 
     assert.deepEqual((await list(cwd, { group: null })).length, 1, 'the off-scope one');
     assert.equal(summarise([]),
       '0 URLs in 0 groups: 0 in, 0 out, 0 undecided; 0 cached, 0 composed.');
+    const stub = (sections) => ({ group: '', verdict: { status: 'in', reasons: [] },
+      composition: { sections } });
+    assert.match(summarise([stub(0), stub(2)]), /1 composed/, 'fragments only is not read');
     assert.equal(verdict({ id: 'pag-x' }, [], { plan: { pages: null, selection: null } }).status,
       'in');
     assert.ok(await openStore(cwd).exists(FILE));

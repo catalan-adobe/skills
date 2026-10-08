@@ -224,6 +224,9 @@ export function verdict(rec, reasons, { decision, plan, selected, at }) {
 }
 
 /** The table in words: counts by status, by reason, cached and composed. */
+/** Composed: a composition with sections — one of fragments only is not the page read. */
+export const composed = (p) => (p.composition?.sections ?? 0) > 0;
+
 export function summarise(pages) {
   const n = pages.length;
   const by = (f) => pages.filter(f).length;
@@ -236,7 +239,7 @@ export function summarise(pages) {
   return `${n} URLs in ${groups.size} groups: `
     + `${by((p) => p.verdict.status === 'in')} in, ${by((p) => p.verdict.status === 'out')} out, `
     + `${by((p) => p.verdict.status === 'undecided')} undecided; `
-    + `${by((p) => p.cache)} cached, ${by((p) => p.composition)} composed`
+    + `${by((p) => p.cache)} cached, ${by(composed)} composed`
     + (list ? `. Reasons: ${list}.` : '.');
 }
 
