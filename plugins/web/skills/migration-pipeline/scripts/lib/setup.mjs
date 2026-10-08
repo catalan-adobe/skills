@@ -11,6 +11,13 @@ export const SKILL_NAMES = [
   'migration-data', 'browser-probe', 'page-prep', 'site-scan', 'page-cache', 'page-tree',
 ];
 
+/**
+ * The npm packages `setup` installs under migration/.work/node_modules, pinned: the crawler
+ * (its behaviour is what the discover brief describes) and the image library the triage
+ * step slices screenshots with. Bump on purpose.
+ */
+export const PACKAGES = { 'franklin-bulk-shared': '1.31.2', sharp: '0.35.5' };
+
 /** Real `exec`: runs a file with args, resolving on success and rejecting on a bad exit. */
 export const defaultExec = (file, args, options) => execFileP(file, args, options);
 
@@ -66,7 +73,7 @@ async function skillPaths(name, cwd, home, exists) {
  *   running Node's own version; pass a different string only to test the Node < 22 path.
  * @returns {Promise<{node: {ok: boolean, version: string},
  *   playwrightCli: {ok: boolean, path: string|null},
- *   packages: {'franklin-bulk-shared': {ok: boolean, path: string|null}},
+ *   packages: Record<string, {ok: boolean, path: string|null}> (one per PACKAGES entry),
  *   skills: Record<string, {ok: boolean, path: string|null}>}>}
  */
 export async function detect({
@@ -79,8 +86,13 @@ export async function detect({
     const projectBin = path.join(work, '.bin', 'playwright-cli');
     if (await exists(projectBin)) playwrightPath = projectBin;
   }
-  const packagePath = path.join(work, 'franklin-bulk-shared', 'package.json');
-  const packageOk = await exists(packagePath);
+  const packages = {};
+  for (const name of Object.keys(PACKAGES)) {
+    const file = path.join(work, name, 'package.json');
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await exists(file);
+    packages[name] = { ok, path: ok ? file : null };
+  }
 
   const skills = {};
   for (const name of SKILL_NAMES) {
@@ -91,7 +103,7 @@ export async function detect({
   return {
     node: nodeStatus(nodeVersion),
     playwrightCli: { ok: !!playwrightPath, path: playwrightPath },
-    packages: { 'franklin-bulk-shared': { ok: packageOk, path: packageOk ? packagePath : null } },
+    packages,
     skills,
   };
 }
@@ -154,11 +166,12 @@ export async function install(detection, {
     results.push({ target: 'playwrightCli', command: ['npm', ...args], ...outcome });
   }
 
-  if (!detection.packages['franklin-bulk-shared'].ok) {
-    // Pinned: the crawler's behaviour is what the scan brief describes; bump on purpose.
-    const args = ['install', '--prefix', work, 'franklin-bulk-shared@1.31.2'];
+  for (const [name, version] of Object.entries(PACKAGES)) {
+    if (detection.packages[name]?.ok) continue;
+    const args = ['install', '--prefix', work, `${name}@${version}`];
+    // eslint-disable-next-line no-await-in-loop
     const outcome = await runInstall(exec, 'npm', args);
-    results.push({ target: 'franklin-bulk-shared', command: ['npm', ...args], ...outcome });
+    results.push({ target: name, command: ['npm', ...args], ...outcome });
   }
 
   for (const [name, info] of Object.entries(detection.skills)) {

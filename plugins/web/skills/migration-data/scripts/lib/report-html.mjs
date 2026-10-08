@@ -183,7 +183,8 @@ async function sectionPages(cwd, pages, selections) {
     `<a href="${esc(p.url)}">${esc(new URL(p.url).pathname + new URL(p.url).search)}</a>`,
     p.group === null ? '—' : code(p.group || '/'), esc(p.kind), n(p.http?.status ?? '—'),
     tag(p.verdict.status, VERDICT_TONE[p.verdict.status]),
-    esc(p.verdict.reasons.map((r) => r.code + (r.detail ? ` → ${r.detail}` : '')).join('; ')),
+    esc(p.verdict.reasons.map((r) => `${r.code} (${r.by}${r.detail ? `: ${r.detail}` : ''})`)
+      .join('; ')),
     n(p.fragments?.length ?? 0), composed(p) ? n(p.composition.sections) : '—',
     shots[i] ? `<a href="../${esc(shotFile(p.id))}">page</a>` : '—',
   ]), { numeric: [3, 6, 7] }));

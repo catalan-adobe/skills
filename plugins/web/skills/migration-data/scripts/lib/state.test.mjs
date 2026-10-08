@@ -21,7 +21,7 @@ const pass = async () => ({ pass: true });
 
 test('the process: dependency order, two gates, no tooling step', () => {
   assert.deepEqual(STEP_IDS,
-    ['discover', 'access', 'cache', 'chrome', 'elements', 'blocks', 'report']);
+    ['discover', 'access', 'cache', 'chrome', 'triage', 'elements', 'blocks', 'report']);
   assert.deepEqual(STEPS.filter((s) => s.gate).map((s) => s.id), ['cache', 'elements']);
   for (const s of STEPS) {
     for (const d of s.dependsOn) assert.ok(STEP_IDS.indexOf(d) < STEP_IDS.indexOf(s.id), `${s.id}`);
@@ -32,7 +32,7 @@ test('states follow the checks, the runs, the dependencies and the approvals', a
   const cwd = await fresh();
   const empty = byId(await compute(cwd));
   assert.deepEqual(Object.values(empty).map((s) => s.state),
-    ['ready', 'ready', 'blocked', 'blocked', 'blocked', 'blocked', 'blocked']);
+    ['ready', 'ready', 'blocked', 'blocked', 'blocked', 'blocked', 'blocked', 'blocked']);
   assert.deepEqual(empty.cache.blockedBy, ['discover', 'access']);
   const checks = { discover: pass, access: pass };
   const collected = byId(await compute(cwd, checks));
@@ -54,7 +54,10 @@ test('states follow the checks, the runs, the dependencies and the approvals', a
   assert.equal(after.chrome.state, 'ready');
   assert.equal(after.elements.state, 'blocked', 'chrome first');
   const chromed = byId(await compute(cwd, { ...checks, cache: pass, chrome: pass }));
-  assert.equal(chromed.elements.state, 'waiting-operator', 'the second gate');
+  assert.equal(chromed.triage.state, 'ready');
+  assert.equal(chromed.elements.state, 'blocked', 'triage first');
+  const triaged = byId(await compute(cwd, { ...checks, cache: pass, chrome: pass, triage: pass }));
+  assert.equal(triaged.elements.state, 'waiting-operator', 'the second gate');
   const noted = byId(await compute(cwd, { ...checks, cache: pass,
     chrome: async () => ({ pass: false, note: '3 pages behind the cache' }) }));
   assert.deepEqual([noted.chrome.state, noted.chrome.note], ['ready', '3 pages behind the cache']);
@@ -71,7 +74,7 @@ test('write lands state.json with a summary; asText reads for people', async () 
   assert.deepEqual(await openStore(cwd).read(FILE, SCHEMA), state);
   assert.equal(state.summary,
     'done: discover, access; cache running (1/4); ready: report; '
-    + 'blocked: chrome, elements, blocks.');
+    + 'blocked: chrome, triage, elements, blocks.');
   const text = asText(state);
   assert.match(text, /^step {6}state\n/);
   assert.match(text, /\ncache {5}running {10}1\/4\n/);

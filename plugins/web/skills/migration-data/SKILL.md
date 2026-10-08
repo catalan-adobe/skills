@@ -57,8 +57,8 @@ migration/
   views/views.json + <name>.md    rendered documents                            derived
 ```
 
-The process: `discover`, `access`, `cache` (gated), `chrome`, `elements` (gated),
-`blocks`, `report`. A gated step waits for `migration approve <step>`.
+The process: `discover`, `access`, `cache` (gated), `chrome`, `triage`, `elements`
+(gated), `blocks`, `report`. A gated step waits for `migration approve <step>`.
 
 ## CLI
 

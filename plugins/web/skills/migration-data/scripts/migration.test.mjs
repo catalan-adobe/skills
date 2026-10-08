@@ -57,7 +57,8 @@ test('the CLI drives a migration end to end: init, plan, approve, runs, state', 
   assert.equal(state.steps.find((s) => s.id === 'cache').state, 'blocked');
   const text = await cli(cwd, 'state', '--text');
   assert.match(text, /^step {6}state\n/);
-  assert.match(text, /ready: discover, access; blocked: cache, chrome, elements, blocks, report/);
+  assert.match(text,
+    /ready: discover, access; blocked: cache, chrome, triage, elements, blocks, report/);
   assert.deepEqual((await readdir(path.join(cwd, 'migration'))).sort(),
     ['migration.json', 'state.json']);
   assert.deepEqual(await main(['show'], cwd), await cli(cwd, 'show'), 'main is the CLI');

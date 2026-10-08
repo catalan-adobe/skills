@@ -16,9 +16,9 @@ description: >-
 
 The pipeline is a client of `migration-data`: it reads and writes `migration/` only through
 that layer, and a step is done when the layer's state says so — never when an agent says
-so. The process is the model's: `discover`, `access`, `cache` (gated), `chrome`, `elements`
-(gated), `blocks`, `report`. Each step has a brief in `steps/<id>.md`: hand that one file
-to whoever runs the step.
+so. The process is the model's: `discover`, `access`, `cache` (gated), `chrome`, `triage`,
+`elements` (gated), `blocks`, `report`. Each step has a brief in `steps/<id>.md`: hand that
+one file to whoever runs the step.
 
 ## Quick start
 
@@ -44,6 +44,7 @@ waits for `migration.mjs approve <step>`.
 | `access` | medium | `website/access.json`: how to open a page, verified on three |
 | `cache` | low | page records' `cache`, `http`, `kind`, verdicts; `migration/cache/` |
 | `chrome` | medium | visual trees, `website/fragments.json`, compositions' template fragments |
+| `triage` | low | `pages/<id>/triage.json`, `triage` flags: the odd pages parked |
 | `elements` | medium | `elements/types.json`, compositions' sections — coming |
 | `blocks` | medium | `elements/elements.json` decisions, `elements/inventory.json` — coming |
 | `report` | low | `views/report.md`, `views/report.html` |

@@ -8,6 +8,7 @@ import { writeAccess } from './lib/access.mjs';
 import { pending as cachePending, workerMain as cacheWorker } from './lib/cache.mjs';
 import { pending as chromePending, workerMain as chromeWorker } from './lib/chrome.mjs';
 import { render as renderReport } from './lib/report.mjs';
+import { pendingIds as triagePending, workerMain as triageWorker } from './lib/triage.mjs';
 import { command as workerCommand } from './lib/worker.mjs';
 import { CHECKS } from './lib/checks.mjs';
 import { data } from './lib/data.mjs';
@@ -33,6 +34,8 @@ export const COMMANDS = [
       + ' cached pages\' assets from the named origins; status; stop' },
   { name: 'chrome', usage: '[status|stop]',
     help: 'capture the visual trees and detect header and footer, in a worker; status; stop' },
+  { name: 'triage', usage: '[status|stop]',
+    help: 'the first look at every screenshot by a System 1 model (S1_URL, S1_MODEL); flags' },
   { name: 'report', usage: '', help: 'render views/report.md and views/report.html' },
   { name: 'website', usage: '', help: 'refresh the website summary from the table' },
   { name: 'state', usage: '[--text]', help: 'every step\'s state, computed and written' },
@@ -40,7 +43,7 @@ export const COMMANDS = [
 const FLAGS = {
   setup: ['--install'], discover: ['--strategy', '--list'], access: ['--write'],
   pick: ['--count', '--exclude', '--audit', '--write'], cache: ['--worker'],
-  chrome: ['--worker'], report: [], website: [],
+  chrome: ['--worker'], triage: ['--worker'], report: [], website: [],
   state: ['--text'],
 };
 const BOOLEAN = new Set(['--install', '--text', '--write', '--worker']);
@@ -128,6 +131,12 @@ export async function main(argv, cwd = process.cwd()) {
     case 'chrome': {
       const out = await workerCommand(cwd, 'chrome', positional,
         { pending: chromePending, worker: chromeWorker, flags });
+      await writeState(cwd);
+      return out;
+    }
+    case 'triage': {
+      const out = await workerCommand(cwd, 'triage', positional,
+        { pending: triagePending, worker: (c) => triageWorker(c), flags });
       await writeState(cwd);
       return out;
     }

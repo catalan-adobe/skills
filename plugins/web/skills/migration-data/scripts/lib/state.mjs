@@ -19,7 +19,8 @@ export const STEPS = [
   { id: 'access', dependsOn: [], gate: false },
   { id: 'cache', dependsOn: ['discover', 'access'], gate: true },
   { id: 'chrome', dependsOn: ['cache'], gate: false },
-  { id: 'elements', dependsOn: ['chrome'], gate: true },
+  { id: 'triage', dependsOn: ['chrome'], gate: false },
+  { id: 'elements', dependsOn: ['triage'], gate: true },
   { id: 'blocks', dependsOn: ['elements'], gate: false },
   { id: 'report', dependsOn: ['discover'], gate: false },
 ];
