@@ -4,9 +4,11 @@
 import { realpathSync } from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { writeAccess } from './lib/access.mjs';
 import { CHECKS } from './lib/checks.mjs';
 import { data } from './lib/data.mjs';
 import { discover } from './lib/discover.mjs';
+import { pick } from './lib/pick.mjs';
 import {
   commandOnPath, defaultExec, detect, install, missingReasons, readSetupJson, sourceReasons,
   unknownSources, writeSetupJson,
@@ -17,13 +19,20 @@ export const COMMANDS = [
     help: 'detect Node, playwright-cli, the crawler and the sibling skills; --install fixes' },
   { name: 'discover', usage: '[--strategy sitemaps|http|list] [--list <file>]',
     help: 'every URL of the site into the page table; the website summary; the proposal' },
+  { name: 'access', usage: '--write',
+    help: 'fold the probe recipe and the prep overlays (migration/.work/access/) into'
+      + ' website/access.json' },
+  { name: 'pick', usage: '[--count 2] [--exclude <group>]... [--audit 0] [--write <selection>]',
+    help: 'representative uncached pages, one per largest group in turn; --write a selection' },
   { name: 'website', usage: '', help: 'refresh the website summary from the table' },
   { name: 'state', usage: '[--text]', help: 'every step\'s state, computed and written' },
 ];
 const FLAGS = {
-  setup: ['--install'], discover: ['--strategy', '--list'], website: [], state: ['--text'],
+  setup: ['--install'], discover: ['--strategy', '--list'], access: ['--write'],
+  pick: ['--count', '--exclude', '--audit', '--write'], website: [], state: ['--text'],
 };
-const BOOLEAN = new Set(['--install', '--text']);
+const BOOLEAN = new Set(['--install', '--text', '--write']);
+const REPEATABLE = new Set(['--exclude']);
 
 export function parse(argv) {
   const [name, ...rest] = argv;
@@ -35,10 +44,12 @@ export function parse(argv) {
     const arg = rest[i];
     if (!arg.startsWith('--')) { positional.push(arg); continue; }
     if (!FLAGS[name].includes(arg)) throw new Error(`${name}: unknown flag ${arg}\n${usage(name)}`);
-    if (BOOLEAN.has(arg)) { flags[arg] = true; continue; }
     const value = rest[i + 1];
-    if (value === undefined || value.startsWith('--')) throw new Error(`${arg} needs a value`);
-    flags[arg] = value;
+    const hasValue = value !== undefined && !value.startsWith('--');
+    if (BOOLEAN.has(arg) && (!hasValue || name !== 'pick')) { flags[arg] = true; continue; }
+    if (!hasValue) throw new Error(`${arg} needs a value`);
+    if (REPEATABLE.has(arg)) flags[arg] = [...(flags[arg] ?? []), value];
+    else flags[arg] = value;
     i += 1;
   }
   return { name, flags, positional };
@@ -84,6 +95,18 @@ export async function main(argv, cwd = process.cwd()) {
       await writeState(cwd);
       return out;
     }
+    case 'access': {
+      if (!flags['--write']) throw new Error(`access needs --write\n${usage('access')}`);
+      const out = await writeAccess(cwd);
+      await writeState(cwd);
+      return out;
+    }
+    case 'pick':
+      return pick(cwd, {
+        count: Number(flags['--count'] ?? 2), exclude: flags['--exclude'] ?? [],
+        audit: Number(flags['--audit'] ?? 0),
+        write: typeof flags['--write'] === 'string' ? flags['--write'] : undefined,
+      });
     case 'website': {
       const { website } = await data(cwd);
       return website.refresh(cwd);

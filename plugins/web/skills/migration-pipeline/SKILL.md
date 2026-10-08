@@ -41,7 +41,7 @@ waits for `migration.mjs approve <step>`.
 | id | tier | what it writes |
 | --- | --- | --- |
 | `discover` | low | `pages/pages.json`, `website/website.json`, a note with the proposal |
-| `access` | medium | `website/access.json` — coming |
+| `access` | medium | `website/access.json`: how to open a page, verified on three |
 | `cache` | low | page records' `cache`, through the page-cache proxy — coming |
 | `chrome` | medium | `website/fragments.json`, compositions' template fragments — coming |
 | `elements` | medium | `elements/types.json`, compositions' sections — coming |

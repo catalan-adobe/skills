@@ -112,7 +112,7 @@ test('the CLI: parse, state before discover, discover from a list, state after',
   assert.equal(out.urls, 2);
   const after = await cli(cwd, 'state', '--text');
   assert.match(after, /\ndiscover {2}done\n/);
-  assert.match(after, /\naccess {4}ready\n/);
+  assert.match(after, /\naccess {4}ready {12}no website\/access\.json yet\n/);
   const stateJson = JSON.parse(await readFile(path.join(cwd, 'migration', 'state.json'), 'utf8'));
   assert.equal(stateJson.steps[0].state, 'done');
   assert.deepEqual((await main(['website'], cwd)).counts, (await cli(cwd, 'website')).counts,
@@ -121,3 +121,90 @@ test('the CLI: parse, state before discover, discover from a list, state after',
     .catch((e) => e);
   assert.match(noMigration.stderr, /no migration at .*; run: migration init --origin/);
 });
+
+test('access folds the probe and prep findings into access.json; verified pages become ids',
+  async () => {
+    const { browserOf, overlaysOf, writeAccess, check } = await import('./lib/access.mjs');
+    const { mkdir } = await import('node:fs/promises');
+    assert.deepEqual(browserOf({ cliConfig: { browser: { browserName: 'chromium' } },
+      stealthInitScript: null, notes: 'fine' }),
+    { engine: 'chromium', config: { browser: { browserName: 'chromium' } }, notes: 'fine' });
+    assert.deepEqual(browserOf({}), { engine: 'chromium' });
+    assert.deepEqual(overlaysOf({ overlays: [
+      { selector: '#cmp', type: 'cookie-consent', hide: ['#cmp { display:none }'],
+        dismiss: [{ action: 'click', selector: '#accept' }, { action: 'remove', selector: 'x' }] },
+      { selector: '#chat', hide: [] },
+    ] }), [
+      { selector: '#cmp', action: 'hide', css: ['#cmp { display:none }'], note: 'cookie-consent' },
+      { selector: '#accept', action: 'click', note: 'dismisses #cmp' },
+    ]);
+    const cwd = await fresh();
+    await writeFile(path.join(cwd, 'urls.txt'), `${O}\n${O}a\n`);
+    await discover(cwd, { strategy: 'list', list: path.join(cwd, 'urls.txt') });
+    assert.deepEqual(await check(cwd), { pass: false, note: 'no website/access.json yet' });
+    await assert.rejects(writeAccess(cwd), /run the browser-probe sibling first/);
+    const dir = path.join(cwd, 'migration', '.work', 'access');
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'browser-recipe.json'),
+      JSON.stringify({ cliConfig: { browser: { browserName: 'chromium' } }, notes: 'none' }));
+    await assert.rejects(writeAccess(cwd), /run the page-prep sibling first/);
+    await writeFile(path.join(dir, 'page-prep.json'), JSON.stringify({
+      checked: [O, `${O}a/`], overlays: [{ selector: '#cmp', hide: ['#cmp{display:none}'] }],
+      scroll_fix: 'html{overflow:auto}', residual: ['#chat'],
+    }));
+    const out = await writeAccess(cwd);
+    assert.equal(out.access.verifiedOn.length, 2);
+    assert.match(out.summary, /^chromium; 1 overlay rule\(s\); verified on 2 page\(s\); 1 resid/);
+    assert.deepEqual(await check(cwd),
+      { pass: false, note: 'recipe verified on 2 page(s); needs 3' });
+    await writeFile(path.join(dir, 'page-prep.json'), JSON.stringify({
+      checked: [O, `${O}a`, `${O}new`], overlays: [], residual: [],
+    }));
+    await writeAccess(cwd);
+    assert.deepEqual(await check(cwd), { pass: true });
+    const { pages } = await data(cwd);
+    const added = await pages.get(cwd, `${O}new`);
+    assert.equal(added.discovered.from, 'link', 'a checked page the table did not know is added');
+    const text = await cli(cwd, 'state', '--text');
+    assert.match(text, /\naccess {4}done\n/);
+    assert.match(text, /\ncache {5}waiting-operator/);
+  });
+
+test('pick: one per largest group in turn, inside pages first, strata interleaved, audits',
+  async () => {
+    const { choose, stratum, interleave } = await import('./lib/pick.mjs');
+    assert.equal(stratum(`${O}blog/a.html`, O), '2|html|');
+    assert.equal(stratum(`${O}blog/2024/a.html?p=1`, O), '3|html|q');
+    assert.equal(stratum(`${O}blog`, O), '1||');
+    assert.deepEqual(interleave([[1, 2, 3], ['a']]), [1, 'a', 2, 3]);
+    const rec = (url, group, extra = {}) => ({
+      id: `pag-${url.length.toString(16).padStart(12, '0')}`, url, group, cache: null,
+      verdict: { status: 'in', reasons: [] }, ...extra });
+    const pages = [
+      rec(`${O}blog`, 'blog'), rec(`${O}blog/one.html`, 'blog'), rec(`${O}blog/two.html`, 'blog'),
+      rec(`${O}blog/2024/deep.html`, 'blog'), rec(`${O}blog/x.pdf`, 'blog'),
+      rec(`${O}docs/a.html`, 'docs'), rec(`${O}docs/b.html`, 'docs', { cache: { at: 'x' } }),
+      rec(`${O}legal/t.html`, 'legal', { verdict: { status: 'out', reasons: [] } }),
+      rec(`${O}zh/p.html`, 'zh'), rec('https://other.example/q', null),
+    ];
+    const got = choose(pages, O, { count: 10 });
+    assert.deepEqual(got.map((p) => p.page.url.replace(O, '')), [
+      'blog/one.html', 'docs/a.html', 'zh/p.html', 'blog/2024/deep.html', 'blog/two.html', 'blog',
+    ], 'largest group first, one shape at a time, landing last; pdf, cached, out, off-scope never');
+    const skipped = choose(pages, O, { count: 2, exclude: ['blog'], audit: 2 });
+    assert.deepEqual(skipped.map((p) => [p.group, Boolean(p.audit)]),
+      [['docs', false], ['zh', false], ['blog', true], ['blog', true]], 'audits from the excluded');
+    const cwd = await fresh();
+    await writeFile(path.join(cwd, 'urls.txt'),
+      [`${O}blog/one`, `${O}blog/two`, `${O}docs/a`].join('\n'));
+    await discover(cwd, { strategy: 'list', list: path.join(cwd, 'urls.txt') });
+    const out = await cli(cwd, 'pick', '--count', '2', '--write', 'sample-2');
+    assert.deepEqual([out.selection, out.pages, out.picks.map((p) => p.group)],
+      ['sample-2', 2, ['blog', 'docs']]);
+    const { selections } = await data(cwd);
+    assert.deepEqual((await selections.read(cwd, 'sample-2')).criteria,
+      { count: 2, exclude: [], audit: 0 });
+    const plain = await cli(cwd, 'pick', '--count', '1');
+    assert.equal(plain.picks.length, 1);
+    assert.equal(plain.selection, undefined);
+  });
