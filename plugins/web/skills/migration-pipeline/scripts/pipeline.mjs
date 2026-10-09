@@ -32,8 +32,9 @@ export const COMMANDS = [
   { name: 'cache', usage: '[fill|status|stop]',
     help: 'cache every approved selection not yet cached, in a detached worker; fill the'
       + ' cached pages\' assets from the named origins; status; stop' },
-  { name: 'chrome', usage: '[status|stop]',
-    help: 'capture the visual trees and detect header and footer, in a worker; status; stop' },
+  { name: 'chrome', usage: '[status|stop|choose <header|footer> <cnd-id...|none>]',
+    help: 'capture the visual trees and detect header and footer, in a worker; status; stop;'
+      + ' choose a part\'s members among the candidate sheet (--by <who> --label --note)' },
   { name: 'triage', usage: '[status|stop]',
     help: 'the first look at every screenshot by a System 1 model (S1_URL, S1_MODEL); flags' },
   { name: 'report', usage: '', help: 'render views/report.md and views/report.html' },
@@ -43,7 +44,8 @@ export const COMMANDS = [
 const FLAGS = {
   setup: ['--install'], discover: ['--strategy', '--list'], access: ['--write'],
   pick: ['--count', '--exclude', '--audit', '--write'], cache: ['--worker'],
-  chrome: ['--worker'], triage: ['--worker'], report: [], website: [],
+  chrome: ['--worker', '--by', '--label', '--note'], triage: ['--worker'], report: [],
+  website: [],
   state: ['--text'],
 };
 const BOOLEAN = new Set(['--install', '--text', '--write', '--worker']);
@@ -129,6 +131,14 @@ export async function main(argv, cwd = process.cwd()) {
       return out;
     }
     case 'chrome': {
+      if (positional[0] === 'choose') {
+        const [, part, ...ids] = positional;
+        const { chrome } = await data(cwd);
+        const out = await chrome.choose(cwd, part, ids[0] === 'none' ? [] : ids,
+          { by: flags['--by'] ?? 'agent', label: flags['--label'], note: flags['--note'] });
+        await writeState(cwd);
+        return out;
+      }
       const out = await workerCommand(cwd, 'chrome', positional,
         { pending: chromePending, worker: chromeWorker, flags });
       await writeState(cwd);

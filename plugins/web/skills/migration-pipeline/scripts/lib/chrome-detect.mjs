@@ -110,22 +110,23 @@ function role(members, allPages, groupOf, tolerance) {
   return { variants, without: allPages.filter((p) => !covered.has(p)) };
 }
 
-const member = (m) => ({
-  key: m.key, fp: m.fp, variants: m.variants ?? 1, selector: m.sample.selector,
+export const member = (m) => ({
+  key: m.key, anchored: m.anchored, fp: m.fp, variants: m.variants ?? 1,
+  selector: m.sample.selector,
   selectors: m.selectors, tag: m.tags[0], bounds: m.bounds, support: m.support,
   pages: m.pages.length, widthShare: m.widthShare ?? 1, textStability: m.textStability ?? 1,
   sampleUrl: m.sample.url, text: String(m.sample.text ?? '').slice(0, 60),
 });
 
 /** The shortest URL among the pages that carry every core member. */
-function representative(pages, own) {
+export function representative(pages, own) {
   const full = pages.filter((p) => own.every((m) => m.pages.includes(p)));
   return [...(full.length ? full : pages)]
     .sort((a, b) => a.length - b.length || (a < b ? -1 : 1))[0];
 }
 
 /** The inventory group most of the variant's pages share, or `site-wide`; top three counts. */
-function groupLabel(pages, groupOf) {
+export function groupLabel(pages, groupOf) {
   const counts = {};
   for (const p of pages) counts[groupOf(p) || '/'] = (counts[groupOf(p) || '/'] ?? 0) + 1;
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3);
@@ -153,6 +154,28 @@ function attachAdjacent(placed, tolerance) {
       moved = true;
     }
   }
+}
+
+/**
+ * One part as a reader chose it: the chosen candidates are its members, the first of them
+ * says which pages carry it, the others are optional where they are not on all of them.
+ * No candidate chosen: the part has none on this site.
+ */
+export function chosenPart(chosen, allPages, groupOf) {
+  if (!chosen.length) return { variants: [], without: [...allPages] };
+  const [primary, ...rest] = chosen;
+  const pages = [...primary.pages];
+  const onAll = rest.filter((c) => pages.every((p) => c.pages.includes(p)));
+  const optional = rest.filter((c) => !onAll.includes(c))
+    .map((c) => ({ ...member(c), onPages: c.pages.filter((p) => pages.includes(p)).length }));
+  const own = [primary, ...onAll];
+  return {
+    variants: [{
+      id: '1', pages, support: pages.length / allPages.length, members: own.map(member),
+      optional, representative: representative(pages, own), ...groupLabel(pages, groupOf),
+    }],
+    without: allPages.filter((p) => !pages.includes(p)),
+  };
 }
 
 /**

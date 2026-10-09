@@ -3,6 +3,7 @@
 // so the file opens from disk. No script, no dependency: plain HTML and a few rules of CSS.
 import { access } from 'node:fs/promises';
 import path from 'node:path';
+import { readCandidates, readChoice } from './chrome.mjs';
 import { readTypes } from './elements.mjs';
 import { read as readInventory } from './inventory.mjs';
 import { open as openMigration } from './migration.mjs';
@@ -222,6 +223,35 @@ async function sectionBodies(cwd, pages) {
   return out;
 }
 
+/** The chrome candidates: what recurred, how the rules read it, what a reader chose. */
+function sectionCandidates(sheet, choice) {
+  const out = ['<h2 id="candidates">Chrome candidates</h2>'];
+  if (!sheet) return [...out, '<p>No candidate sheet yet: the chrome step writes it.</p>'];
+  const chosen = new Map();
+  for (const [part, c] of Object.entries(choice?.parts ?? {})) {
+    for (const id of c.candidates) chosen.set(id, part);
+  }
+  out.push(`<div class="summary">${esc(sheet.summary)}`
+    + (choice ? ` — chosen: ${esc(choice.summary ?? '')}` : ' — no choice: the rules decide')
+    + '</div>');
+  out.push('<p>Each candidate is an element recurring across the pages at a stable place.'
+    + ' <code>pipeline chrome choose header|footer &lt;id…|none&gt; --by &lt;who&gt;</code>'
+    + ' overrules the rules; the next chrome run applies it.</p>');
+  const tone = { header: 'ok', footer: 'ok', unplaced: '', rejected: 'mute' };
+  out.push(tableOf(['crop', 'id', 'rules say', 'chosen', 'selector', 'anchor', 'support', 'width',
+    'text', 'height', 'pages'], sheet.candidates.map((c) => [
+    c.evidence ? `<a href="../${esc(c.evidence)}"><img src="../${esc(c.evidence)}" loading="lazy"`
+      + ' style="max-width:220px;max-height:90px;border:1px solid #ddd"></a>' : '—',
+    code(c.id), `${tag(c.verdict, tone[c.verdict] ?? '')}${c.reason ? `<br><small>${esc(c.reason)}`
+      + '</small>' : ''}`,
+    chosen.has(c.id) ? tag(chosen.get(c.id), 'ok') : '',
+    sel(c.selector), esc(c.anchored), `${Math.round(c.support * 100)} %`,
+    `${Math.round(c.widthShare * 100)} %`, `${Math.round(c.textStability * 100)} %`,
+    n(Math.round(c.bounds.height)), n(c.pages),
+  ]), { numeric: [6, 7, 8, 9, 10] }));
+  return out;
+}
+
 function sectionFragments(fragments) {
   const out = ['<h2 id="fragments">Shared documents</h2>'];
   if (!fragments) return [...out, '<p>None found yet: the chrome step has not run.</p>'];
@@ -295,19 +325,22 @@ async function sectionNotes(cwd, notes) {
 export async function renderHtml(cwd, { now = new Date() } = {}) {
   const migration = await openMigration(cwd);
   const state = await readState(cwd, { now });
-  const [site, pages, fragments, types, inventory, selections, runs, notes] = await Promise.all([
-    readWebsite(cwd), readTable(cwd), readFragments(cwd), readTypes(cwd), readInventory(cwd),
-    listSelections(cwd), listRuns(cwd), notesIndex(cwd).then((i) => i.notes),
-  ]);
-  const nav = ['state', 'website', 'pages', 'bodies', 'fragments', 'elements', 'runs',
-    'notes']
+  const [site, pages, fragments, types, inventory, selections, runs, notes, sheet, choice] = (
+    await Promise.all([
+      readWebsite(cwd), readTable(cwd), readFragments(cwd), readTypes(cwd), readInventory(cwd),
+      listSelections(cwd), listRuns(cwd), notesIndex(cwd).then((i) => i.notes),
+      readCandidates(cwd), readChoice(cwd),
+    ]));
+  const nav = ['state', 'website', 'pages', 'bodies', 'candidates', 'fragments', 'elements',
+    'runs', 'notes']
     .map((id) => `<a href="#${id}">${id}</a>`).join(' · ');
   const body = [
     `<h1>${esc(migration.source.scope)}</h1>`,
     `<p class="lead">Migration ${code(migration.id)} · ${nav}</p>`,
     ...sectionState(state), ...sectionWebsite(site),
     ...await sectionPages(cwd, pages, selections),
-    ...await sectionBodies(cwd, pages), ...sectionFragments(fragments),
+    ...await sectionBodies(cwd, pages), ...sectionCandidates(sheet, choice),
+    ...sectionFragments(fragments),
     ...sectionElements(types, inventory), ...sectionRuns(runs),
     ...await sectionNotes(cwd, notes),
     `<footer>Rendered ${when(now.toISOString())} from migration/ — regenerate with`

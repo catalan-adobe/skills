@@ -66,6 +66,7 @@ test('the HTML report shows every unit, says what is absent, opens from disk', a
   assert.match(html, /<a href="https:\/\/a.example\/old">\/old<\/a>/, 'the URL linked');
   assert.match(html, /<th>shot<\/th>/);
   assert.match(html, /<h2 id="bodies">Bodies<\/h2>\n<p>No body crops yet/);
+  assert.match(html, /<h2 id="candidates">Chrome candidates<\/h2>\n<p>No candidate sheet yet/);
   assert.equal((html.match(/shots\/page.jpg/g) ?? []).length, 0, 'no screenshot taken yet');
   assert.match(html, /<h3>header <span class="tag ">template<\/span>/);
   assert.match(html, /<img src="\.\.\/fragments\/frg-x\/shots\/page.png"/, 'relative to views/');

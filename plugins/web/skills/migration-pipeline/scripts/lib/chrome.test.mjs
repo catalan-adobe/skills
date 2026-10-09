@@ -179,7 +179,17 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   assert.match(out.summary,
     /^10 tree\(s\) captured, 0 failed; 10 pages read; header: 1, 1 without; footer: 1, 1 without/);
   assert.deepEqual(io.calls.proxies, [true], 'offline only');
-  assert.equal(io.calls.visited.length, 10 + 2, 'ten pages, then one per fragment for evidence');
+  assert.ok(io.calls.visited.length >= 10 + 2, 'ten pages, then evidence and candidate crops');
+  const { chrome } = await data(cwd);
+  const sheet = await chrome.readCandidates(cwd);
+  assert.ok(sheet.candidates.length >= 3, `a sheet of ${sheet.candidates.length}`);
+  assert.deepEqual(sheet.candidates.filter((c) => c.verdict === 'header').map((c) => c.selector)
+    .sort(), ['div.experiencefragment', 'div.utility']);
+  assert.ok(sheet.candidates.every((c) => /^cnd-[0-9a-f]{12}$/.test(c.id)));
+  for (const c of sheet.candidates.filter((x) => x.verdict === 'rejected')) {
+    assert.ok(c.reason, 'a rejected candidate carries its reason');
+  }
+  assert.ok(sheet.candidates.some((c) => c.evidence?.startsWith('website/chrome-candidates/')));
   const { website, composition, pages, trees, notes, runs } = await data(cwd);
   assert.equal((await trees.list(cwd)).length, 10);
   const frags = await website.readFragments(cwd);
@@ -250,6 +260,25 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   assert.match(second.summary, /^1 tree\(s\) captured/);
   assert.equal((await trees.list(cwd)).length, 11);
   assert.deepEqual(await check(cwd), { pass: true });
+  // A reader chooses otherwise: the choice is applied on the next run, and only then.
+  const utility = sheet.candidates.find((c) => c.selector === 'div.utility');
+  await chrome.choose(cwd, 'header', [utility.id], { by: 'test', label: 'utility bar only' });
+  assert.deepEqual(await pending(cwd), ['detect'], 'a new choice: detect again');
+  await workerMain(cwd, { io: fakeIo(siteTree, { pageOf: (u) => numberOf(u) || 3 }) });
+  const chosenFrags = await website.readFragments(cwd);
+  const header = chosenFrags.fragments.find((f) => f.part === 'header');
+  assert.deepEqual([header.selectors, header.label, header.pages],
+    [['div.utility'], 'utility bar only', 10], 'the chosen member, on the pages that carry it');
+  await chrome.choose(cwd, 'footer', [], { by: 'test' });
+  await workerMain(cwd, { io: fakeIo(siteTree, { pageOf: (u) => numberOf(u) || 3 }) });
+  assert.equal((await website.readFragments(cwd)).fragments.some((f) => f.part === 'footer'),
+    false, 'no footer, by choice');
+  const flagged = (await pages.read(cwd)).pages.filter((p) => p.verdict.reasons
+    .some((r) => r.code === 'no-footer' && r.by === 'chrome')).length;
+  assert.equal(flagged, 11, 'every page is without the footer the reader said there is none of');
+  await chrome.choose(cwd, 'footer', [sheet.candidates.find((c) => c.verdict === 'footer').id],
+    { by: 'test' });
+  await workerMain(cwd, { io: fakeIo(siteTree, { pageOf: (u) => numberOf(u) || 3 }) });
   // What a capture renders changed: an overlay rule added, a cache run done → all stale.
   await new Promise((r) => { setTimeout(r, 5); });
   await website.addOverlay(cwd, { selector: '#chat', action: 'hide' });

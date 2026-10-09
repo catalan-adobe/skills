@@ -50,6 +50,8 @@ migration/
     website.json            origin, scope, how it was discovered, languages, groups derived
     access.json             how to open a page: bot-protection recipe, overlays     decision
     fragments.json          the shared documents: header, footer (template), inline  derived
+    chrome-candidates.json  what recurs across pages, with the rules' verdict, crops  derived
+    chrome.json             a reader's choice of header and footer among them        decision
   pages/                    the pages
     pages.json              the table: one record per URL, with its verdict         derived+facts
     selections/<name>.json  a named set of page ids with its criteria               decision
@@ -173,6 +175,18 @@ their own ids and labels. Which pages use a fragment is not stored here: the pag
 (its composition, summarised on its record), and "pages using X" is a query. Each
 fragment has a composition like a page's under `fragments/<id>/` — a header's bands are
 its sections, decomposable into blocks like any document.
+
+### website/chrome-candidates.json — *derived*, website/chrome.json — *decision*
+
+The chrome as a choice. The chrome step's engine lists what recurs across the pages at
+a stable place — each candidate under an id that is the same on every run, with the
+numbers the rules read (support, width share, text stability, height, position), the
+rules' verdict (`header`, `footer`, `unplaced`, `rejected` with its reason) and a crop.
+A reader — an agent at any tier, a person — may choose otherwise: `chrome.json` names a
+part's members among those ids (none: the site has no such part), with who chose, when
+and why. The choice is part of what a detection is of: a new one makes the detection
+stale, and the next chrome run derives the fragments from it. Rules propose; a reader
+decides; the data records both.
 
 ### pages/pages.json — *derived + facts*
 
@@ -360,6 +374,8 @@ it exists and that it is disposable.
   `selections.mjs` — `create`, `read`, `list`, `pagesOf`; `composition.mjs` — `write`,
   `writeMany`, `read`, `writeFragment`, `readFragment`, `items`, `fragmentRefs`;
   `trees.mjs` — `write`, `read`, `head`, `list` (the visual tree, a method's artefact);
+  `chrome.mjs` — `writeCandidates`, `readCandidates`, `choose`, `readChoice`, `candidateId`,
+  `choiceHash`;
   `triage.mjs` — `write`, `read`, `list`, `flagsOf` (what a System 1 model saw).
 - `website.mjs` — `refresh`, `writeAccess`/`readAccess`, `writeFragments`/`readFragments`,
   `pagesUsing`.

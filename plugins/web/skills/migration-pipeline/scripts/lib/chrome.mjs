@@ -17,7 +17,7 @@ import { pageExpression } from './cache.mjs';
 import { PARTS } from './chrome-parts.mjs';
 import { candidates } from './chrome-candidates.mjs';
 import { bodyEdges, cropBody } from './crops.mjs';
-import { detectChrome } from './chrome-detect.mjs';
+import { chosenPart, detectChrome, member } from './chrome-detect.mjs';
 import { data } from './data.mjs';
 
 export const METHOD = 'visual-tree';
@@ -45,10 +45,77 @@ async function captures(cwd) {
  */
 export const DETECT_VERSION = 3;
 
-/** The hash of what detection read: which trees, at which width, by which rules. */
-export const inputsHash = (ids, minWidth) => createHash('sha256')
-  .update(`${DETECT_VERSION}|${minWidth}|${[...ids].sort().join(' ')}`).digest('hex')
-  .slice(0, 16);
+/** How many candidates the sheet shows, beyond the members themselves. */
+export const SHEET_SIZE = 16;
+export const SHEET_MIN_SUPPORT = 0.2;
+
+/**
+ * The hash of what detection read: which trees, at which width, by which rules, under
+ * which choice.
+ */
+export const inputsHash = (ids, minWidth, choice = '') => createHash('sha256')
+  .update(`${DETECT_VERSION}|${minWidth}|${choice}|${[...ids].sort().join(' ')}`)
+  .digest('hex').slice(0, 16);
+
+/**
+ * The candidate sheet: every member of a part, every rejected candidate, and the best of
+ * the rest by support — each with the engine's verdict and its numbers, under an id that
+ * is the same on every run, so a choice can name it.
+ */
+export function sheetOf(all, detection, candidateId) {
+  const verdicts = new Map();
+  const slot = (m) => `${m.key}|${m.anchored}`;
+  for (const part of PARTS) {
+    for (const v of detection[part]) {
+      for (const m of [...v.members, ...v.optional]) verdicts.set(slot(m), { verdict: part });
+    }
+  }
+  for (const r of detection.rejected) {
+    if (!verdicts.has(slot(r))) verdicts.set(slot(r), { verdict: 'rejected', reason: r.reason });
+  }
+  const stable = all.filter((c) => c.stable);
+  const named = stable.filter((c) => verdicts.has(slot(c)));
+  const rest = stable.filter((c) => !verdicts.has(slot(c)) && c.support >= SHEET_MIN_SUPPORT)
+    .sort((a, b) => b.support - a.support).slice(0, SHEET_SIZE);
+  const seen = new Set();
+  return [...named, ...rest].filter((c) => {
+    const id = candidateId(c.key, c.anchored);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).map((c) => {
+    const m = member(c);
+    const v = verdicts.get(slot(c)) ?? { verdict: 'unplaced' };
+    return {
+      id: candidateId(c.key, c.anchored), selector: m.selector, selectors: m.selectors,
+      tag: m.tag, anchored: c.anchored, support: m.support, pages: m.pages,
+      widthShare: m.widthShare, textStability: m.textStability, variants: m.variants,
+      bounds: m.bounds, verdict: v.verdict, ...(v.reason ? { reason: v.reason } : {}),
+      sampleUrl: m.sampleUrl, text: m.text, candidate: c,
+    };
+  });
+}
+
+/**
+ * The detection as a reader chose it: each chosen part replaced by its chosen candidates;
+ * a part without a choice stays as the rules found it.
+ */
+export function applyChoice(detection, choice, sheet, { pages, groupOf }) {
+  if (!choice) return detection;
+  const byId = new Map(sheet.map((s) => [s.id, s.candidate]));
+  const out = { ...detection, without: { ...detection.without } };
+  for (const part of PARTS) {
+    const chosen = choice.parts[part];
+    if (!chosen) continue;
+    const picked = chosen.candidates.map((id) => byId.get(id)).filter(Boolean);
+    const result = chosenPart(picked, pages, groupOf);
+    out[part] = result.variants.map((v) => (
+      { ...v, ...(chosen.label ? { label: chosen.label } : {}) }));
+    out.without[part] = result.without;
+    out.chosen = { ...(out.chosen ?? {}), [part]: chosen.by };
+  }
+  return out;
+}
 
 /**
  * The node of a tree whose selector is one of `selectors` — and, when several match (a
@@ -96,7 +163,7 @@ export function fragmentsOf(part, variants, makeId) {
   return variants.map((v, i) => ({
     ...(i ? { id: makeId('frg', `template|${part}|${i + 1}`) } : {}),
     placement: 'template', part,
-    ...(several ? { label: `${part} design ${i + 1}` } : {}),
+    ...(v.label ? { label: v.label } : several ? { label: `${part} design ${i + 1}` } : {}),
     selectors: v.members.map((m) => m.selector),
     optional: v.optional.map((m) => m.selector),
     pages: v.pages.length,
@@ -216,6 +283,36 @@ export async function evidence(cwd, fragment, { io, visit, prepare }) {
   return { files, defects };
 }
 
+/**
+ * One crop per candidate, on its sample page: pages visited once each, the candidate
+ * outlined. Returns id → file; a candidate that does not resolve has none.
+ */
+export async function candidateCrops(cwd, sheet, { io, visit, prepare }) {
+  const dir = path.join(cwd, 'migration', 'website', 'chrome-candidates');
+  await mkdir(dir, { recursive: true });
+  const byUrl = new Map();
+  for (const s of sheet) byUrl.set(s.sampleUrl, [...(byUrl.get(s.sampleUrl) ?? []), s]);
+  const files = new Map();
+  for (const [url, list] of byUrl) {
+    // eslint-disable-next-line no-await-in-loop
+    await visit({ url });
+    // eslint-disable-next-line no-await-in-loop
+    await io.browser.eval(prepare);
+    for (const s of list) {
+      // eslint-disable-next-line no-await-in-loop
+      const selector = await resolveMember(io.browser, s);
+      if (!selector) continue;
+      const rel = `website/chrome-candidates/${s.id}.png`;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await io.browser.screenshot(path.join(cwd, 'migration', rel), selector);
+        files.set(s.id, rel);
+      } catch { /* a candidate that cannot be cropped shows its numbers only */ }
+    }
+  }
+  return files;
+}
+
 const pct = (x) => `${Math.round(x * 100)} %`;
 
 /** The detection in words, for the operator: one note. */
@@ -270,17 +367,31 @@ export async function detect(cwd, { io, run, access, visit, minWidth = MIN_WIDTH
   if (!all.length) throw new Error('no visual tree stored; nothing to detect the chrome from');
   const byUrl = new Map(all.map((c) => [c.url, c.page.id]));
   const groupOf = (url) => all.find((c) => c.url === url)?.page.group ?? '';
-  const detection = detectChrome(candidates(all, { groupOf }), {
-    pages: all.map((c) => c.url),
+  const { chrome } = await data(cwd);
+  const allCandidates = candidates(all, { groupOf });
+  const urls = all.map((c) => c.url);
+  const found = detectChrome(allCandidates, {
+    pages: urls,
     pageHeights: all.map((c) => c.tree.bounds.height),
     groupOf,
     consentSelectors: access.overlays.map((o) => o.selector).filter(Boolean),
   });
+  const sheet = sheetOf(allCandidates, found, chrome.candidateId);
+  const choice = await chrome.readChoice(cwd);
+  const detection = applyChoice(found, choice, sheet, { pages: urls, groupOf });
   const at = now().toISOString();
+  const inputs = inputsHash(all.map((c) => c.page.id), minWidth, chrome.choiceHash(choice));
+  const prepare = preparedAtTop(pageExpression(access));
+  await runs.update(cwd, run.id, { current: 'candidate crops' });
+  const crops = await candidateCrops(cwd, sheet, { io, visit, prepare });
+  await chrome.writeCandidates(cwd, {
+    method: { name: METHOD, at, inputs },
+    candidates: sheet.map(({ candidate, ...c }) => (
+      { ...c, ...(crops.get(c.id) ? { evidence: crops.get(c.id) } : {}) })),
+  });
   const fragments = PARTS.flatMap((part) => fragmentsOf(part, detection[part], store.id))
     .map((f) => ({ ...f, id: f.id ?? website.fragmentId('template', f.part) }));
   const defects = [];
-  const prepare = preparedAtTop(pageExpression(access));
   for (const f of fragments) {
     // eslint-disable-next-line no-await-in-loop
     await runs.update(cwd, run.id, { current: `evidence ${f.id}` });
@@ -290,7 +401,7 @@ export async function detect(cwd, { io, run, access, visit, minWidth = MIN_WIDTH
     defects.push(...shots.defects);
   }
   await website.writeFragments(cwd, {
-    method: { name: METHOD, at, inputs: inputsHash(all.map((c) => c.page.id), minWidth) },
+    method: { name: METHOD, at, inputs },
     fragments: fragments.map(({ variant, ...f }) => f),
     rejected: detection.rejected.map((m) => ({ selector: m.selector, reason: m.reason })),
   });
@@ -333,7 +444,9 @@ export async function pending(cwd) {
   const stored = (await trees.list(cwd)).filter((id) => readable.has(id));
   if (!stored.length) return [];
   const fragments = await website.readFragments(cwd);
-  if (fragments?.method.inputs !== inputsHash(stored, MIN_WIDTH)) return ['detect'];
+  const { chrome } = await data(cwd);
+  const choice = chrome.choiceHash(await chrome.readChoice(cwd));
+  if (fragments?.method.inputs !== inputsHash(stored, MIN_WIDTH, choice)) return ['detect'];
   const root = path.join(cwd, 'migration');
   const has = (rel) => access(path.join(root, rel)).then(() => true, () => false);
   const { composition } = await data(cwd);
