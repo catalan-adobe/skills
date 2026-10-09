@@ -172,16 +172,33 @@ export const DUMP = `(() => {
     let stretched = false;
     [r, stretched] = stretchSticky(el, r);
     // Visible box: clip to ancestors that hide overflow (a 375px image in a 263px tile, a
-    // collapsed panel inside a web component).
-    for (let a = parentOf(el); a && a !== document.body; a = parentOf(a)) {
-      const o = getComputedStyle(a);
-      if (/hidden|clip|auto|scroll/.test(o.overflowX + o.overflowY)) {
-        const c = a.getBoundingClientRect();
-        const l = Math.max(r.left, c.left), t = Math.max(r.top, c.top);
-        const rt = Math.min(r.right, c.right), bt = Math.min(r.bottom, c.bottom);
-        r = { left: l, top: t, right: rt, bottom: bt, width: Math.max(0, rt - l),
-          height: Math.max(0, bt - t) };
+    // collapsed panel inside a web component) and to clip-path insets, the element's own
+    // included (a mega menu's panel closed with inset(0 0 100%) is laid out and never painted).
+    const clipTo = (c) => {
+      const l = Math.max(r.left, c.left), t = Math.max(r.top, c.top);
+      const rt = Math.min(r.right, c.right), bt = Math.min(r.bottom, c.bottom);
+      r = { left: l, top: t, right: rt, bottom: bt, width: Math.max(0, rt - l),
+        height: Math.max(0, bt - t) };
+    };
+    const insetOf = (a, o) => {
+      const m = o.clipPath?.match(/^inset\\(([^)]*)\\)/);
+      if (/^circle\\(0(px|%)?[\\s)]/.test(o.clipPath ?? '')) return { left: 0, top: 0, right: 0,
+        bottom: 0 };
+      if (!m) return null;
+      const p = m[1].trim().split(/\\s+/).slice(0, 4);
+      const [t, rr = t, b = t, ll = rr] = p;
+      const c = a.getBoundingClientRect();
+      const px = (v, size) => v.endsWith('%') ? size * parseFloat(v) / 100 : parseFloat(v) || 0;
+      return { left: c.left + px(ll, c.width), top: c.top + px(t, c.height),
+        right: c.right - px(rr, c.width), bottom: c.bottom - px(b, c.height) };
+    };
+    for (let a = el; a && a !== document.body; a = parentOf(a)) {
+      const o = a === el ? cs : getComputedStyle(a);
+      if (a !== el && /hidden|clip|auto|scroll/.test(o.overflowX + o.overflowY)) {
+        clipTo(a.getBoundingClientRect());
       }
+      const inset = insetOf(a, o);
+      if (inset) clipTo(inset);
     }
     if (r.width < 2 || r.height < 2) continue;
     const x = r.left + sx, y = r.top + sy;

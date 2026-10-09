@@ -24,8 +24,10 @@ export const MAX_CONSECUTIVE_FAILURES = 5;
  *   4 — the band dump and its analysis, from the site census, stored beside the tree.
  *   5 — the page is pinned to the top before each reading, and a dump taken scrolled fails
  *       the capture (a side navigation had scrolled the page after it was prepared).
+ *   6 — a clip-path leaving no area hides an element, in the tree and in the dump (a mega
+ *       menu's closed panel had put a band edge and a background where nothing is painted).
  */
-export const CAPTURE_VERSION = 5;
+export const CAPTURE_VERSION = 6;
 /**
  * Back at the top, instantly, before anything is read: a script may scroll the page after
  * it was prepared (a side navigation bringing its active item into view), and a reading

@@ -301,6 +301,21 @@ window.__visualTree = (() => {
   }
   // An element with `display: contents` has no box of its own: its children are laid
   // out as its parent's. For the tree it is transparent, its children walked in its place.
+  function clippedAway(style, rect) {
+    const clip = style.clipPath;
+    if (!clip || clip === "none") return false;
+    if (/^circle\(0(px|%)?[\s)]/.test(clip)) return true;
+    const inset = clip.match(/^inset\(([^)]*)\)/);
+    if (!inset) return false;
+    const parts = inset[1].trim().split(/\s+/).slice(0, 4);
+    if (parts.length === 0) return false;
+    const [t, r = t, b = t, l = r] = parts;
+    const px = (v, size) => v.endsWith("%") ? size * parseFloat(v) / 100 : parseFloat(v) || 0;
+    return rect.width - px(l, rect.width) - px(r, rect.width) <= 0 || rect.height - px(t, rect.height) - px(b, rect.height) <= 0;
+  }
+  function hiddenStyle(style, rect) {
+    return style.display === "none" || style.visibility === "hidden" || style.opacity === "0" || clippedAway(style, rect);
+  }
   function layoutChildren(element, getStyle = (el) => window.getComputedStyle(el)) {
     const out = [];
     for (const child of element.children) {
@@ -322,7 +337,7 @@ window.__visualTree = (() => {
     const scrollY = window.scrollY;
     const scrollX = window.scrollX;
     const style = window.getComputedStyle(element);
-    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+    if (hiddenStyle(style, rect)) {
       return {
         tag: element.tagName,
         selector: element.tagName.toLowerCase(),
@@ -425,9 +440,8 @@ window.__visualTree = (() => {
     for (const child of laidOut) {
       if (child.id?.startsWith("vibe-blueprint-")) continue;
       const childStyle = window.getComputedStyle(child);
-      const hidden = childStyle.display === "none" || childStyle.visibility === "hidden" || childStyle.opacity === "0";
-      if (hidden) continue;
       const childRect = child.getBoundingClientRect();
+      if (hiddenStyle(childStyle, childRect)) continue;
       if (childRect.width > 0 && childRect.height > 0) {
         allChildBoxes.push({
           x: Math.round(childRect.left + scrollX),
