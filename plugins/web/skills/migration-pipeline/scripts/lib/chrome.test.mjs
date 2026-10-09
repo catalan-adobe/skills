@@ -74,6 +74,16 @@ function fakeIo(treeOf, { failOn = [], pageOf = numberOf } = {}) {
     calls,
     treeBundle: '/bundle.js',
     sharp: fakeSharp(3131),
+    // The picture agrees with every reading here: a clean check, dated to the capture.
+    pixels: async (dir, id) => {
+      const { bands } = await data(dir);
+      const capture = await bands.readCapture(dir, id);
+      const check = { page: id, version: 1, capturedAt: capture?.updatedAt ?? null,
+        shot: { width: 1280, height: 3131 }, bands: [], unclaimedRows: 0, flags: [],
+        checkedAt: new Date().toISOString() };
+      await bands.writePixelCheck(dir, id, check);
+      return check;
+    },
     sleep: async () => {},
     startProxy: async ({ offline }) => {
       calls.proxies.push(offline);

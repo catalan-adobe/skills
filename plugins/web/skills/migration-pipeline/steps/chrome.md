@@ -2,7 +2,7 @@
 
 Purpose: the shared documents the site's template places on every page — header and
 footer — found from the rendered pages, written as fragments and placed on every page's
-composition. Nothing leaves the machine: the pages come from the cache. Tier: medium.
+composition; and the capture itself checked against its pictures. Offline. Tier: medium.
 
 ## Inputs
 
@@ -12,48 +12,48 @@ composition. Nothing leaves the machine: the pages come from the cache. Tier: me
 ## Method
 
 1. Start the worker — the command returns at once: `node <skill>/scripts/pipeline.mjs
-   chrome`. Two phases, offline browser sessions. **Capture**: every readable page without
-   a current visual tree is rendered from the cache with the page-tree bundle injected and
-   the overlay rules applied; its tree is stored under the page with its height and a
-   full-page screenshot — none above 16 384 px (a browser's picture breaks there): such a
-   page is flagged `too-tall` and parked. **Detect**: elements recurring across the trees
-   at a stable place at the top or bottom are the chrome; written in EDS terms:
-   `website/fragments.json` by part (one header is one document, however many bands),
-   each fragment's composition (bands as sections), every page's composition with the
-   fragments it carries (sections stay empty — `elements` fills them), `no-header` /
-   `no-footer` flags, crops under `fragments/<id>/shots/`, the body crop per page, a note.
-2. Do not wait or poll in a loop. `pipeline state --text` shows the step's progress;
-   `pipeline chrome status` the run; `pipeline chrome stop` ends it. A rerun captures only
-   what is missing and detects again when the trees changed.
+   chrome`. **Capture**: every readable page without a current visual tree is rendered
+   offline from the cache, page-tree bundle injected, overlay rules applied; its tree,
+   band capture, height and full-page screenshot are stored under the page — none above
+   16 384 px (a browser's picture breaks there): such a page is `too-tall` and parked.
+   **Detect**: elements recurring across the trees at a stable place at the top or bottom
+   are the chrome, in EDS terms: `website/fragments.json` by part (one header is one
+   document, however many bands), each fragment's and each page's composition (sections
+   stay empty — `elements` fills them), `no-header` / `no-footer` flags, crops, the body
+   crop per page, a note. Then **the picture checks the reading**: the screenshot against
+   what the DOM claims is painted; where they disagree the page is `misread`, told why.
+2. Do not wait or poll in a loop. `pipeline state --text` shows the step's progress,
+   `pipeline chrome status` the run, `stop` ends it. A rerun does only what is stale.
 3. Look before you report. Read the note (`migration.mjs notes chrome`), each fragment's
-   `page.png` (every band outlined) and three or four pages' `shots/page.jpg` from
-   different groups. Tell the operator what the site's chrome is — designs, pages each,
-   pages with none and why (a campaign template, a misread capture) — and what the
-   pictures show about the capture: an element over the content the recipe should hide
-   (`access overlay`, then capture again), images from an origin not yet named, a page
-   that is not a page. A hover-only mega-menu is not in a plain render.
-4. The rules propose; you choose. `website/chrome-candidates.json` (and the report's
-   "Chrome candidates") lists what recurs across the pages with a crop and the numbers
-   the rules read — support, width, text stability, height — and the rules' verdict. Read
-   it as a person would the crops: is that the site's header, the whole of it, nothing
-   more? Two or three designs of one part are usually one header at two DOM positions;
-   a band of stable text touching the footer (a "latest news", a feedback box) is
-   content, not footer. When the rules are wrong, say so with the ids: `pipeline chrome
-   choose header <id> [<id>…] --by <your model> --note "…"` (`footer`; `none` when the
-   site has no such part), then `pipeline chrome` again: the choice is part of what a
-   detection is of. When they are right, say that too in your note. Never edit
-   `fragments.json`: the choice is the decision, the fragments follow from it.
+   `page.png` (every band outlined), three or four pages' `shots/page.jpg` from different
+   groups, and every `misread` page (the report's "Picture"): that is where the capture
+   is wrong on this site — content never painted (an asset origin not cached, a lazy
+   image, a body revealed on scroll), a CSS pseudo-element's paint, a truncated shot.
+   Tell the operator what the site's chrome is — designs, pages each, pages with none
+   and why — and what the pictures show about the capture. What the recipe can fix
+   (`access overlay`, `assets`), fix and capture again; what it cannot, write down: the
+   next level reads those pages knowing. A hover-only menu is not in a plain render.
+4. The rules propose; you choose. `website/chrome-candidates.json` (the report's "Chrome
+   candidates") lists what recurs across the pages with a crop, the numbers the rules
+   read — support, width, text stability, height — and their verdict. Read the crops as
+   a person would: is that the site's header, the whole of it, nothing more? Two designs
+   of one part are usually one header at two DOM positions; a band of stable text
+   touching the footer (a "latest news", a feedback box) is content. When the rules are
+   wrong, say so with the ids: `pipeline chrome choose header <id> [<id>…] --by <your
+   model> --note "…"` (`footer`; `none` for a site without), then `pipeline chrome` again:
+   the choice is an input of the detection. Never edit `fragments.json`.
 
 ## Outputs
 
-- `pages/<id>/visual-tree.json`, `shots/page.jpg`, `shots/body.jpg` per readable page;
+- Per readable page: `visual-tree.json`, `band-capture.json`, `pixel-check.json`,
+  `composition.json` (template fragments), `shots/page.jpg`, `shots/body.jpg`;
   `website/fragments.json`, `website/chrome-candidates.json` (+ crops); `fragments/<id>/`;
-  `pages/<id>/composition.json` with template fragments; `chrome` reasons; a run; a note.
+  `chrome` and `pixels` reasons; a run; a note.
 
 ## Done
 
-Fails while a run is alive, while a readable page has no current tree (how many), or
-while the detection is older than the trees, the method or the choice.
+Fails while a run is alive, while a readable page has no current tree (how many), or while
+the detection or a picture check is older than its inputs.
 
 ```bash
 node <skill>/scripts/pipeline.mjs state --text

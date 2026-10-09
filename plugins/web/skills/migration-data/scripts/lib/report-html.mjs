@@ -223,6 +223,25 @@ async function sectionBodies(cwd, pages) {
   return out;
 }
 
+/** Pages whose screenshot disagrees with the reading: the first thing to look at. */
+function sectionPicture(pages) {
+  const flagged = pages.pages.filter((p) => p.verdict.reasons.some((r) => r.code === 'misread'));
+  const out = ['<h2 id="picture">Picture</h2>'];
+  if (!flagged.length) {
+    return [...out, '<p>Every page\'s screenshot agrees with what its DOM claims is painted.</p>'];
+  }
+  out.push(`<p>${flagged.length} page(s) where the picture disagrees with the reading — content`
+    + ' never painted, a background the page does not show, ink the DOM does not claim. Look'
+    + ' before judging; a fix is per site (a wait, an asset origin, an overlay).</p>',
+  '<table><thead><tr><th>page</th><th>disagreement</th></tr></thead><tbody>',
+  ...flagged.slice(0, MAX_ROWS).map((p) => {
+    const detail = p.verdict.reasons.find((r) => r.code === 'misread')?.detail ?? '';
+    return `<tr><td><a href="../${esc(shotFile(p.id))}">${esc(new URL(p.url).pathname)}</a>`
+      + `</td><td>${esc(detail)}</td></tr>`;
+  }), '</tbody></table>');
+  return out;
+}
+
 /** The chrome candidates: what recurred, how the rules read it, what a reader chose. */
 function sectionCandidates(sheet, choice) {
   const out = ['<h2 id="candidates">Chrome candidates</h2>'];
@@ -331,15 +350,16 @@ export async function renderHtml(cwd, { now = new Date() } = {}) {
       listSelections(cwd), listRuns(cwd), notesIndex(cwd).then((i) => i.notes),
       readCandidates(cwd), readChoice(cwd),
     ]));
-  const nav = ['state', 'website', 'pages', 'bodies', 'candidates', 'fragments', 'elements',
-    'runs', 'notes']
+  const nav = ['state', 'website', 'pages', 'bodies', 'picture', 'candidates', 'fragments',
+    'elements', 'runs', 'notes']
     .map((id) => `<a href="#${id}">${id}</a>`).join(' · ');
   const body = [
     `<h1>${esc(migration.source.scope)}</h1>`,
     `<p class="lead">Migration ${code(migration.id)} · ${nav}</p>`,
     ...sectionState(state), ...sectionWebsite(site),
     ...await sectionPages(cwd, pages, selections),
-    ...await sectionBodies(cwd, pages), ...sectionCandidates(sheet, choice),
+    ...await sectionBodies(cwd, pages), ...sectionPicture(pages),
+    ...sectionCandidates(sheet, choice),
     ...sectionFragments(fragments),
     ...sectionElements(types, inventory), ...sectionRuns(runs),
     ...await sectionNotes(cwd, notes),

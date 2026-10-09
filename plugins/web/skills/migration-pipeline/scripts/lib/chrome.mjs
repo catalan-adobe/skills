@@ -17,6 +17,7 @@ import { pageExpression } from './cache.mjs';
 import { PARTS } from './chrome-parts.mjs';
 import { candidates } from './chrome-candidates.mjs';
 import { bodyEdges, cropBody } from './crops.mjs';
+import { checkPage, setMisread, stalePixelCheck } from './pixels.mjs';
 import { chosenPart, detectChrome, member } from './chrome-detect.mjs';
 import { data } from './data.mjs';
 
@@ -426,10 +427,17 @@ export async function detect(cwd, { io, run, access, visit, minWidth = MIN_WIDTH
   const tall = all.filter((c) => c.scrollHeight > limit)
     .map((c) => ({ id: c.page.id, scrollHeight: c.scrollHeight }));
   await pages.setReasons(cwd, 'chrome', flagsOf(detection, byUrl, { tall, limit }));
+  await runs.update(cwd, run.id, { current: 'picture check' });
+  for (const c of all) {
+    // eslint-disable-next-line no-await-in-loop
+    await io.pixels(cwd, c.page.id);
+  }
+  const disagree = await setMisread(cwd);
   await website.refresh(cwd);
   const summary = `${all.length} pages read; ${PARTS.map((p) => `${p}: `
     + `${fragments.filter((f) => f.part === p).length}, ${detection.without[p].length} without`)
-    .join('; ')}; ${tall.length} too tall; ${detection.rejected.length} candidate(s) rejected.`;
+    .join('; ')}; ${tall.length} too tall; ${detection.rejected.length} candidate(s) rejected;`
+    + ` ${disagree} page(s) the picture disagrees with.`;
   await notes.add(cwd, { step: 'chrome', author: 'runner', summary,
     body: renderNote(detection, fragments, defects) });
   return { summary, fragments: fragments.length };
@@ -437,7 +445,8 @@ export async function detect(cwd, { io, run, access, visit, minWidth = MIN_WIDTH
 
 /**
  * Pending work: trees to capture, or a detection older than the stored trees, or a page
- * with a screenshot and no body crop (the detection writes them).
+ * with a screenshot and no body crop, or a picture check older than its capture (the
+ * detection writes both).
  */
 export async function pending(cwd) {
   const { website, trees } = await data(cwd);
@@ -462,6 +471,10 @@ export async function pending(cwd) {
     if (!comp || !fragments) return ['detect'];
     const edges = bodyEdges(comp, fragments.fragments, tree?.page?.scrollHeight ?? 0);
     if (edges.bottom - edges.top >= 2) return ['detect'];
+  }
+  for (const id of stored) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await stalePixelCheck(cwd, id)) return ['detect'];
   }
   return [];
 }
@@ -498,6 +511,7 @@ export async function realIo(cwd) {
     ...defaultIo,
     treeBundle,
     sharp: sharpOf(cwd),
+    pixels: (dir, id) => checkPage(dir, id, { sharp: sharpOf(dir) }),
     startProxy: proxyStarter(proxyScript, cacheDir(cwd), defaultIo, { also }),
     browsers,
     browser: browsers[0],

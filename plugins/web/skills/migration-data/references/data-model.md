@@ -61,6 +61,7 @@ migration/
       composition.json      the page in EDS shape: fragments, sections, items     derived
       visual-tree.json      the rendered page measured by the page-tree bundle      derived
       band-capture.json     the page's content leaves and bands (the census's dump)  derived
+      pixel-check.json      the screenshot's verdict on the band capture               derived
       triage.json           what a System 1 model saw: header, footer, broken, empty derived
       shots/                crops taken on this page                                evidence
   fragments/<id>/           a shared document's artefacts
@@ -227,7 +228,9 @@ read off the record, not decided for it. Codes: `off-scope` (not under `source.s
 `no-header`, `no-footer`, `empty` (nothing between the chrome), `broken` (an error, a
 blank page, a login or cookie wall or a bot check where content should be),
 `too-tall` (taller than a browser screenshots whole, ~16 384 px: parked, no picture to
-judge it by), `operator`. `over-budget` exists only once `plan.selection` names the frozen set.
+judge it by), `misread` (the screenshot disagrees with what the DOM claims is painted; the
+detail says where), `operator`. `over-budget` exists only once `plan.selection` names the
+frozen set.
 
 ### pages/decisions.json — *decision*
 

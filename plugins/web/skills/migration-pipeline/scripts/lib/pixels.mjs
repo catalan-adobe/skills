@@ -2,6 +2,7 @@
 // backgrounds, leaves with text and media. The screenshot says what was painted. Where they
 // disagree the page was misread — a panel hidden by a rule the reader does not know, a scroll
 // after the reading, content the DOM never showed — and a reader should look before judging.
+import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { sharpOf } from './browser.mjs';
 import { data } from './data.mjs';
@@ -168,6 +169,33 @@ export async function checkPage(cwd, pageId, options = {}) {
   return check;
 }
 
+/** A captured page whose check is missing or from an earlier capture (a shot is required). */
+export async function stalePixelCheck(cwd, pageId) {
+  const { bands: layer, trees } = await data(cwd);
+  const [capture, check] = await Promise.all([layer.readCapture(cwd, pageId),
+    layer.readPixelCheck(cwd, pageId)]);
+  if (!capture) return false;
+  const shot = path.join(cwd, 'migration', trees.shotFile(pageId));
+  if (!(await access(shot).then(() => true, () => false))) return false;
+  return !check || check.capturedAt !== (capture.updatedAt ?? null);
+}
+
+/**
+ * The `misread` reasons from every stored check, replacing the last ones: a page's picture
+ * disagrees with its reading, with the disagreement as the detail.
+ */
+export async function setMisread(cwd) {
+  const { bands: layer, pages, trees } = await data(cwd);
+  const flags = {};
+  for (const id of await trees.list(cwd)) {
+    // eslint-disable-next-line no-await-in-loop
+    const detail = layer.disagreement(await layer.readPixelCheck(cwd, id));
+    if (detail) flags[id] = [{ code: 'misread', kind: 'flag', detail }];
+  }
+  await pages.setReasons(cwd, 'pixels', flags);
+  return Object.keys(flags).length;
+}
+
 /** The lab command: a selection's pages, or every captured page when none is named. */
 export async function pixels(cwd, selectionName, options = {}) {
   const { selections, trees } = await data(cwd);
@@ -188,5 +216,6 @@ export async function pixels(cwd, selectionName, options = {}) {
       mismatched: check.bands.filter((b) => b.background && !b.background.agree).map((b) => b.id),
       unpainted: check.bands.filter((b) => b.unpainted).map((b) => b.id) });
   }
+  await setMisread(cwd);
   return out;
 }

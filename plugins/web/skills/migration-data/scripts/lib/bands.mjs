@@ -133,6 +133,26 @@ export const writeCapture = (cwd, pageId, capture) => (
   openStore(cwd).write(captureFile(pageId), { schema: CAPTURE_SCHEMA, ...capture }));
 export const readCapture = (cwd, pageId) => (
   openStore(cwd).read(captureFile(pageId), CAPTURE_SCHEMA));
+/** The disagreement in words, for a reason's detail and a review's red line; '' when none. */
+export function disagreement(check) {
+  if (!check?.flags?.length) return '';
+  const rgb = (c) => `rgb(${c.join(', ')})`;
+  const parts = [];
+  const off = check.bands.filter((b) => b.background && !b.background.agree);
+  if (off.length) {
+    parts.push(off.map((b) => `${b.id} claims ${rgb(b.background.claimed)}, shows`
+      + ` ${rgb(b.background.pixel)}`).join('; '));
+  }
+  const blank = check.bands.filter((b) => b.unpainted);
+  if (blank.length) {
+    parts.push(`content not painted in ${blank.map((b) => `${b.id} (${b.leaves} leaves)`)
+      .join(', ')}`);
+  }
+  if (check.flags.includes('unclaimed-ink')) {
+    parts.push(`${check.unclaimedRows} px of ink outside every band`);
+  }
+  return parts.join(' · ');
+}
 export const writePixelCheck = (cwd, pageId, check) => (
   openStore(cwd).write(pixelCheckFile(pageId), { schema: PIXEL_SCHEMA, ...check }));
 export const readPixelCheck = (cwd, pageId) => (

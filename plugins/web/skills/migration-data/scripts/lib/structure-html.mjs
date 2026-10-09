@@ -4,7 +4,7 @@
 // answered: type and confidence, the boundary probability, the texts. For judging what
 // iteration 1 produces. A view, rendered, never edited.
 import { esc } from './report-html.mjs';
-import { readPixelCheck, readStructure } from './bands.mjs';
+import { disagreement, readPixelCheck, readStructure } from './bands.mjs';
 import { read as readSelection } from './selections.mjs';
 import { read as readTable } from './pages.mjs';
 import { read as readTree, shotFile } from './trees.mjs';
@@ -109,24 +109,9 @@ function table(structure) {
 
 /** One line where the screenshot disagrees with the reading; empty when it does not. */
 export function pixelsLine(check) {
-  if (!check?.flags?.length) return '';
-  const rgb = (c) => `rgb(${c.join(', ')})`;
-  const parts = [];
-  const off = check.bands.filter((b) => b.background && !b.background.agree);
-  if (off.length) {
-    parts.push(off.map((b) => `${b.id} claims ${rgb(b.background.claimed)}, shows`
-      + ` ${rgb(b.background.pixel)}`).join('; '));
-  }
-  const blank = check.bands.filter((b) => b.unpainted);
-  if (blank.length) {
-    const list = blank.map((b) => `${b.id} (${b.leaves} leaves)`).join(', ');
-    parts.push(`content not painted in ${list}`);
-  }
-  if (check.flags.includes('unclaimed-ink')) {
-    parts.push(`${check.unclaimedRows} px of ink outside every band`);
-  }
-  return `<div class="pixels">Picture disagrees — ${esc(parts.join(' · '))}.`
-    + ' Look before judging.</div>';
+  const text = disagreement(check);
+  if (!text) return '';
+  return `<div class="pixels">Picture disagrees — ${esc(text)}. Look before judging.</div>`;
 }
 
 export async function renderStructure(cwd, selectionName, method = 'bands-system1') {
