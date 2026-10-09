@@ -7,8 +7,8 @@ import { HEAD, register } from './schema.mjs';
 import { openStore } from './store.mjs';
 
 export const CAPTURE_SCHEMA = 'pages/band-capture@1';
-export const STRUCTURE_SCHEMA = 'pages/structure@1';
-export const structureFile = (pageId, method = 'bands-system1') => (
+export const STRUCTURE_SCHEMA = 'pages/structure@2';
+export const structureFile = (pageId, method = 'candidates-system1') => (
   `pages/${pageId}/structure.${method}.json`);
 export const VERDICTS_FILE = 'pages/band-verdicts.json';
 export const VERDICTS_SCHEMA = 'pages/band-verdicts@1';
@@ -71,11 +71,12 @@ register('pages/pixel-check', 1, 'derived', {
     flags: { type: 'array', items: { enum: ['bg-mismatch', 'unpainted', 'unclaimed-ink'] } },
   },
 });
-// A method's reading of a page's bands into sections and children, with everything the
-// model answered: the record a review reads and a correction is made against.
-register('pages/structure', 1, 'derived', {
+// A method's reading of a page's first level: the candidates from the tree with their
+// facts, the model's answers and the decision on each; the bands derived from them. The
+// record a review reads and a correction is made against.
+register('pages/structure', 2, 'derived', {
   type: 'object',
-  required: ['schema', 'page', 'method', 'body', 'bands', 'sections'],
+  required: ['schema', 'page', 'method', 'body', 'candidates', 'bands'],
   additionalProperties: false,
   properties: {
     ...HEAD,
@@ -88,8 +89,8 @@ register('pages/structure', 1, 'derived', {
         wording: { type: 'string' }, at: { type: 'string', format: 'date-time' } },
     },
     body: { type: 'object' },
+    candidates: { type: 'array', items: { type: 'object' } },
     bands: { type: 'array', items: { type: 'object' } },
-    sections: { type: 'array', items: { type: 'object' } },
     usage: { type: 'object' },
   },
 });

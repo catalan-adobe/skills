@@ -62,6 +62,7 @@ migration/
       visual-tree.json      the rendered page measured by the page-tree bundle      derived
       band-capture.json     the page's content leaves and bands (the census's dump)  derived
       pixel-check.json      the screenshot's verdict on the band capture               derived
+      structure.<m>.json    method m's first level: candidates, answers, bands         derived
       triage.json           what a System 1 model saw: header, footer, broken, empty derived
       shots/                crops taken on this page                                evidence
   fragments/<id>/           a shared document's artefacts
