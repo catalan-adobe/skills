@@ -4,7 +4,7 @@
 // answered: type and confidence, the boundary probability, the texts. For judging what
 // iteration 1 produces. A view, rendered, never edited.
 import { esc } from './report-html.mjs';
-import { readStructure } from './bands.mjs';
+import { readPixelCheck, readStructure } from './bands.mjs';
 import { read as readSelection } from './selections.mjs';
 import { read as readTable } from './pages.mjs';
 import { read as readTree, shotFile } from './trees.mjs';
@@ -18,6 +18,7 @@ main { max-width: 1500px; margin: 0 auto; padding: 20px; }
 h1 { font-size: 20px; } .page { display: grid; grid-template-columns: ${SHEET_WIDTH}px 1fr;
   gap: 18px; padding: 18px 0; border-bottom: 1px solid #e3e3e3; align-items: start; }
 .url { font-size: 15px; font-weight: 600; word-break: break-all; margin: 0 0 6px; }
+.pixels { color: #b3261e; font-size: 13px; margin: 0 0 6px; }
 .outline { color: #444; margin: 0 0 8px; }
 .stage { position: relative; width: ${SHEET_WIDTH}px; }
 .stage img { display: block; width: ${SHEET_WIDTH}px; }
@@ -106,6 +107,28 @@ function table(structure) {
     + `<th>cols</th><th>bg</th><th>text</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
 }
 
+/** One line where the screenshot disagrees with the reading; empty when it does not. */
+export function pixelsLine(check) {
+  if (!check?.flags?.length) return '';
+  const rgb = (c) => `rgb(${c.join(', ')})`;
+  const parts = [];
+  const off = check.bands.filter((b) => b.background && !b.background.agree);
+  if (off.length) {
+    parts.push(off.map((b) => `${b.id} claims ${rgb(b.background.claimed)}, shows`
+      + ` ${rgb(b.background.pixel)}`).join('; '));
+  }
+  const blank = check.bands.filter((b) => b.unpainted);
+  if (blank.length) {
+    const list = blank.map((b) => `${b.id} (${b.leaves} leaves)`).join(', ');
+    parts.push(`content not painted in ${list}`);
+  }
+  if (check.flags.includes('unclaimed-ink')) {
+    parts.push(`${check.unclaimedRows} px of ink outside every band`);
+  }
+  return `<div class="pixels">Picture disagrees — ${esc(parts.join(' · '))}.`
+    + ' Look before judging.</div>';
+}
+
 export async function renderStructure(cwd, selectionName, method = 'bands-system1') {
   const sel = await readSelection(cwd, selectionName);
   if (!sel) throw new Error(`no selection ${selectionName}`);
@@ -116,6 +139,7 @@ export async function renderStructure(cwd, selectionName, method = 'bands-system
     const structure = await readStructure(cwd, id, method);
     const tree = await readTree(cwd, id);
     if (!page || !structure || !tree?.page?.shot) continue;
+    const pixels = await readPixelCheck(cwd, id);
     const W = tree.tree.bounds.width || 1280;
     const H = tree.page.scrollHeight;
     const scale = SHEET_WIDTH / W;
@@ -123,7 +147,7 @@ export async function renderStructure(cwd, selectionName, method = 'bands-system
       + ` target="_blank">${esc(page.url)}</a></div>
 <div class="outline">${esc(outline(structure))} <small>· ${structure.bands.length} bands,`
       + ` ${structure.usage?.inputTokens ?? 0} tokens</small></div>
-<div class="stage"><img src="../${esc(shotFile(id))}" loading="lazy">
+${pixelsLine(pixels)}<div class="stage"><img src="../${esc(shotFile(id))}" loading="lazy">
 ${overlay(structure, scale, W, H)}</div></div>
 <div class="right">${table(structure)}</div></section>`);
   }

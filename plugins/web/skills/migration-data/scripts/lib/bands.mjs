@@ -13,6 +13,8 @@ export const structureFile = (pageId, method = 'bands-system1') => (
 export const VERDICTS_FILE = 'pages/band-verdicts.json';
 export const VERDICTS_SCHEMA = 'pages/band-verdicts@1';
 export const captureFile = (pageId) => `pages/${pageId}/band-capture.json`;
+export const PIXEL_SCHEMA = 'pages/pixel-check@1';
+export const pixelCheckFile = (pageId) => `pages/${pageId}/pixel-check.json`;
 export const KINDS = ['text', 'hero', 'cards', 'list', 'media', 'columns', 'cta', 'form',
   'table', 'code', 'nav', 'quote', 'other'];
 
@@ -48,6 +50,25 @@ register('pages/band-capture', 1, 'derived', {
         leaves: { type: 'array', items: { type: 'object' } },
       },
     },
+  },
+});
+// The screenshot's verdict on the band capture: per band, the claimed background against
+// the painted margin colour and the share of inked rows; rows inked outside every band.
+register('pages/pixel-check', 1, 'derived', {
+  type: 'object',
+  required: ['schema', 'page', 'version', 'shot', 'bands', 'unclaimedRows', 'flags'],
+  additionalProperties: false,
+  properties: {
+    ...HEAD,
+    page: { type: 'string' },
+    version: { type: 'integer' },
+    capturedAt: { type: ['string', 'null'] },
+    checkedAt: { type: 'string' },
+    shot: { type: 'object', required: ['width', 'height'], additionalProperties: false,
+      properties: { width: { type: 'integer' }, height: { type: 'integer' } } },
+    bands: { type: 'array', items: { type: 'object' } },
+    unclaimedRows: { type: 'integer' },
+    flags: { type: 'array', items: { enum: ['bg-mismatch', 'unpainted', 'unclaimed-ink'] } },
   },
 });
 // A method's reading of a page's bands into sections and children, with everything the
@@ -112,6 +133,10 @@ export const writeCapture = (cwd, pageId, capture) => (
   openStore(cwd).write(captureFile(pageId), { schema: CAPTURE_SCHEMA, ...capture }));
 export const readCapture = (cwd, pageId) => (
   openStore(cwd).read(captureFile(pageId), CAPTURE_SCHEMA));
+export const writePixelCheck = (cwd, pageId, check) => (
+  openStore(cwd).write(pixelCheckFile(pageId), { schema: PIXEL_SCHEMA, ...check }));
+export const readPixelCheck = (cwd, pageId) => (
+  openStore(cwd).read(pixelCheckFile(pageId), PIXEL_SCHEMA));
 export const writeStructure = (cwd, pageId, structure, method) => (
   openStore(cwd).write(structureFile(pageId, method), { schema: STRUCTURE_SCHEMA, ...structure }));
 export const readStructure = (cwd, pageId, method) => (
