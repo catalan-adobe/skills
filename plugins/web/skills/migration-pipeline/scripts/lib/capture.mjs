@@ -2,7 +2,7 @@
 // offline, with the page-tree bundle injected; its visual tree stored under the page with
 // the page's height and, when the page is not too tall for one, its full-page screenshot.
 // A rerun captures only what is missing or taken at another width.
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { analyse } from './band-analysis.mjs';
 import { DUMP } from './band-dump.mjs';
@@ -26,8 +26,16 @@ export const MAX_CONSECUTIVE_FAILURES = 5;
  *       the capture (a side navigation had scrolled the page after it was prepared).
  *   6 — a clip-path leaving no area hides an element, in the tree and in the dump (a mega
  *       menu's closed panel had put a band edge and a background where nothing is painted).
+ *   7 — animations and transitions frozen, the site's rendering rules applied before a page
+ *       is read; a pseudo-element's paint, as large as the element, is its background.
+ *   9 — the readings are taken again while the page grows under them (an image laid out as
+ *       it loaded had left the shot shorter than the page).
+ *  10 — a failed image is asked for once more before the readings; one still broken is
+ *       named on its leaf, with its host.
+ *  11 — images pinned to their chosen candidate before the screenshot (the full-page
+ *       layout had made them pick others, uncached, and the page grow).
  */
-export const CAPTURE_VERSION = 6;
+export const CAPTURE_VERSION = 11;
 /**
  * Back at the top, instantly, before anything is read: a script may scroll the page after
  * it was prepared (a side navigation bringing its active item into view), and a reading
@@ -39,6 +47,16 @@ export const captureExpression = (minWidth = MIN_WIDTH) => (
   `(() => { ${AT_TOP}; return JSON.stringify(window.__visualTree.captureVisualTree(${minWidth}));`
   + ' })()');
 export const HEIGHT_EXPRESSION = 'document.documentElement.scrollHeight';
+/**
+ * Every image pinned to the candidate it shows: a full-page screenshot lays the page out at
+ * the page's height, and responsive images would pick candidates never fetched — broken
+ * offline, the page growing under the readings (NASA: 67 broken images, 8 000 px of growth
+ * on one page). The tree was read before; the dump after reads what is painted.
+ */
+export const PIN_IMAGES = '(() => { let n = 0; for (const i of document.images) {'
+  + ' if (!i.currentSrc) continue; i.removeAttribute("srcset"); i.removeAttribute("sizes");'
+  + ' i.src = i.currentSrc; n += 1; }'
+  + ' for (const s of document.querySelectorAll("picture > source")) s.remove(); return n; })()';
 
 /**
  * The page is settled when samples this far apart agree and no hole is left; give up after
@@ -134,11 +152,16 @@ const firstLine = (text) => String(text ?? '').split('\n').find((l) => l.trim())
  * screenshots whole: past it the picture repeats the top and loses the bottom.
  */
 async function screenshot(cwd, pageId, browser, trees) {
+  await browser.eval(PIN_IMAGES);
   await browser.eval(AT_TOP);
   const scrollHeight = Number(parseEval(await browser.eval(HEIGHT_EXPRESSION))) || 0;
-  if (scrollHeight > trees.SCREENSHOT_LIMIT) return { scrollHeight, shot: null };
   const rel = trees.shotFile(pageId);
   const abs = path.join(cwd, 'migration', rel);
+  if (scrollHeight > trees.SCREENSHOT_LIMIT) {
+    // No picture of this page: an earlier capture's must not pass for one.
+    await rm(abs, { force: true });
+    return { scrollHeight, shot: null };
+  }
   await mkdir(path.dirname(abs), { recursive: true });
   await browser.screenshot(abs, null, { type: 'jpeg' });
   return { scrollHeight, shot: rel };
@@ -155,29 +178,54 @@ export function serial() {
 }
 
 /**
- * One page: visit, prepare, tree, shot, then the band dump (last: it hides the floating
- * layers it set aside) — each phase timed, the times kept with the facts.
+ * The three readings — tree, shot, dump — are of one layout: when the page is taller after
+ * them than the shot was (an image laid out as it loaded, a feed that grew), they are taken
+ * again, this many times at most, and the growth is a fact of the page.
+ */
+export const MAX_READINGS = 3;
+export const GROWTH_PX = 8;
+
+/**
+ * One page: visit, prepare, then tree, shot and band dump (last: it hides the floating
+ * layers it set aside), again while the page grows under them — each phase timed, the
+ * times kept with the facts.
  */
 async function captureOne(cwd, page, { browser, visit, prepare, minWidth, now, trees, bands }) {
   const timings = {};
   const timed = async (name, fn) => {
     const t0 = Date.now();
     const out = await fn();
-    timings[name] = Date.now() - t0;
+    timings[name] = (timings[name] ?? 0) + Date.now() - t0;
     return out;
   };
   await timed('goto', () => visit(browser, page));
   await timed('prepare', () => browser.eval(prepare));
-  const captured = await timed('tree', async () => (
-    parseEval(await browser.eval(captureExpression(minWidth)))));
-  if (!captured?.data?.tag) {
-    throw new Error('the page-tree bundle returned no tree (was it injected?)');
+  let captured;
+  let facts;
+  let dump;
+  let readings = 0;
+  do {
+    readings += 1;
+    // eslint-disable-next-line no-await-in-loop
+    captured = await timed('tree', async () => (
+      parseEval(await browser.eval(captureExpression(minWidth)))));
+    if (!captured?.data?.tag) {
+      throw new Error('the page-tree bundle returned no tree (was it injected?)');
+    }
+    // eslint-disable-next-line no-await-in-loop
+    facts = await timed('shot', () => screenshot(cwd, page.id, browser, trees));
+    // eslint-disable-next-line no-await-in-loop
+    await browser.eval(AT_TOP);
+    // eslint-disable-next-line no-await-in-loop
+    dump = await timed('bands', async () => parseEval(await browser.eval(DUMP)));
+    if (!dump?.leaves) throw new Error('the band dump returned no leaves');
+    if (dump.sy) throw new Error(`the page scrolled ${dump.sy} px while it was read`);
+  } while (dump.H - facts.scrollHeight > GROWTH_PX && readings < MAX_READINGS);
+  if (dump.H - facts.scrollHeight > GROWTH_PX) {
+    throw new Error(`the page grew from ${facts.scrollHeight} to ${dump.H} px over`
+      + ` ${readings} readings`);
   }
-  const facts = await timed('shot', () => screenshot(cwd, page.id, browser, trees));
-  await browser.eval(AT_TOP);
-  const dump = await timed('bands', async () => parseEval(await browser.eval(DUMP)));
-  if (!dump?.leaves) throw new Error('the band dump returned no leaves');
-  if (dump.sy) throw new Error(`the page scrolled ${dump.sy} px while it was read`);
+  if (readings > 1) timings.readings = readings;
   const { leaves: analysedLeaves, ...analysis } = analyse(dump);
   await bands.writeCapture(cwd, page.id, {
     url: page.url, ...dump, leaves: analysedLeaves,

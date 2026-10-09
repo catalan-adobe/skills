@@ -210,12 +210,26 @@ export const DUMP = `(() => {
     // bands.
     const media = tag === 'IMG' || tag === 'VIDEO' || tag === 'svg' || tag === 'PICTURE' ||
       tag === 'CANVAS' || tag === 'IFRAME';
-    const bgi = cs.backgroundImage, bgc = cs.backgroundColor;
-    let bg = null;
-    if (bgi && bgi !== 'none') bg = bgi.includes('gradient(') ? 'gradient' : 'image';
-    else if (bgc && bgc !== 'rgba(0, 0, 0, 0)' && bgc !== 'transparent' && bgc !== pageBg)
-      bg = 'color:' + bgc;
-    else if (media) bg = 'media';
+    const paintOf = (s) => {
+      const i = s.backgroundImage, c = s.backgroundColor;
+      if (i && i !== 'none') return i.includes('gradient(') ? 'gradient' : 'image';
+      if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent' && c !== pageBg) return 'color:' + c;
+      return null;
+    };
+    let bg = paintOf(cs) ?? (media ? 'media' : null);
+    // A ::before or ::after with content and a background, as large as the element, paints
+    // over its box (a hero's artwork, a tinted veil): the element's own background as far as
+    // a reader sees. A thin one (a rule, a menu's underline) is not.
+    if (!bg && el.children.length) {
+      for (const which of ['::before', '::after']) {
+        const ps = getComputedStyle(el, which);
+        if (ps.content === 'none' || ps.display === 'none') continue;
+        const pw = parseFloat(ps.width), ph = parseFloat(ps.height);
+        if (!(pw >= 0.8 * r.width && ph >= 0.8 * r.height)) continue;
+        const paint = paintOf(ps);
+        if (paint) { bg = paint; break; }
+      }
+    }
     if (bg && box.w >= 0.8 * W && box.h >= 40) bgs.push({ ...box, bg });
     const own = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent)
       .join(' ').replace(/\\s+/g, ' ').trim();
@@ -241,6 +255,10 @@ export const DUMP = `(() => {
     const l = lm ? (lm.matches('[role=tablist]') ? 'tablist' : lm.tagName.toLowerCase()) :
       undefined;
     const src = tag === 'IFRAME' ? el.src.split('/')[2] || undefined : undefined;
+    // An image laid out and not loaded: a broken image, named by its host — an asset the
+    // offline cache does not have, or a refusal.
+    const b = tag === 'IMG' && el.complete && el.naturalWidth === 0 && el.currentSrc
+      ? (new URL(el.currentSrc, location.href).host || 'unknown') : undefined;
     // The page-level landmark around the node (l is only the innermost one): a header or footer
     // that is not part of an article or main content is the site's banner or contentinfo.
     const hd = up(el, 'header,[role=banner]'), ft = up(el, 'footer,[role=contentinfo]');
@@ -255,7 +273,7 @@ export const DUMP = `(() => {
       ?? 'x--unnamed').split('--').slice(1).join('--') : undefined;
     if (!(leaf || own || dec)) continue;
     leaves.push({ ...box, t: own.slice(0, 80) || undefined, m: media || undefined, d: dec,
-      s: stretched || undefined, e, l, c, src, eds, xf, p: pathOf(el) });
+      s: stretched || undefined, e, l, c, src, b, eds, xf, p: pathOf(el) });
     withLeaf.add(el);
     if (!c && (hd || ft)) nested.push([leaves.length - 1, hd, ft]);
   }

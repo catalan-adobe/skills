@@ -162,8 +162,11 @@ counts. Rewritten by the pages layer when the table changes.
 ### website/access.json — *decision*
 
 How to open a page of this site: the browser recipe (engine, headers, stealth, profile)
-from the probe, the overlays and hide rules from the prep, the pages the recipe was
-verified on. One file: a page is opened one way, wherever it is opened from.
+from the probe, the overlays and hide rules from the prep, the `rendering` rules a reader
+found necessary for a plain render to show what a visitor sees (CSS applied before a page
+is read: a scroll-triggered reveal held closed), the pages the recipe was verified on. One
+file: a page is opened one way, wherever it is opened from; a capture older than it is
+stale.
 
 ### website/fragments.json — *derived*
 

@@ -27,12 +27,12 @@ composition; and the capture itself checked against its pictures. Offline. Tier:
 3. Look before you report. Read the note (`migration.mjs notes chrome`), each fragment's
    `page.png` (every band outlined), three or four pages' `shots/page.jpg` from different
    groups, and every `misread` page (the report's "Picture"): that is where the capture
-   is wrong on this site — content never painted (an asset origin not cached, a lazy
-   image, a body revealed on scroll), a CSS pseudo-element's paint, a truncated shot.
-   Tell the operator what the site's chrome is — designs, pages each, pages with none
-   and why — and what the pictures show about the capture. What the recipe can fix
-   (`access overlay`, `assets`), fix and capture again; what it cannot, write down: the
-   next level reads those pages knowing. A hover-only menu is not in a plain render.
+   is wrong on this site — a broken image (its host named), an embed not rendered
+   offline, a body revealed on scroll. Tell the operator what the site's chrome is —
+   designs, pages each, pages with none and why — and what the pictures show about the
+   capture. What the recipe can fix, fix and capture again: an overlay (`access
+   overlay`), an asset origin (`assets`, then `cache fill`), a reveal held closed
+   (`access rendering "<css>"`); what it cannot, write down for the next level.
 4. The rules propose; you choose. `website/chrome-candidates.json` (the report's "Chrome
    candidates") lists what recurs across the pages with a crop, the numbers the rules
    read — support, width, text stability, height — and their verdict. Read the crops as

@@ -145,8 +145,12 @@ export function disagreement(check) {
   }
   const blank = check.bands.filter((b) => b.unpainted);
   if (blank.length) {
-    parts.push(`content not painted in ${blank.map((b) => `${b.id} (${b.leaves} leaves)`)
-      .join(', ')}`);
+    const what = (b) => {
+      if (b.broken?.length) return `a broken image from ${b.broken.join(', ')}`;
+      if (b.embeds?.length) return `an embed from ${b.embeds.join(', ')}, not rendered offline`;
+      return `${b.leaves} leaves`;
+    };
+    parts.push(`content not painted in ${blank.map((b) => `${b.id} (${what(b)})`).join(', ')}`);
   }
   if (check.flags.includes('unclaimed-ink')) {
     parts.push(`${check.unclaimedRows} px of ink outside every band`);
@@ -157,6 +161,7 @@ export const writePixelCheck = (cwd, pageId, check) => (
   openStore(cwd).write(pixelCheckFile(pageId), { schema: PIXEL_SCHEMA, ...check }));
 export const readPixelCheck = (cwd, pageId) => (
   openStore(cwd).read(pixelCheckFile(pageId), PIXEL_SCHEMA));
+export const removePixelCheck = (cwd, pageId) => openStore(cwd).remove(pixelCheckFile(pageId));
 export const writeStructure = (cwd, pageId, structure, method) => (
   openStore(cwd).write(structureFile(pageId, method), { schema: STRUCTURE_SCHEMA, ...structure }));
 export const readStructure = (cwd, pageId, method) => (

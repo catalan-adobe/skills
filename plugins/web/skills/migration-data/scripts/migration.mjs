@@ -39,8 +39,8 @@ export const COMMANDS = [
     help: 'the operator\'s word on a page' },
   { name: 'selections', usage: '', help: 'every selection' },
   { name: 'website', usage: '', help: 'the website summary, refreshed from the table' },
-  { name: 'access', usage: 'overlay <selector> hide|click|remove [--note <text>]',
-    help: 'add an overlay rule to the access decision' },
+  { name: 'access', usage: 'overlay <selector> hide|click|remove | rendering "<css>" [--note]',
+    help: 'add an overlay rule, or a rendering rule (CSS before a page is read), to access' },
   { name: 'types', usage: '[--undecided]', help: 'the element types, or the ones to decide' },
   { name: 'decide-type', usage: '<typ-id> <kind> [<name-or-style>] [--notes <text>]',
     help: 'what a type is: section|block|default-content|fragment|wrapper|skip' },
@@ -169,7 +169,12 @@ export async function main(argv, cwd = process.cwd()) {
       return website.refresh(cwd);
     case 'access': {
       const [verb, selector, action] = positional;
-      if (verb !== 'overlay') throw new Error('usage: access overlay <selector> <action>');
+      if (verb === 'rendering') {
+        return website.addRendering(cwd, { css: selector, note: flags['--note'] });
+      }
+      if (verb !== 'overlay') {
+        throw new Error(`access takes overlay or rendering\n${usage('access')}`);
+      }
       return website.addOverlay(cwd, { selector, action, note: flags['--note'] });
     }
     case 'types': {

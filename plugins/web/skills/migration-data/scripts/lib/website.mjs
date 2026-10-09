@@ -95,6 +95,17 @@ register('website/access', 1, 'decision', {
       },
     },
     scrollFix: { type: 'string' },
+    // Rendering rules for this site: CSS a reader found necessary for a plain render to show
+    // what a visitor sees (a scroll-triggered reveal held closed, a carousel's hidden slides).
+    rendering: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['css'],
+        additionalProperties: false,
+        properties: { css: { type: 'string' }, note: { type: 'string' } },
+      },
+    },
     verifiedOn: { type: 'array', items: idPattern('pag') },
   },
 });
@@ -222,10 +233,11 @@ export const readWebsite = (cwd) => openStore(cwd).read(WEBSITE_FILE, WEBSITE_SC
  * the pages the recipe was verified on. One decision file; a page is opened one way.
  */
 export async function writeAccess(cwd, {
-  browser, overlays = [], scrollFix, verifiedOn = [], summary,
+  browser, overlays = [], scrollFix, rendering = [], verifiedOn = [], summary,
 }) {
   return openStore(cwd).write(ACCESS_FILE, {
     schema: ACCESS_SCHEMA, browser, overlays, ...(scrollFix ? { scrollFix } : {}),
+    ...(rendering.length ? { rendering } : {}),
     verifiedOn: [...new Set(verifiedOn)],
     summary: summary ?? `${browser.engine}; ${overlays.length} overlay rule(s); verified on`
       + ` ${new Set(verifiedOn).size} page(s)`,
@@ -254,6 +266,21 @@ export async function addOverlay(cwd, { selector, action, css, note }) {
   const overlays = [...access.overlays.filter((o) => o.selector !== selector), rule];
   const { schema, updatedAt, summary, ...rest } = access;
   return writeAccess(cwd, { ...rest, overlays });
+}
+
+/**
+ * A rendering rule a reader found this site needs — CSS applied before a page is read, so a
+ * plain render shows what a visitor sees. The same css replaces its earlier entry. Part of
+ * what a capture renders: trees older than the rule are stale.
+ */
+export async function addRendering(cwd, { css, note }) {
+  const access = await readAccess(cwd);
+  if (!access) throw new Error('no website/access.json yet; run the access step first');
+  if (!css?.trim()) throw new Error('a rendering rule is a CSS rule, e.g. ".x { opacity: 1 }"');
+  const rule = { css: css.trim(), ...(note ? { note } : {}) };
+  const rendering = [...(access.rendering ?? []).filter((r) => r.css !== rule.css), rule];
+  const { schema, updatedAt, summary, ...rest } = access;
+  return writeAccess(cwd, { ...rest, rendering });
 }
 
 /**

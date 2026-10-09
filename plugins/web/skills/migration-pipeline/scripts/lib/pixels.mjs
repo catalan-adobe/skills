@@ -2,7 +2,6 @@
 // backgrounds, leaves with text and media. The screenshot says what was painted. Where they
 // disagree the page was misread — a panel hidden by a rule the reader does not know, a scroll
 // after the reading, content the DOM never showed — and a reader should look before judging.
-import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { sharpOf } from './browser.mjs';
 import { data } from './data.mjs';
@@ -126,8 +125,11 @@ export function checkBands(capture, rows) {
       : [0, 1];
     const inkRows = slice.filter((r) => inkedIn(r, span[0], span[1])).length;
     const inkShare = inkRows / slice.length;
+    const embeds = [...new Set(inBand.filter((l) => l.src).map((l) => l.src))];
+    const broken = [...new Set(inBand.filter((l) => l.b).map((l) => l.b))];
     return { id: band.id, background, leaves: inBand.length, inkShare: Number(inkShare.toFixed(3)),
-      unpainted: inBand.length >= MIN_LEAVES && inkShare < MIN_INK_SHARE };
+      unpainted: inBand.length >= MIN_LEAVES && inkShare < MIN_INK_SHARE,
+      ...(embeds.length ? { embeds } : {}), ...(broken.length ? { broken } : {}) };
   });
   const covered = new Uint8Array(rows.length);
   for (const b of capture.analysis.bands) {
@@ -157,11 +159,14 @@ export async function readRows(file, sharp) {
 export async function checkPage(cwd, pageId, options = {}) {
   const { sharp = sharpOf(cwd), now = () => new Date() } = options;
   const { bands: layer, trees } = await data(cwd);
-  const capture = await layer.readCapture(cwd, pageId);
-  if (!capture) return null;
-  const file = path.join(cwd, 'migration', trees.shotFile(pageId));
-  let read;
-  try { read = await readRows(file, sharp); } catch { return null; }
+  const [capture, tree] = await Promise.all([layer.readCapture(cwd, pageId),
+    trees.read(cwd, pageId)]);
+  if (!capture || !tree?.page?.shot) {
+    // No picture, no verdict: an earlier capture's check must not stand for this one.
+    await layer.removePixelCheck(cwd, pageId);
+    return null;
+  }
+  const read = await readRows(path.join(cwd, 'migration', tree.page.shot), sharp);
   const result = checkBands(capture, read.rows);
   const check = { page: pageId, version: PIXEL_VERSION, capturedAt: capture.updatedAt ?? null,
     shot: read.shot, ...result, checkedAt: now().toISOString() };
@@ -172,11 +177,9 @@ export async function checkPage(cwd, pageId, options = {}) {
 /** A captured page whose check is missing or from an earlier capture (a shot is required). */
 export async function stalePixelCheck(cwd, pageId) {
   const { bands: layer, trees } = await data(cwd);
-  const [capture, check] = await Promise.all([layer.readCapture(cwd, pageId),
-    layer.readPixelCheck(cwd, pageId)]);
-  if (!capture) return false;
-  const shot = path.join(cwd, 'migration', trees.shotFile(pageId));
-  if (!(await access(shot).then(() => true, () => false))) return false;
+  const [capture, check, tree] = await Promise.all([layer.readCapture(cwd, pageId),
+    layer.readPixelCheck(cwd, pageId), trees.read(cwd, pageId)]);
+  if (!capture || !tree?.page?.shot) return false;
   return !check || check.capturedAt !== (capture.updatedAt ?? null);
 }
 
@@ -189,7 +192,11 @@ export async function setMisread(cwd) {
   const flags = {};
   for (const id of await trees.list(cwd)) {
     // eslint-disable-next-line no-await-in-loop
-    const detail = layer.disagreement(await layer.readPixelCheck(cwd, id));
+    const [check, capture] = await Promise.all([layer.readPixelCheck(cwd, id),
+      layer.readCapture(cwd, id)]);
+    // A check of an earlier capture says nothing about this one.
+    if (!check || check.capturedAt !== (capture?.updatedAt ?? null)) continue;
+    const detail = layer.disagreement(check);
     if (detail) flags[id] = [{ code: 'misread', kind: 'flag', detail }];
   }
   await pages.setReasons(cwd, 'pixels', flags);

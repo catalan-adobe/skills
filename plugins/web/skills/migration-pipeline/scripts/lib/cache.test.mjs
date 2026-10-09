@@ -76,8 +76,9 @@ async function project(urls) {
 
 test('pure pieces: page expression, paths, site URLs, classification, stored facts', async () => {
   const expr = pageExpression({ overlays: [{ action: 'hide', css: ['#a{}'] }, { action: 'click' }],
-    scrollFix: 'html{}' });
-  assert.match(expr, /"#a\{\}\\nhtml\{\}"/);
+    scrollFix: 'html{}', rendering: [{ css: '.r{}' }] });
+  assert.match(expr, /animation-duration: 0s !important.*\\n#a\{\}\\nhtml\{\}\\n\.r\{\}"/,
+    'the freeze first, then overlays, the scroll fix and the rendering rules');
   assert.match(expr, /loading="lazy"/);
   assert.match(cacheRelativePath(`${O}`), /^a\.example_[0-9a-f]{8}\/index\.html$/);
   assert.match(cacheRelativePath(`${O}blogs/a?x=1`), /\/blogs\/a\/index~!x=1\.html$/);

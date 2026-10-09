@@ -21,10 +21,20 @@ const BINARY_EXT = /\.(pdf|zip|jpe?g|png|gif|svg|webp|mp4|mp3|docx?|xlsx?|pptx?|
  * viewport steps (lazy loaders watch the viewport), lazy images made eager, a bounded
  * wait for them to decode. The proxy stores what the page fetched.
  */
+/**
+ * Animations and transitions end at once: a reveal that eases in over a second is read
+ * where it ends, not midway; and smooth scrolling is instant, so a scroll is where it says.
+ */
+export const FREEZE = '*, *::before, *::after { animation-duration: 0s !important;'
+  + ' animation-delay: 0s !important; transition-duration: 0s !important;'
+  + ' transition-delay: 0s !important } html, body { scroll-behavior: auto !important }';
+
 export function pageExpression(access) {
   const css = [
+    FREEZE,
     ...access.overlays.filter((o) => o.action === 'hide').flatMap((o) => o.css ?? []),
     ...(access.scrollFix ? [access.scrollFix] : []),
+    ...(access.rendering ?? []).map((r) => r.css),
   ].join('\n');
   return '(async () => { const s = document.createElement(\'style\');'
     + ` s.textContent = ${JSON.stringify(css)}; document.head.appendChild(s);`
@@ -34,6 +44,10 @@ export function pageExpression(access) {
     + ' window.scrollTo(0, document.body.scrollHeight);'
     + ' document.querySelectorAll(\'img[loading="lazy"]\')'
     + '.forEach((i) => { i.loading = "eager"; });'
+    // An image that failed to load (complete, no pixels) is asked for once more: a transient
+    // refusal under load is not what the page shows.
+    + ' [...document.images].filter((i) => i.complete && i.naturalWidth === 0 && i.src)'
+    + ' .forEach((i) => { const src = i.src; i.removeAttribute("src"); i.src = src; });'
     + ' const pending = [...document.images].filter((i) => !i.complete)'
     + ' .map((i) => i.decode().catch(() => {}));'
     + ' await Promise.race([Promise.all(pending),'

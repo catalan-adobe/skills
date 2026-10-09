@@ -67,9 +67,19 @@ function fakeSharp(height) {
 /** A fake browser: answers each expression as the bundle and the page would. */
 const numberOf = (url) => Number(/\/(\d+)\.html/.exec(url)?.[1]);
 
-function fakeIo(treeOf, { failOn = [], pageOf = numberOf } = {}) {
+function fakeIo(treeOf, { failOn = [], pageOf = numberOf, growsOn = [] } = {}) {
   const calls = { visited: [], shots: [], proxies: [] };
   let current = null;
+  // A page that grows: the dump sees it taller than the shot did, once per reading, until
+  // `growsOn` says how many times.
+  const grown = new Map();
+  const growth = () => {
+    const n = pageOf(current);
+    const times = growsOn.find(([page]) => page === n)?.[1] ?? 0;
+    const seen = grown.get(n) ?? 0;
+    grown.set(n, seen + 1);
+    return seen < times ? 500 : 0;
+  };
   return {
     calls,
     treeBundle: '/bundle.js',
@@ -108,7 +118,7 @@ function fakeIo(treeOf, { failOn = [], pageOf = numberOf } = {}) {
             }
             (n.children ?? []).forEach(walk);
           }(tree));
-          return JSON.stringify(JSON.stringify({ W: 1280, H: tree.bounds.height,
+          return JSON.stringify(JSON.stringify({ W: 1280, H: tree.bounds.height + growth(),
             pageBg: 'rgb(255, 255, 255)', leaves, bgs: [], paths: ['body'], sy: 0, overlays: [],
             dropped: [], unpainted: 0, scrollLock: false }));
         }
@@ -341,6 +351,21 @@ test('capture failures: a dead page is skipped, five in a row end the run as fai
   const [run] = await runs.list(fresh, { step: 'chrome' });
   assert.equal(run.state, 'failed');
   assert.equal(run.failed.length, 5);
+});
+
+test('a page growing under its readings is read again; one that keeps growing fails', async () => {
+  const cwd = await project();
+  const io = fakeIo(siteTree, { growsOn: [[3, 1], [4, 5]] });
+  const out = await workerMain(cwd, { io });
+  assert.match(out.summary, /^9 tree\(s\) captured, 1 failed/);
+  const { runs, trees, pages } = await data(cwd);
+  const [run] = await runs.list(cwd, { step: 'chrome' });
+  assert.match(run.failed[0].error, /grew from \d+ to \d+ px over 3 readings/);
+  const byUrl = new Map((await pages.read(cwd)).pages.map((p) => [p.url, p.id]));
+  const twice = await trees.read(cwd, byUrl.get(urlOf(3)));
+  assert.equal(twice.page.timings.readings, 2, 'read twice: it grew once');
+  const once = await trees.read(cwd, byUrl.get(urlOf(1)));
+  assert.equal(once.page.timings.readings, undefined);
 });
 
 test('several sessions deal the pages from one queue; the run counts stay whole', async () => {
