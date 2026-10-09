@@ -17,6 +17,7 @@ register('pages/visual-tree', 1, 'derived', {
   properties: {
     ...HEAD,
     minWidth: { type: 'integer', minimum: 0 },
+    version: { type: 'integer', minimum: 1 },
     url: { type: 'string' },
     capturedAt: { type: 'string', format: 'date-time' },
     tree: { type: 'object' },
@@ -45,10 +46,11 @@ export const bodyThumbFile = (pageId) => `pages/${pageId}/shots/body-thumb.jpg`;
 export const BODY_THUMB_WIDTH = 320;
 
 /** Stores a page's tree; `minWidth` first so the head of the file carries it. */
-export function write(cwd, pageId, { minWidth, url, capturedAt, tree, text, nodeMap,
-  rootBackground = null, page = null }) {
+export function write(cwd, pageId, { minWidth, version = 1, url, capturedAt, tree, text,
+  nodeMap, rootBackground = null, page = null }) {
   return openStore(cwd).write(file(pageId), {
-    schema: SCHEMA, minWidth, url, capturedAt, page, tree, text, nodeMap, rootBackground,
+    schema: SCHEMA, minWidth, version, url, capturedAt, page, tree, text, nodeMap,
+    rootBackground,
   });
 }
 
@@ -56,8 +58,9 @@ export const read = (cwd, pageId) => openStore(cwd).read(file(pageId), SCHEMA);
 
 /**
  * What a stored tree says about itself, from the head of the file: the width it was taken
- * at, when, and whether the page facts (height, screenshot) are there — a tree taken
- * before they were recorded is to be captured again. Null without a tree.
+ * at, the capture method's version, when, and whether the page facts (height, screenshot)
+ * are there — a tree taken before they were recorded is to be captured again. Null
+ * without a tree.
  */
 export async function head(cwd, pageId) {
   const fh = await openFile(openStore(cwd).path(file(pageId))).catch(() => null);
@@ -66,9 +69,11 @@ export async function head(cwd, pageId) {
     const { buffer, bytesRead } = await fh.read(Buffer.alloc(512), 0, 512, 0);
     const text = buffer.toString('utf8', 0, bytesRead);
     const width = text.match(/"minWidth":\s*(\d+)/);
+    const version = text.match(/"version":\s*(\d+)/);
     const at = text.match(/"capturedAt":\s*"([^"]+)"/);
     return {
       minWidth: width ? Number(width[1]) : 0,
+      version: version ? Number(version[1]) : 1,
       capturedAt: at ? at[1] : null,
       facts: text.includes('"page"') && !text.includes('"page": null'),
     };

@@ -205,8 +205,7 @@ test('assets from other origins: counted from the cached HTML, named, filled', a
     { assetOrigins: [cdn] }), /Not stored/);
   assert.doesNotMatch(assetsInWords([{ origin: cdn, assets: 3, scripts: 0 }],
     { assetOrigins: [] }), /Not stored/, 'three references are not worth a word');
-  // Fill: refused without named origins; with them, every cached page visited once more.
-  await assert.rejects(pending(cwd, 'fill'), /no asset origins named/);
+  // Fill: every cached page visited once more.
   await assert.rejects(pending(cwd, 'bogus'), /knows no mode bogus/);
   await migration.assetOrigins(cwd, [cdn]);
   assert.equal((await pending(cwd, 'fill')).length, 2);
@@ -262,4 +261,18 @@ test('freePort sees a port held on the loopback interface', async () => {
   } finally {
     held.close();
   }
+});
+
+test('a redirect that only adds a trailing slash is the page it lands on', async () => {
+  const cwd = await project([`${O}about`]);
+  await fakeSite(cwd, {
+    [`${O}about`]: { status: 301, location: '/about/' },
+    [`${O}about/`]: { status: 200, type: 'text/html', body: '<html>about</html>' },
+  });
+  const io = fakeIo({ landings: { '/about': `${O}about/` } });
+  const out = await cacheSelection(cwd, 'all', { io, pace: 0 });
+  assert.deepEqual(out.kinds, { page: 1 });
+  const [p] = (await (await data(cwd)).pages.read(cwd)).pages;
+  assert.deepEqual([p.kind, p.http.status, p.redirect, p.verdict.status],
+    ['page', 200, null, 'in']);
 });

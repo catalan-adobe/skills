@@ -7,6 +7,14 @@ export const BAND_RATIO = 0.15;
 export const CORE_SHARE = 0.8;
 export const MIN_SUPPORT = 0.5;
 export const REPORT_REJECTED_FROM = 0.2;
+// A header or a footer spans the page; a recurring thing narrower than this is a side
+// column or a widget, a fragment of another part.
+export const MIN_WIDTH_SHARE = 0.6;
+// Chrome says the same thing on every page; a band whose text changes with the page is a
+// template band — a title, a byline, a "more news" — however stable its position.
+export const MIN_TEXT_STABILITY = 0.3;
+// A band covering more than this share of the page is the content, whatever recurs in it.
+export const MAX_HEIGHT_SHARE = 0.5;
 
 const median = (values) => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -22,12 +30,20 @@ export function place(candidate, pageHeight, bandRatio = BAND_RATIO) {
 }
 
 /** A reason to reject a candidate regardless of support, or null. */
-export function rejectionReason(candidate, consentSelectors = []) {
+export function rejectionReason(candidate, consentSelectors = [], pageHeight = Infinity) {
   const { sample, tags } = candidate;
   const cls = String(sample.node.className ?? '');
   const id = String(sample.node.id ?? '');
   const text = String(sample.text ?? '');
   const sel = sample.selector;
+  if (candidate.textStability !== undefined && candidate.textStability < MIN_TEXT_STABILITY) {
+    return `text differs across pages (the same on ${Math.round(candidate.textStability * 100)}`
+      + ' %): a template band, not chrome';
+  }
+  if ((candidate.bounds?.height ?? 0) > pageHeight * MAX_HEIGHT_SHARE) {
+    return `covers ${Math.round((100 * candidate.bounds.height) / pageHeight)} % of the page:`
+      + ' the content, not chrome';
+  }
   if (tags.every((t) => t === 'A') && /skip/i.test(`${cls} ${id} ${text}`)) return 'skip link';
   if (/breadcrumb/i.test(`${cls} ${id} ${sel}`)) return 'breadcrumb: per-page content';
   if (consentSelectors.some((s) => sel === s || sel.includes(s) || (id && s === `#${id}`))) {
@@ -48,9 +64,12 @@ const sameSlot = (a, b, tol) => Math.abs(a.bounds.y - b.bounds.y) <= tol
 
 /** Drops members nested inside another member of the same set (the outermost stays). */
 function outermost(members) {
-  const fps = new Set(members.map((m) => m.fp));
-  return members.filter((m) => !m.ancestors.some((fp) => fps.has(fp)));
+  const keys = new Set(members.map((m) => m.key));
+  return members.filter((m) => !m.ancestors.some((k) => keys.has(k)));
 }
+
+/** Wide enough to be a header or a footer band; the narrow recur as something else. */
+const spansPage = (c) => (c.widthShare ?? 1) >= MIN_WIDTH_SHARE;
 
 /**
  * The members of one role and how they group into variants. Core members cover most of the
@@ -67,7 +86,7 @@ function role(members, allPages, groupOf, tolerance) {
   const optional = members.filter((m) => !core.includes(m));
   const signatures = new Map();
   for (const url of regionPages) {
-    const carried = core.filter((m) => m.pages.includes(url)).map((m) => m.fp).sort();
+    const carried = core.filter((m) => m.pages.includes(url)).map((m) => m.key).sort();
     if (!carried.length) continue;
     const key = carried.join('+');
     signatures.set(key, [...(signatures.get(key) ?? []), url]);
@@ -75,8 +94,8 @@ function role(members, allPages, groupOf, tolerance) {
   const variants = [...signatures.entries()]
     .sort((a, b) => b[1].length - a[1].length)
     .map(([key, pages], i) => {
-      const fps = new Set(key.split('+'));
-      const own = core.filter((m) => fps.has(m.fp));
+      const keys = new Set(key.split('+'));
+      const own = core.filter((m) => keys.has(m.key));
       const extras = optional
         .map((m) => ({ ...member(m), onPages: m.pages.filter((p) => pages.includes(p)).length }))
         .filter((m) => m.onPages > 0);
@@ -92,9 +111,10 @@ function role(members, allPages, groupOf, tolerance) {
 }
 
 const member = (m) => ({
-  fp: m.fp, selector: m.sample.selector, selectors: m.selectors, tag: m.tags[0],
-  bounds: m.bounds, support: m.support, pages: m.pages.length, sampleUrl: m.sample.url,
-  text: String(m.sample.text ?? '').slice(0, 60),
+  key: m.key, fp: m.fp, variants: m.variants ?? 1, selector: m.sample.selector,
+  selectors: m.selectors, tag: m.tags[0], bounds: m.bounds, support: m.support,
+  pages: m.pages.length, widthShare: m.widthShare ?? 1, textStability: m.textStability ?? 1,
+  sampleUrl: m.sample.url, text: String(m.sample.text ?? '').slice(0, 60),
 });
 
 /** The shortest URL among the pages that carry every core member. */
@@ -127,7 +147,7 @@ function attachAdjacent(placed, tolerance) {
     moved = false;
     for (const c of [...placed.unplaced]) {
       const role = c.anchored === 'top' ? 'header' : 'footer';
-      if (!touches(c, role)) continue;
+      if (!spansPage(c) || !touches(c, role)) continue;
       placed[role].push(c);
       placed.unplaced.splice(placed.unplaced.indexOf(c), 1);
       moved = true;
@@ -150,15 +170,17 @@ export function detectChrome(all, context) {
   const pageHeight = median(pageHeights);
   const rejected = [];
   const placed = { header: [], footer: [], unplaced: [] };
-  const kept = chromeCandidates(all, { minSupport });
+  const eligible = (c) => !rejectionReason(c, consentSelectors, pageHeight);
+  const kept = chromeCandidates(all, { minSupport, eligible });
   // An alternative in a kept member's slot (same place, disjoint pages) is chrome for its
   // own pages however few they are: the other header of a template or a locale.
   const alternatives = all.filter((c) => c.stable && !kept.includes(c)
     && kept.some((k) => place(k, pageHeight) === place(c, pageHeight)
       && place(c, pageHeight) !== 'unplaced' && sameSlot(c, k, tolerance)));
   for (const c of [...kept, ...alternatives]) {
-    const reason = rejectionReason(c, consentSelectors);
+    const reason = rejectionReason(c, consentSelectors, pageHeight);
     if (reason) rejected.push({ ...member(c), reason });
+    else if (!spansPage(c)) placed.unplaced.push(c);
     else placed[place(c, pageHeight)].push(c);
   }
   attachAdjacent(placed, tolerance);

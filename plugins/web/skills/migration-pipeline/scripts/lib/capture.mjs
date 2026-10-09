@@ -12,6 +12,13 @@ import { data } from './data.mjs';
 // missed both and left their content out of the store. 250 sees them; 200 saw nothing more.
 export const MIN_WIDTH = 250;
 export const MAX_CONSECUTIVE_FAILURES = 5;
+/**
+ * The capture method's version: what the prepare expression waits for and how the tree
+ * is taken. Bumped when that changes; a tree taken by an older version is stale.
+ *   2 — an empty header/footer landmark is a hole; the page is at the top, instantly,
+ *       before the tree is read (sticky headers were measured mid-scroll).
+ */
+export const CAPTURE_VERSION = 2;
 export const captureExpression = (minWidth = MIN_WIDTH) => (
   `JSON.stringify(window.__visualTree.captureVisualTree(${minWidth}))`);
 export const HEIGHT_EXPRESSION = 'document.documentElement.scrollHeight';
@@ -20,8 +27,9 @@ export const HEIGHT_EXPRESSION = 'document.documentElement.scrollHeight';
  * The page is settled when samples this far apart agree and no hole is left; give up after
  * this long. A hole: a block in the flow covering this share of the viewport, at opacity
  * 0, with children, and nothing visible drawn over it — content on its way in (a fade gated
- * on a script). An inactive slide sits under a visible sibling; a parked chat window or
- * lightbox is positioned out of the flow; neither is a hole.
+ * on a script); or a `header`/`footer` landmark still empty — a site that loads its chrome
+ * after the content, as Edge Delivery sites do. An inactive slide sits under a visible
+ * sibling; a parked chat window or lightbox is positioned out of the flow; neither is a hole.
  */
 export const SETTLE_SAMPLE_MS = 250;
 export const SETTLE_MAX_MS = 8000;
@@ -48,18 +56,24 @@ export const preparedAtTop = (prepare) => (
   + ' return e.children.length && cs.opacity === "0"'
   + ' && cs.position !== "fixed" && cs.position !== "absolute"'
   + ' && rect(e).width * rect(e).height >= viewport; });'
-  + ' return dark.filter((e) => { const r = rect(e); const area = r.width * r.height;'
+  + ' const covered = dark.filter((e) => { const r = rect(e); const area = r.width * r.height;'
   + ' return !els.some((o) => o !== e && !e.contains(o) && !o.contains(e)'
   + ' && getComputedStyle(o).opacity !== "0"'
   + ` && overlap(r, rect(o)) >= area * ${COVERED_SHARE}); });`
-  + ' };'
+  + ' const bare = [...document.querySelectorAll("body > header, body > footer")]'
+  + ' .filter((e) => !e.children.length);'
+  + ' return [...covered, ...bare]; };'
   + ' const sample = () => `${document.getElementsByTagName("*").length}:`'
   + ' + document.documentElement.scrollHeight;'
   + ` const until = Date.now() + ${SETTLE_MAX_MS}; let last = sample();`
   + ' while (Date.now() < until) {'
   + ` await new Promise((r) => setTimeout(r, ${SETTLE_SAMPLE_MS}));`
   + ' const now = sample(); if (now === last && holes().length === 0) break; last = now; }'
-  + ' window.scrollTo(0, 0); return "top"; })()');
+  + ' document.documentElement.style.scrollBehavior = "auto";'
+  + ' window.scrollTo({ top: 0, left: 0, behavior: "instant" });'
+  + ' for (let i = 0; i < 20 && window.scrollY > 0; i += 1) {'
+  + ' await new Promise((r) => setTimeout(r, 50)); window.scrollTo(0, 0); }'
+  + ' return window.scrollY === 0 ? "top" : `scrolled ${window.scrollY}`; })()');
 
 /** The pages the chrome step reads: cached, a page, not out of the migration. */
 export async function readablePages(cwd) {
@@ -91,7 +105,8 @@ export async function pagesToCapture(cwd, { minWidth = MIN_WIDTH } = {}) {
   const heads = await Promise.all(readable.map((p) => trees.head(cwd, p.id)));
   return readable.filter((_, i) => {
     const h = heads[i];
-    return !h || h.minWidth !== minWidth || !h.facts || (since && h.capturedAt < since);
+    return !h || h.minWidth !== minWidth || !h.facts || h.version !== CAPTURE_VERSION
+      || (since && h.capturedAt < since);
   });
 }
 
@@ -139,8 +154,8 @@ async function captureOne(cwd, page, { browser, visit, prepare, minWidth, now, t
   }
   const facts = await timed('shot', () => screenshot(cwd, page.id, browser, trees));
   await trees.write(cwd, page.id, {
-    minWidth, url: page.url, capturedAt: now().toISOString(), tree: captured.data,
-    text: captured.textFormat, nodeMap: captured.nodeMap,
+    minWidth, version: CAPTURE_VERSION, url: page.url, capturedAt: now().toISOString(),
+    tree: captured.data, text: captured.textFormat, nodeMap: captured.nodeMap,
     rootBackground: captured.rootBackground ?? null, page: { ...facts, timings },
   });
 }

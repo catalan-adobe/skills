@@ -73,10 +73,11 @@ test('a hairline child or a single-child chain does not change the structure', (
   assert.notEqual(fingerprint(plain), fingerprint(two), 'a second real child is structure');
 });
 
-test('walk yields every node with its parent fingerprint and bottom offset', () => {
+test('walk yields every node with its parent key, text and bottom offset', () => {
   const nodes = walk(page(1).tree, 3137);
   assert.equal(nodes[0].parent, null);
-  assert.equal(nodes[1].parent, nodes[0].fp);
+  assert.equal(nodes[1].parent, nodes[0].key);
+  assert.match(nodes[1].key, /^BODY#>DIV#utility-nav-bar\./, 'the parent by tag and id only');
   const footer = nodes.find((n) => n.node.className === 'experiencefragment' && n.y > 1000);
   assert.equal(footer.bottomOffset, 0);
 });
@@ -93,8 +94,8 @@ test('candidates: recurring elements at a stable position, anchored top or botto
     [1, 'bottom', true, 0]);
   assert.ok(footer.topSpread > 1000, 'its y wanders with page length');
   const cards = all.filter((c) => c.selectors.includes('div.card'));
-  assert.ok(cards.every((c) => c.support <= 0.2),
-    'a drifting card lands in many small buckets, never in one with support');
+  assert.ok(cards.every((c) => !c.stable || c.support <= 0.2),
+    'a drifting card is never a stable candidate with support');
   const hero = all.find((c) => c.selectors.some((s) => s.startsWith('div.banner')));
   assert.deepEqual([hero.support, hero.stable], [0.3, true], 'a template hero: stable, low');
 });
@@ -112,7 +113,7 @@ test('chromeCandidates keeps stable ones above the support line, drops same-page
   assert.equal(kept.filter((c) => c.stable === false).length, 0);
 });
 
-test('a header that differs on some pages is two candidates at the same position', () => {
+test('a header whose structure differs on some pages is one candidate with variants', () => {
   const pages = [
     ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => page(n)),
     ...[9, 10].map((n) => {
@@ -124,8 +125,23 @@ test('a header that differs on some pages is two candidates at the same position
   ];
   const kept = chromeCandidates(candidates(pages), { minSupport: 0.15 });
   const atNav = kept.filter((c) => c.bounds.y === 53 && c.bounds.height === 80 && c.depth === 1);
-  assert.equal(atNav.length, 2);
-  assert.deepEqual(atNav.map((c) => c.support).sort(), [0.2, 0.8]);
+  assert.equal(atNav.length, 1, 'the same element under the same parent: one candidate');
+  assert.deepEqual([atNav[0].support, atNav[0].variants], [1, 2]);
+  assert.equal(atNav[0].textStability, 1, 'no text on the fixture: the same everywhere');
+  assert.ok(atNav[0].widthShare === 1);
+});
+
+test('off-screen elements are no candidates; a narrow one knows its width share', () => {
+  const pages = [1, 2, 3].map((n) => {
+    const p = page(n);
+    p.tree.children.unshift(el('A', 'skip-link', { x: 0, y: -320, width: 200, height: 50 }));
+    p.tree.children.push(el('DIV', 'side-nav', box(300, 900, 240)));
+    return p;
+  });
+  const all = candidates(pages);
+  assert.equal(all.find((c) => c.sample.selector === 'a.skip-link'), undefined);
+  const side = all.find((c) => c.sample.selector === 'div.side-nav');
+  assert.ok(side.widthShare < 0.2 && side.widthShare > 0.18, `side nav spans ${side.widthShare}`);
 });
 
 test('pages without a footer lower its support but do not break the position', () => {

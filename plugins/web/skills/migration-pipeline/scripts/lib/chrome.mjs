@@ -36,9 +36,19 @@ async function captures(cwd) {
   }));
 }
 
-/** The hash of what detection read: which trees, at which width. */
+/**
+ * The detection method's version: the rules that turn candidates into chrome. Bumped when
+ * they change; a detection by an older version is stale.
+ *   3 — candidates by element key and position cluster; off-screen, narrow, tall and
+ *       text-changing bands are no chrome; text stability judged within groups, on the
+ *       pages that have text; a child is dropped only for a chrome-eligible parent.
+ */
+export const DETECT_VERSION = 3;
+
+/** The hash of what detection read: which trees, at which width, by which rules. */
 export const inputsHash = (ids, minWidth) => createHash('sha256')
-  .update(`${minWidth}|${[...ids].sort().join(' ')}`).digest('hex').slice(0, 16);
+  .update(`${DETECT_VERSION}|${minWidth}|${[...ids].sort().join(' ')}`).digest('hex')
+  .slice(0, 16);
 
 /**
  * The node of a tree whose selector is one of `selectors` — and, when several match (a
@@ -259,10 +269,11 @@ export async function detect(cwd, { io, run, access, visit, minWidth = MIN_WIDTH
   const all = await captures(cwd);
   if (!all.length) throw new Error('no visual tree stored; nothing to detect the chrome from');
   const byUrl = new Map(all.map((c) => [c.url, c.page.id]));
-  const detection = detectChrome(candidates(all), {
+  const groupOf = (url) => all.find((c) => c.url === url)?.page.group ?? '';
+  const detection = detectChrome(candidates(all, { groupOf }), {
     pages: all.map((c) => c.url),
     pageHeights: all.map((c) => c.tree.bounds.height),
-    groupOf: (url) => all.find((c) => c.url === url)?.page.group,
+    groupOf,
     consentSelectors: access.overlays.map((o) => o.selector).filter(Boolean),
   });
   const at = now().toISOString();

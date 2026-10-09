@@ -126,6 +126,19 @@ export async function storedFacts(dir, url, origin) {
 const firstLine = (text) => String(text ?? '').split('\n').find((l) => l.trim()) ?? '';
 
 /**
+ * The stored facts of a URL — or, when the site only redirected it to the same path with
+ * or without a trailing slash, of the page it landed on: that is the page, not a redirect.
+ */
+export async function landedFacts(dir, url, origin) {
+  const stored = await storedFacts(dir, url, origin);
+  const target = stored.redirect?.target;
+  if (!target || !samePath(target, url)) return stored;
+  const landed = await storedFacts(dir, target, origin);
+  if (!landed.sidecar) return stored;
+  return { ...landed, redirect: null };
+}
+
+/**
  * Caches one selection: visits every page of it not yet cached (all with `force`) online
  * through the proxy, then verifies offline and records each on the table. `io` is the
  * browser and proxy, injectable: `startProxy({ offline })`, `browser`, `sleep`.
@@ -142,19 +155,16 @@ export async function cacheSelection(cwd, name, { io, force = false, pace } = {}
 }
 
 /**
- * Fills the cache for the pages already in it: one more online pass, so the assets on
- * origins named since (`source.assetOrigins`) are stored. The pages themselves are served
- * from the cache; only what is missing is fetched.
+ * Fills the cache for the pages already in it: one more online pass, so what is missing —
+ * the assets on origins named since (`source.assetOrigins`), a page stored under another
+ * key — is stored. What is there is served from the cache; only what is missing is fetched.
  */
 export async function fill(cwd, { io, pace } = {}) {
   const { migration, pages } = await data(cwd);
   const m = await migration.open(cwd);
-  if (!(m.source.assetOrigins ?? []).length) {
-    throw new Error('no asset origins named: migration.mjs assets <origin>... first');
-  }
-  const targets = (await pages.read(cwd)).pages.filter((p) => p.cache && p.kind === 'page');
+  const targets = (await pages.read(cwd)).pages.filter((p) => p.cache);
   return visit(cwd, { name: 'fill', targets, input: { fill: true,
-    assetOrigins: m.source.assetOrigins }, io, pace });
+    assetOrigins: m.source.assetOrigins ?? [] }, io, pace });
 }
 
 async function visit(cwd, { name, targets, input, io, pace }) {
@@ -315,7 +325,8 @@ async function record(cwd, { targets, finals, dir, origin, name, io }) {
       // eslint-disable-next-line no-await-in-loop
       if (res) await res.arrayBuffer().catch(() => {});
       // eslint-disable-next-line no-await-in-loop
-      const stored = await storedFacts(dir, page.url, origin);
+      // eslint-disable-next-line no-await-in-loop
+      const stored = await landedFacts(dir, page.url, origin);
       const finalUrl = finals.get(page.id) ?? null;
       const kind = classify({ url: page.url, sidecar: stored.sidecar, finalUrl });
       kinds[kind] = (kinds[kind] ?? 0) + 1;
@@ -383,13 +394,8 @@ export async function realIo(cwd) {
 export async function pending(cwd, mode) {
   if (mode === undefined) return pendingSelections(cwd);
   if (mode !== 'fill') throw new Error(`cache knows no mode ${mode}; fill, status or stop`);
-  const { migration, pages } = await data(cwd);
-  const m = await migration.open(cwd);
-  if (!(m.source.assetOrigins ?? []).length) {
-    throw new Error('no asset origins named: migration.mjs assets <origin>... first');
-  }
-  return (await pages.read(cwd)).pages.filter((p) => p.cache && p.kind === 'page')
-    .map((p) => p.id);
+  const { pages } = await data(cwd);
+  return (await pages.read(cwd)).pages.filter((p) => p.cache).map((p) => p.id);
 }
 
 /** The worker: caches every pending selection in turn, or fills, then exits. */

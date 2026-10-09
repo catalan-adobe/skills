@@ -69,13 +69,11 @@ test('detectChrome: variants from core members, slot alternatives, optional CTA'
     pages: pages.map((p) => p.url), pageHeights: pages.map((p) => p.tree.bounds.height), groupOf,
   });
   assert.equal(out.capturedPages, 10);
-  assert.equal(out.header.length, 2, 'main header and blog header');
-  const [main, blog] = out.header;
-  assert.deepEqual([main.pages.length, main.support, main.group], [7, 0.7, 'p']);
-  assert.deepEqual(main.members.map((m) => m.selector).sort(),
-    ['div.experiencefragment', 'div.utility']);
-  assert.deepEqual([blog.pages.length, blog.group], [2, 'blog']);
-  assert.equal(blog.members.length, 2, 'the blog header keeps the shared utility bar');
+  assert.equal(out.header.length, 1, 'one header element; the blog pages a structural variant');
+  const [main] = out.header;
+  assert.deepEqual([main.pages.length, main.support, main.group], [9, 0.9, 'p']);
+  assert.deepEqual(main.members.map((m) => [m.selector, m.variants]).sort(),
+    [['div.experiencefragment', 2], ['div.utility', 1]]);
   assert.equal(main.representative, 'https://site.example/p/1.html');
 
   assert.equal(out.footer.length, 1);
@@ -107,4 +105,51 @@ test('detectChrome with no recurring chrome reports every page as without', () =
   });
   assert.deepEqual([out.header, out.footer], [[], []]);
   assert.equal(out.without.header.length, 3);
+});
+
+test('the generic rules: narrow goes unplaced, tall is content, changing text is template', () => {
+  // Ten pages: a full-width header, a narrow side nav at a stable place, a title band
+  // under the header whose text differs per page, a main area covering most of the page.
+  const pages = Array.from({ length: 10 }, (_, i) => {
+    const n = i + 1;
+    const height = 3000 + n * 50;
+    return {
+      url: `https://site.example/docs/${n}.html`,
+      tree: el('BODY', 'page', box(0, height), [
+        el('HEADER', 'top', box(0, 80),
+          [el('NAV', 'nav', box(0, 80), [], { text: 'Home Docs Blog' })]),
+        el('DIV', 'title', box(80, 120), [], { text: `Page number ${n} of the docs` }),
+        el('ASIDE', 'side', box(200, 900, 240), [], { text: 'Intro Setup Usage FAQ' }),
+        el('MAIN', 'content', box(200, height - 800, 1000, 280), [], { text: `Body ${n}` }),
+        el('FOOTER', 'bottom', box(height - 600, 600), [], { text: 'Legal Privacy Contact' }),
+      ]),
+    };
+  });
+  const all = candidates(pages, { groupOf: () => 'docs' });
+  const out = detectChrome(all, {
+    pages: pages.map((p) => p.url), pageHeights: pages.map((p) => p.tree.bounds.height),
+  });
+  assert.deepEqual(out.header.map((v) => v.members.map((m) => m.selector)), [['header.top']],
+    'the title band under the header is not absorbed: its text changes with the page');
+  assert.deepEqual(out.footer.map((v) => v.members.map((m) => m.selector)), [['footer.bottom']]);
+  assert.ok(out.unplaced.some((m) => m.selector === 'aside.side'), 'narrow: another part');
+  const title = out.rejected.find((r) => r.selector === 'div.title');
+  assert.match(title.reason, /text differs across pages/);
+  const main = out.rejected.find((r) => r.selector === 'main.content');
+  assert.match(main.reason, /text differs|covers \d+ % of the page/);
+});
+
+test('text stability is judged within groups; small groups are pooled', async () => {
+  const { textStabilityOf } = await import('./chrome-candidates.mjs');
+  const occ = (url, text) => ({ url, text });
+  const locales = [...Array.from({ length: 5 }, (_, i) => occ(`/en/${i}`, 'home docs')),
+    ...Array.from({ length: 5 }, (_, i) => occ(`/fr/${i}`, 'accueil docs'))];
+  const byLocale = (u) => u.split('/')[1];
+  assert.equal(textStabilityOf(locales, byLocale), 1, 'one header, two languages');
+  assert.equal(textStabilityOf(locales, () => ''), 0.5, 'the same, judged site-wide');
+  const titles = Array.from({ length: 6 }, (_, i) => occ(`/g${i}/p`, `title ${i}`));
+  assert.ok(textStabilityOf(titles, byLocale) < 0.2, 'six groups of one: pooled, not stable');
+  const silent = [...titles, ...Array.from({ length: 6 }, (_, i) => occ(`/s${i}/p`, ''))];
+  assert.ok(textStabilityOf(silent, byLocale) < 0.2, 'empty text is no evidence of stability');
+  assert.equal(textStabilityOf(silent.filter((o) => !o.text), byLocale), 1, 'no text at all');
 });

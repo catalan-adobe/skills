@@ -177,19 +177,18 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   assert.deepEqual(await check(cwd), { pass: false, note: '10 page(s) without a visual tree' });
   const out = await workerMain(cwd, { io });
   assert.match(out.summary,
-    /^10 tree\(s\) captured, 0 failed; 10 pages read; header: 2, 1 without; footer: 1, 1 without/);
+    /^10 tree\(s\) captured, 0 failed; 10 pages read; header: 1, 1 without; footer: 1, 1 without/);
   assert.deepEqual(io.calls.proxies, [true], 'offline only');
-  assert.equal(io.calls.visited.length, 10 + 3, 'ten pages, then one per fragment for evidence');
+  assert.equal(io.calls.visited.length, 10 + 2, 'ten pages, then one per fragment for evidence');
   const { website, composition, pages, trees, notes, runs } = await data(cwd);
   assert.equal((await trees.list(cwd)).length, 10);
   const frags = await website.readFragments(cwd);
   assert.deepEqual(frags.fragments.map((f) => [f.part, f.label ?? null, f.pages, f.selectors]), [
-    ['header', 'header design 1', 7, ['div.utility', 'div.experiencefragment']],
-    ['header', 'header design 2', 2, ['div.utility', 'div.experiencefragment']],
+    ['header', null, 9, ['div.utility', 'div.experiencefragment']],
     ['footer', null, 9, ['div.experiencefragment']],
-  ]);
-  const [h1, h2, footer] = frags.fragments;
-  assert.notEqual(h1.id, h2.id);
+  ], 'the blog pages\' header is the same element with another structure: one design');
+  const [h1, footer] = frags.fragments;
+  assert.equal(h1.id, website.fragmentId('template', 'header'));
   assert.equal(footer.id, website.fragmentId('template', 'footer'));
   assert.deepEqual(h1.evidence, [`fragments/${h1.id}/shots/page.png`,
     `fragments/${h1.id}/shots/band-1.png`, `fragments/${h1.id}/shots/band-2.png`]);
@@ -206,7 +205,7 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   const page1 = await composition.read(cwd, p1.id);
   assert.deepEqual(page1.fragments.find((f) => f.ref === h1.id).bounds, box(0, 133));
   const blog = table.pages.find((p) => p.url === urlOf(8));
-  assert.ok(blog.fragments.includes(h2.id), 'the blog pages carry the second design');
+  assert.ok(blog.fragments.includes(h1.id), 'the blog pages carry the header too');
   const landing = table.pages.find((p) => p.url === urlOf(10));
   assert.deepEqual(landing.verdict.reasons.map((r) => [r.code, r.kind, r.by]),
     [['no-header', 'flag', 'chrome'], ['no-footer', 'flag', 'chrome']]);
@@ -231,7 +230,7 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   assert.equal((await website.readWebsite(cwd)).counts.composed, 0, 'fragments only: not read');
   const [note] = await notes.list(cwd, { step: 'chrome' });
   const body = await notes.body(cwd, note.id);
-  assert.match(body, /## header: 2 design\(s\)/);
+  assert.match(body, /## header: 1 design\(s\)/);
   assert.match(body, /Pages without a footer: 1\n- https:\/\/site.example\/campaign\/10.html/);
   assert.match(body, /## Limits of the method/);
   const [run] = await runs.list(cwd, { step: 'chrome' });
