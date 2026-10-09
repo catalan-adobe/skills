@@ -54,7 +54,7 @@ function overlay(structure, scale, W, H, bodyTop) {
     return [Math.min(...bs.map((b) => b.y)), Math.max(...bs.map((b) => b.y + b.h))];
   };
   // header and footer
-  const grey = 'fill="rgba(120,120,120,0.25)"';
+  const grey = 'fill="rgba(120,120,120,0.12)"';
   const top = Math.round(structure.body.top * scale);
   const bottom = Math.round(structure.body.bottom * scale);
   parts.push(`<rect x="0" y="0" width="${SHEET_WIDTH}" height="${top}" ${grey}/>`);

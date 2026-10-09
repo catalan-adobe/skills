@@ -52,6 +52,15 @@ test('place puts top-anchored candidates in the header band and bottom ones in t
   assert.equal(place(middle, 3500), 'unplaced');
 });
 
+test('a fixed layer taller than a band is a curtain, not chrome', () => {
+  const curtain = { tags: ['DIV'], bounds: { y: 0, height: 720, width: 1280, bottomOffset: 2000 },
+    sample: { selector: 'div.gnav-curtain', node: { className: 'gnav-curtain', fixed: true },
+      text: '' } };
+  assert.match(rejectionReason(curtain, [], 3000), /fixed layer 720 px tall/);
+  const sticky = { ...curtain, bounds: { ...curtain.bounds, height: 65 } };
+  assert.equal(rejectionReason(sticky, [], 3000), null, 'a sticky header is a band');
+});
+
 test('rejectionReason names skip links, breadcrumbs and consent overlays', () => {
   const c = (tag, className, extra = {}) => ({
     tags: [tag],

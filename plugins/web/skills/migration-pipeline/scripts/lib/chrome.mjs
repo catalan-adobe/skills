@@ -43,8 +43,9 @@ async function captures(cwd) {
  *       text-changing bands are no chrome; text stability judged within groups, on the
  *       pages that have text; a child is dropped only for a chrome-eligible parent.
  *   4 — a fragment is located on a page by its optional members too, where present.
+ *   5 — a fixed layer taller than a band (a mega menu's curtain) is no chrome.
  */
-export const DETECT_VERSION = 4;
+export const DETECT_VERSION = 5;
 
 /** How many candidates the sheet shows, beyond the members themselves. */
 export const SHEET_SIZE = 16;

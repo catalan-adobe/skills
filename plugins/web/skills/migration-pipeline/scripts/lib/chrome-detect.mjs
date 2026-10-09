@@ -15,6 +15,9 @@ export const MIN_WIDTH_SHARE = 0.6;
 export const MIN_TEXT_STABILITY = 0.3;
 // A band covering more than this share of the page is the content, whatever recurs in it.
 export const MAX_HEIGHT_SHARE = 0.5;
+// A fixed layer taller than this is a curtain or a backdrop drawn over the page (a mega
+// menu's panel, a modal's veil), not a band: a sticky header is fixed and a band's height.
+export const MAX_FIXED_PX = 300;
 
 const median = (values) => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -39,6 +42,10 @@ export function rejectionReason(candidate, consentSelectors = [], pageHeight = I
   if (candidate.textStability !== undefined && candidate.textStability < MIN_TEXT_STABILITY) {
     return `text differs across pages (the same on ${Math.round(candidate.textStability * 100)}`
       + ' %): a template band, not chrome';
+  }
+  if (sample.node.fixed && (candidate.bounds?.height ?? 0) > MAX_FIXED_PX) {
+    return `a fixed layer ${Math.round(candidate.bounds.height)} px tall: a curtain or a backdrop`
+      + ' over the page, not a band';
   }
   if ((candidate.bounds?.height ?? 0) > pageHeight * MAX_HEIGHT_SHARE) {
     return `covers ${Math.round((100 * candidate.bounds.height) / pageHeight)} % of the page:`
