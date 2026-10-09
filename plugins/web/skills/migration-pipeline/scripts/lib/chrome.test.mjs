@@ -88,6 +88,20 @@ function fakeIo(treeOf, { failOn = [], pageOf = numberOf } = {}) {
       },
       eval: async (expression) => {
         if (expression.startsWith('(async')) return '"top"';
+        if (expression.includes('consentLayers')) {
+          const tree = treeOf(pageOf(current));
+          const leaves = [];
+          (function walk(n) {
+            if (!(n.children ?? []).length && n.tag !== 'BODY') {
+              leaves.push({ x: n.bounds.x, y: n.bounds.y, w: n.bounds.width, h: n.bounds.height,
+                t: `${n.tag} ${n.className}`, e: n.tag, p: 0 });
+            }
+            (n.children ?? []).forEach(walk);
+          }(tree));
+          return JSON.stringify(JSON.stringify({ W: 1280, H: tree.bounds.height,
+            pageBg: 'rgb(255, 255, 255)', leaves, bgs: [], paths: ['body'], sy: 0, overlays: [],
+            dropped: [], unpainted: 0, scrollLock: false }));
+        }
         if (expression === HEIGHT_EXPRESSION) {
           const n = pageOf(current);
           return JSON.stringify(n === 5 ? 20000 : treeOf(n).bounds.height);
@@ -232,8 +246,13 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   assert.deepEqual([tallFacts.scrollHeight, tallFacts.shot], [20000, null]);
   const p1Facts = await facts(p1.id);
   assert.deepEqual([p1Facts.scrollHeight, p1Facts.shot], [3131, `pages/${p1.id}/shots/page.jpg`]);
-  assert.deepEqual(Object.keys(p1Facts.timings), ['goto', 'prepare', 'tree', 'shot'],
+  assert.deepEqual(Object.keys(p1Facts.timings), ['goto', 'prepare', 'tree', 'shot', 'bands'],
     'every phase timed');
+  const { bands: bandLayer } = await data(cwd);
+  const capture = await bandLayer.readCapture(cwd, p1.id);
+  assert.ok(capture.leaves.length >= 3 && capture.analysis.bands.length >= 1,
+    `the band capture: ${capture.leaves.length} leaves, ${capture.analysis.bands.length} bands`);
+  assert.equal(capture.analysis.bands[0].inside, undefined, 'leaves are not repeated per band');
   const bodies = io.sharp.written.filter((f) => f.endsWith('/body.jpg')).length;
   assert.equal(bodies, 9, 'a body crop per page with a screenshot (not the tall one)');
   assert.ok(io.sharp.written.some((f) => f.endsWith(`${p1.id}/shots/body-thumb.jpg`)));

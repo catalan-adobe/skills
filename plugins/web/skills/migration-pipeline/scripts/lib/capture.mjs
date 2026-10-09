@@ -4,6 +4,8 @@
 // A rerun captures only what is missing or taken at another width.
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { analyse } from './band-analysis.mjs';
+import { DUMP } from './band-dump.mjs';
 import { parseEval } from './browser.mjs';
 import { pageExpression } from './cache.mjs';
 import { data } from './data.mjs';
@@ -19,8 +21,9 @@ export const MAX_CONSECUTIVE_FAILURES = 5;
  *       before the tree is read (sticky headers were measured mid-scroll).
  *   3 — page-tree walks through `display: contents` elements (a whole MDN page had been
  *       sixteen nodes).
+ *   4 — the band dump and its analysis, from the site census, stored beside the tree.
  */
-export const CAPTURE_VERSION = 3;
+export const CAPTURE_VERSION = 4;
 export const captureExpression = (minWidth = MIN_WIDTH) => (
   `JSON.stringify(window.__visualTree.captureVisualTree(${minWidth}))`);
 export const HEIGHT_EXPRESSION = 'document.documentElement.scrollHeight';
@@ -138,8 +141,11 @@ export function serial() {
   };
 }
 
-/** One page: visit, prepare, tree, shot — each phase timed, the times kept with the facts. */
-async function captureOne(cwd, page, { browser, visit, prepare, minWidth, now, trees }) {
+/**
+ * One page: visit, prepare, tree, shot, then the band dump (last: it hides the floating
+ * layers it set aside) — each phase timed, the times kept with the facts.
+ */
+async function captureOne(cwd, page, { browser, visit, prepare, minWidth, now, trees, bands }) {
   const timings = {};
   const timed = async (name, fn) => {
     const t0 = Date.now();
@@ -155,6 +161,13 @@ async function captureOne(cwd, page, { browser, visit, prepare, minWidth, now, t
     throw new Error('the page-tree bundle returned no tree (was it injected?)');
   }
   const facts = await timed('shot', () => screenshot(cwd, page.id, browser, trees));
+  const dump = await timed('bands', async () => parseEval(await browser.eval(DUMP)));
+  if (!dump?.leaves) throw new Error('the band dump returned no leaves');
+  const { leaves: analysedLeaves, ...analysis } = analyse(dump);
+  await bands.writeCapture(cwd, page.id, {
+    url: page.url, ...dump, leaves: analysedLeaves,
+    analysis: { ...analysis, bands: analysis.bands.map(({ inside, ...b }) => b) },
+  });
   await trees.write(cwd, page.id, {
     minWidth, version: CAPTURE_VERSION, url: page.url, capturedAt: now().toISOString(),
     tree: captured.data, text: captured.textFormat, nodeMap: captured.nodeMap,
@@ -171,7 +184,7 @@ async function captureOne(cwd, page, { browser, visit, prepare, minWidth, now, t
 export async function captureTrees(cwd, targets, {
   io, run, access, visit, minWidth = MIN_WIDTH, now = () => new Date(),
 }) {
-  const { runs, trees } = await data(cwd);
+  const { runs, trees, bands } = await data(cwd);
   const prepare = preparedAtTop(pageExpression(access));
   const browsers = io.browsers ?? [io.browser];
   const queue = [...targets];
@@ -189,7 +202,7 @@ export async function captureTrees(cwd, targets, {
       await update(() => runs.update(cwd, run.id, { current: [...busy].join(' ') }));
       try {
         // eslint-disable-next-line no-await-in-loop
-        await captureOne(cwd, page, { browser, visit, prepare, minWidth, now, trees });
+        await captureOne(cwd, page, { browser, visit, prepare, minWidth, now, trees, bands });
         streak = 0;
       } catch (err) {
         failures.push({ id: page.id, error: firstLine(err.message) });

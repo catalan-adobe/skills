@@ -10,7 +10,6 @@ import { read as readTable } from './pages.mjs';
 import { HEAD, register } from './schema.mjs';
 import { read as readState } from './state.mjs';
 import { openStore } from './store.mjs';
-import { renderAnnotateBands } from './annotate-bands-html.mjs';
 import { renderAnnotate } from './annotate-html.mjs';
 import { renderHtml } from './report-html.mjs';
 import { readFragments, readWebsite } from './website.mjs';
@@ -108,14 +107,6 @@ export async function writeAnnotate(cwd, selectionName) {
   const html = await renderAnnotate(cwd, selectionName);
   return write(cwd, `annotate-${selectionName}`, html,
     ['pages/pages.json', `pages/selections/${selectionName}.json`, 'pages/verdicts.json'],
-    'html');
-}
-
-/** Renders and writes the band correction sheet for a selection. */
-export async function writeAnnotateBands(cwd, selectionName) {
-  const html = await renderAnnotateBands(cwd, selectionName);
-  return write(cwd, `annotate-bands-${selectionName}`, html,
-    ['pages/pages.json', `pages/selections/${selectionName}.json`, 'pages/band-verdicts.json'],
     'html');
 }
 

@@ -60,6 +60,7 @@ migration/
     <id>/                   one page's artefacts
       composition.json      the page in EDS shape: fragments, sections, items     derived
       visual-tree.json      the rendered page measured by the page-tree bundle      derived
+      band-capture.json     the page's content leaves and bands (the census's dump)  derived
       triage.json           what a System 1 model saw: header, footer, broken, empty derived
       shots/                crops taken on this page                                evidence
   fragments/<id>/           a shared document's artefacts
@@ -391,7 +392,8 @@ it exists and that it is disposable.
   `writeMany`, `read`, `writeFragment`, `readFragment`, `items`, `fragmentRefs`;
   `trees.mjs` — `write`, `read`, `head`, `list` (the visual tree, a method's artefact);
   `chrome.mjs` — `writeCandidates`, `readCandidates`, `choose`, `readChoice`, `candidateId`,
-  `choiceHash`; `verdicts.mjs` — `upsert`, `read`, `importFile`;
+  `choiceHash`; `verdicts.mjs` — `upsert`, `read`, `importFile`; `bands.mjs` —
+  `writeCapture`, `readCapture`, `upsertVerdicts`, `readVerdicts`, `importVerdicts`;
   `triage.mjs` — `write`, `read`, `list`, `flagsOf` (what a System 1 model saw).
 - `website.mjs` — `refresh`, `writeAccess`/`readAccess`, `writeFragments`/`readFragments`,
   `pagesUsing`.

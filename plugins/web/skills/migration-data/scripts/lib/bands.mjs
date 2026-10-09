@@ -1,36 +1,52 @@
-// Bands: a method's cut of a page's body into horizontal bands (a proposal, derived) and
-// a person's word on the cut (a decision, the bench's ground truth at band level). The
-// unit of the next level: a band is what an EDS section is made of.
+// Bands: what the band capture read on a rendered page — every content leaf with its box
+// and text, the wide decorated boxes, the floating layers set aside — and the bands the
+// analysis cut it into, with the page's own gap and gutter and its side rails. A method's
+// artefact under the page, ported from the site census. And a person's word on the cut: a
+// decision, the bench's ground truth at band level.
 import { HEAD, register } from './schema.mjs';
 import { openStore } from './store.mjs';
 
-export const PROPOSAL_SCHEMA = 'pages/bands@1';
+export const CAPTURE_SCHEMA = 'pages/band-capture@1';
 export const VERDICTS_FILE = 'pages/band-verdicts.json';
 export const VERDICTS_SCHEMA = 'pages/band-verdicts@1';
-export const proposalFile = (pageId) => `pages/${pageId}/bands.json`;
+export const captureFile = (pageId) => `pages/${pageId}/band-capture.json`;
 export const KINDS = ['text', 'hero', 'cards', 'list', 'media', 'columns', 'cta', 'form',
   'table', 'code', 'nav', 'quote', 'other'];
 
 const idPattern = (prefix) => ({ type: 'string', pattern: `^${prefix}-[0-9a-f]{12}$` });
-const edges = {
-  type: 'object', required: ['top', 'bottom'], additionalProperties: false,
-  properties: { top: { type: 'integer' }, bottom: { type: 'integer' } },
-};
 
-register('pages/bands', 1, 'derived', {
+register('pages/band-capture', 1, 'derived', {
   type: 'object',
-  required: ['schema', 'page', 'body', 'tree', 'pixels', 'agreement'],
+  required: ['schema', 'url', 'W', 'H', 'leaves', 'bgs', 'paths', 'analysis'],
   additionalProperties: false,
   properties: {
     ...HEAD,
-    page: idPattern('pag'),
-    body: edges,
-    tree: { type: 'object' },
-    pixels: { type: 'object' },
-    agreement: { type: 'object' },
+    url: { type: 'string' },
+    W: { type: 'integer', minimum: 1 },
+    H: { type: 'integer', minimum: 1 },
+    pageBg: { type: 'string' },
+    sy: { type: 'integer' },
+    status: { type: 'integer' },
+    leaves: { type: 'array', items: { type: 'object' } },
+    bgs: { type: 'array', items: { type: 'object' } },
+    paths: { type: 'array', items: { type: 'string' } },
+    overlays: { type: 'array', items: { type: 'object' } },
+    dropped: { type: 'array', items: { type: 'object' } },
+    unpainted: { type: 'integer' },
+    scrollLock: { type: 'boolean' },
+    analysis: {
+      type: 'object',
+      required: ['base', 'gap', 'gutter', 'bands', 'rails'],
+      additionalProperties: false,
+      properties: {
+        base: { type: ['string', 'null'] }, gap: { type: 'number' }, gutter: { type: 'number' },
+        bands: { type: 'array', items: { type: 'object' } },
+        rails: { type: 'array', items: { type: 'object' } },
+        leaves: { type: 'array', items: { type: 'object' } },
+      },
+    },
   },
 });
-
 register('pages/band-verdicts', 1, 'decision', {
   type: 'object',
   required: ['schema', 'verdicts'],
@@ -66,10 +82,10 @@ register('pages/band-verdicts', 1, 'decision', {
   },
 });
 
-export const writeProposal = (cwd, pageId, proposal) => (
-  openStore(cwd).write(proposalFile(pageId), { schema: PROPOSAL_SCHEMA, ...proposal }));
-export const readProposal = (cwd, pageId) => (
-  openStore(cwd).read(proposalFile(pageId), PROPOSAL_SCHEMA));
+export const writeCapture = (cwd, pageId, capture) => (
+  openStore(cwd).write(captureFile(pageId), { schema: CAPTURE_SCHEMA, ...capture }));
+export const readCapture = (cwd, pageId) => (
+  openStore(cwd).read(captureFile(pageId), CAPTURE_SCHEMA));
 export const readVerdicts = (cwd) => openStore(cwd).read(VERDICTS_FILE, VERDICTS_SCHEMA);
 
 /** Records band verdicts, one per page, the later replacing the earlier. */
