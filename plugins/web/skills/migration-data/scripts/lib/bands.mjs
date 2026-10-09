@@ -7,6 +7,9 @@ import { HEAD, register } from './schema.mjs';
 import { openStore } from './store.mjs';
 
 export const CAPTURE_SCHEMA = 'pages/band-capture@1';
+export const STRUCTURE_SCHEMA = 'pages/structure@1';
+export const structureFile = (pageId, method = 'bands-system1') => (
+  `pages/${pageId}/structure.${method}.json`);
 export const VERDICTS_FILE = 'pages/band-verdicts.json';
 export const VERDICTS_SCHEMA = 'pages/band-verdicts@1';
 export const captureFile = (pageId) => `pages/${pageId}/band-capture.json`;
@@ -47,6 +50,29 @@ register('pages/band-capture', 1, 'derived', {
     },
   },
 });
+// A method's reading of a page's bands into sections and children, with everything the
+// model answered: the record a review reads and a correction is made against.
+register('pages/structure', 1, 'derived', {
+  type: 'object',
+  required: ['schema', 'page', 'method', 'body', 'bands', 'sections'],
+  additionalProperties: false,
+  properties: {
+    ...HEAD,
+    page: idPattern('pag'),
+    method: {
+      type: 'object',
+      required: ['name', 'at'],
+      additionalProperties: false,
+      properties: { name: { type: 'string' }, model: { type: 'string' },
+        wording: { type: 'string' }, at: { type: 'string', format: 'date-time' } },
+    },
+    body: { type: 'object' },
+    bands: { type: 'array', items: { type: 'object' } },
+    sections: { type: 'array', items: { type: 'object' } },
+    usage: { type: 'object' },
+  },
+});
+
 register('pages/band-verdicts', 1, 'decision', {
   type: 'object',
   required: ['schema', 'verdicts'],
@@ -86,6 +112,10 @@ export const writeCapture = (cwd, pageId, capture) => (
   openStore(cwd).write(captureFile(pageId), { schema: CAPTURE_SCHEMA, ...capture }));
 export const readCapture = (cwd, pageId) => (
   openStore(cwd).read(captureFile(pageId), CAPTURE_SCHEMA));
+export const writeStructure = (cwd, pageId, structure, method) => (
+  openStore(cwd).write(structureFile(pageId, method), { schema: STRUCTURE_SCHEMA, ...structure }));
+export const readStructure = (cwd, pageId, method) => (
+  openStore(cwd).read(structureFile(pageId, method), STRUCTURE_SCHEMA));
 export const readVerdicts = (cwd) => openStore(cwd).read(VERDICTS_FILE, VERDICTS_SCHEMA);
 
 /** Records band verdicts, one per page, the later replacing the earlier. */

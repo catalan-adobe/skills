@@ -12,6 +12,7 @@ import { read as readState } from './state.mjs';
 import { openStore } from './store.mjs';
 import { renderAnnotate } from './annotate-html.mjs';
 import { renderHtml } from './report-html.mjs';
+import { renderStructure } from './structure-html.mjs';
 import { readFragments, readWebsite } from './website.mjs';
 
 export const INDEX = 'views/views.json';
@@ -108,6 +109,13 @@ export async function writeAnnotate(cwd, selectionName) {
   return write(cwd, `annotate-${selectionName}`, html,
     ['pages/pages.json', `pages/selections/${selectionName}.json`, 'pages/verdicts.json'],
     'html');
+}
+
+/** Renders and writes the structure review for a selection. */
+export async function writeStructureReview(cwd, selectionName, method) {
+  const html = await renderStructure(cwd, selectionName, method);
+  return write(cwd, `structure-${selectionName}`, html,
+    ['pages/pages.json', `pages/selections/${selectionName}.json`], 'html');
 }
 
 /** Renders and writes the report view: Markdown, or the one-file HTML with `html`. */

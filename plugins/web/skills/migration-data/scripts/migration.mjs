@@ -52,6 +52,8 @@ export const COMMANDS = [
     help: 'render the annotation sheet for a selection: views/annotate-<selection>.html' },
   { name: 'verdicts', usage: '[import <file.json>]',
     help: 'the verdicts on pages; import what an annotation sheet exported' },
+  { name: 'structure-review', usage: '<selection>',
+    help: 'render the structure review of a selection: views/structure-<selection>.html' },
   { name: 'band-verdicts', usage: '[import <file.json>]',
     help: 'the verdicts on bands; import what a band sheet exported' },
 ];
@@ -65,7 +67,7 @@ const FLAGS = {
   page: [], 'decide-page': [], selections: [], website: [], types: ['--undecided'],
   'decide-type': ['--notes'], inventory: [], note: ['--page'], notes: ['--step'],
   access: ['--note'],
-  report: ['--html'], annotate: [], verdicts: [], 'band-verdicts': [],
+  report: ['--html'], annotate: [], verdicts: [], 'band-verdicts': [], 'structure-review': [],
 };
 const BOOLEAN = new Set(['--text', '--cached', '--uncached', '--undecided', '--html']);
 
@@ -203,6 +205,9 @@ export async function main(argv, cwd = process.cwd()) {
     case 'annotate':
       if (!positional[0]) throw new Error('usage: annotate <selection>');
       return views.writeAnnotate(cwd, positional[0]);
+    case 'structure-review':
+      if (!positional[0]) throw new Error('usage: structure-review <selection>');
+      return views.writeStructureReview(cwd, positional[0]);
     case 'band-verdicts': {
       if (positional[0] === 'import') {
         if (!positional[1]) throw new Error('usage: band-verdicts import <file.json>');

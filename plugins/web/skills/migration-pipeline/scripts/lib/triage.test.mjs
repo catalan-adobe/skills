@@ -95,7 +95,7 @@ test('ask: one request, probabilities back, retries, errors named', async () => 
   await assert.rejects(ask(dep, [], {}, { fetchImpl: async () => reply(401, 'no') }),
     /System 1 401/);
   await assert.rejects(ask(dep, [], { x: 'q' }, { fetchImpl: async () => reply(200,
-    { answers: {} }) }), /no probability for x/);
+    { answers: {} }) }), /no answer for x \(noul\)/);
   await assert.rejects(ask(dep, [1, 2, 3, 4, 5], {}), /at most 4 images/);
 });
 

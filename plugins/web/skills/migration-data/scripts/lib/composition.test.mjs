@@ -56,7 +56,10 @@ test('the schema is the EDS document shape: fixed depth, closed roles, located n
   const bad = (patch) => faults({ ...full, ...patch }, schema);
   const one = (item) => bad({ sections: [{ id: 's1', selector: 'x', items: [item] }] });
   const noShape = ['$.sections[0].items[0]: must match exactly one shape (matched 0)'];
-  assert.deepEqual(one({ role: 'block', selector: 'y' }), noShape, 'a block names its type');
+  assert.deepEqual(one({ role: 'block', selector: 'y' }), [],
+    'a block read before the vocabulary exists has no type yet');
+  assert.deepEqual(one({ role: 'block', selector: 'y', type: 'nope' }), noShape,
+    'a type, when given, is of the vocabulary');
   assert.deepEqual(one({ role: 'section', selector: 'y' }), noShape, 'no section in a section');
   assert.deepEqual(one({ role: 'content' }), noShape, 'a selector always');
   assert.deepEqual(bad({ sections: [{ id: 'one', selector: 'x', items: [] }] }),

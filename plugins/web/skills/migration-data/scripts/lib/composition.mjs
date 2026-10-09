@@ -39,8 +39,10 @@ const ITEM = {
       properties: { role: { const: 'content' }, ...LOCATED },
     },
     {
+      // A block's type is the site's vocabulary; a block read before the vocabulary exists
+      // (the first iteration of a decomposition) has none yet.
       type: 'object',
-      required: ['role', 'selector', 'type'],
+      required: ['role', 'selector'],
       additionalProperties: false,
       properties: {
         role: { const: 'block' }, ...LOCATED, type: idPattern('typ'), variant: { type: 'string' },

@@ -20,18 +20,33 @@ export function deployment(env = process.env) {
 
 /**
  * Asks `questions` (`{ id: instructions }`, all yes/no) about `images` (data URIs, at most
- * four) in one request. Retries 429/503/529 at 1, 2, 4, 8 s or the deployment's own
- * Retry-After. Returns `{ answers: { id: probability }, usage: { inputTokens, ms } }`.
+ * four) in one request. Returns `{ answers: { id: probability }, usage }`.
  */
-export async function ask(dep, images, questions, {
+export async function ask(dep, images, questions, options = {}) {
+  const asked = Object.fromEntries(Object.entries(questions)
+    .map(([id, instructions]) => [id, { type: 'noul', instructions }]));
+  const { answers, usage } = await askQuestions(dep, { state: {}, questions: asked, images },
+    options);
+  return { answers: Object.fromEntries(Object.entries(answers).map(([id, a]) => [id, a.noul])),
+    usage };
+}
+
+/**
+ * The protocol in full: `state` (what the questions are about), `questions` (`{ id: { type:
+ * 'noul' | 'choice', instructions, criteria? } }`) and optional `images`, in one request.
+ * Retries 429/503/529 at 1, 2, 4, 8 s or the deployment's own Retry-After. Returns the
+ * answers as the deployment gave them — `{ noul }` or `{ choice, confidence, probabilities }`
+ * — and `usage: { inputTokens, ms }`.
+ */
+export async function askQuestions(dep, { state = {}, questions, images = [] }, {
   fetchImpl = fetch, sleep = (ms) => new Promise((r) => { setTimeout(r, ms); }), retries = 4,
 } = {}) {
   if (images.length > MAX_IMAGES) {
     throw new Error(`at most ${MAX_IMAGES} images; got ${images.length}`);
   }
-  const asked = Object.fromEntries(Object.entries(questions)
-    .map(([id, instructions]) => [id, { type: 'noul', instructions }]));
-  const body = JSON.stringify({ model: dep.model, state: {}, questions: asked, images });
+  const asked = questions;
+  const body = JSON.stringify({ model: dep.model, state, questions: asked,
+    ...(images.length ? { images } : {}) });
   const headers = { 'content-type': 'application/json',
     ...(dep.key ? { authorization: `Bearer ${dep.key}` } : {}) };
   const started = Date.now();
@@ -58,10 +73,11 @@ export async function ask(dep, images, questions, {
       throw new Error(`System 1 replied without answers: ${JSON.stringify(data).slice(0, 200)}`);
     }
     const answers = {};
-    for (const id of Object.keys(questions)) {
-      const p = data.answers[id]?.noul;
-      if (typeof p !== 'number') throw new Error(`System 1 gave no probability for ${id}`);
-      answers[id] = p;
+    for (const [id, q] of Object.entries(asked)) {
+      const a = data.answers[id];
+      const ok = q.type === 'choice' ? typeof a?.choice === 'string' : typeof a?.noul === 'number';
+      if (!ok) throw new Error(`System 1 gave no answer for ${id} (${q.type})`);
+      answers[id] = a;
     }
     const usage = { ms: Date.now() - started };
     if (Number.isInteger(data.usage?.input_tokens)) usage.inputTokens = data.usage.input_tokens;

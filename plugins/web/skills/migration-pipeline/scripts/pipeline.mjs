@@ -14,6 +14,7 @@ import { CHECKS } from './lib/checks.mjs';
 import { data } from './lib/data.mjs';
 import { discover } from './lib/discover.mjs';
 import { pick, sample } from './lib/pick.mjs';
+import { structure } from './lib/structure.mjs';
 import {
   commandOnPath, defaultExec, detect, install, missingReasons, readSetupJson, sourceReasons,
   unknownSources, writeSetupJson,
@@ -39,6 +40,8 @@ export const COMMANDS = [
       + ' choose a part\'s members among the candidate sheet (--by <who> --label --note)' },
   { name: 'triage', usage: '[status|stop]',
     help: 'the first look at every screenshot by a System 1 model (S1_URL, S1_MODEL); flags' },
+  { name: 'structure', usage: '<selection>',
+    help: 'lab: a selection\'s body bands into sections and children by a System 1 model' },
   { name: 'report', usage: '', help: 'render views/report.md and views/report.html' },
   { name: 'website', usage: '', help: 'refresh the website summary from the table' },
   { name: 'state', usage: '[--text]', help: 'every step\'s state, computed and written' },
@@ -47,7 +50,8 @@ const FLAGS = {
   setup: ['--install'], discover: ['--strategy', '--list'], access: ['--write'],
   pick: ['--count', '--exclude', '--audit', '--write'], sample: ['--count', '--write'],
   cache: ['--worker'],
-  chrome: ['--worker', '--by', '--label', '--note'], triage: ['--worker'], report: [],
+  chrome: ['--worker', '--by', '--label', '--note'], triage: ['--worker'], structure: [],
+  report: [],
   website: [],
   state: ['--text'],
 };
@@ -157,6 +161,9 @@ export async function main(argv, cwd = process.cwd()) {
       await writeState(cwd);
       return out;
     }
+    case 'structure':
+      if (!positional[0]) throw new Error('usage: structure <selection>');
+      return structure(cwd, positional[0]);
     case 'report': {
       const out = await renderReport(cwd);
       await writeState(cwd);
