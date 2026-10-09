@@ -12,7 +12,7 @@ import { list as listRuns, liveness } from './runs.mjs';
 import { list as listSelections } from './selections.mjs';
 import { read as readState } from './state.mjs';
 import { openStore } from './store.mjs';
-import { shotFile } from './trees.mjs';
+import { bodyFile, bodyThumbFile, shotFile } from './trees.mjs';
 import { readFragments, readWebsite } from './website.mjs';
 
 export const MAX_ROWS = 300;
@@ -68,6 +68,14 @@ details { margin: 8px 0; } summary { cursor: pointer; color: var(--mute); }
 .note ul { margin: 4px 0; padding-left: 20px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 10px; margin: 10px 0; }
+.sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px 10px; margin: 10px 0 20px; }
+.sheet figure { margin: 0; }
+.sheet a { display: block; max-height: 320px; overflow: hidden; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--bg); }
+.sheet img { display: block; width: 100%; height: auto; }
+.sheet figcaption { font-size: 11px; color: var(--mute); margin-top: 3px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
 .kpi { background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
   padding: 10px 12px; } .kpi b { display: block; font-size: 22px; }
 .kpi span { font-size: 12px; color: var(--mute); }
@@ -191,6 +199,29 @@ async function sectionPages(cwd, pages, selections) {
   return out;
 }
 
+/** The bodies: every readable page without its chrome, by group — the contact sheet. */
+async function sectionBodies(cwd, pages) {
+  const root = openStore(cwd).root;
+  const readable = pages.pages.filter((p) => p.cache && p.kind === 'page'
+    && p.verdict.status !== 'out' && !p.verdict.reasons.some((r) => r.kind === 'flag'));
+  const has = await Promise.all(readable.map((p) => exists(path.join(root, bodyThumbFile(p.id)))));
+  const shown = readable.filter((_, i) => has[i]).slice(0, MAX_ROWS);
+  const out = ['<h2 id="bodies">Bodies</h2>'];
+  if (!shown.length) return [...out, '<p>No body crops yet: the chrome step writes them.</p>'];
+  out.push(`<p>${shown.length} normal pages without their chrome, by group — what the next`
+    + ' level looks at. Click one for the full crop.</p>');
+  const groups = new Map();
+  for (const p of shown) groups.set(p.group ?? '', [...(groups.get(p.group ?? '') ?? []), p]);
+  for (const [group, list] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
+    out.push(`<h3>${code(group || '/')} — ${list.length}</h3>`, '<div class="sheet">',
+      ...list.map((p) => `<figure><a href="../${esc(bodyFile(p.id))}">`
+        + `<img src="../${esc(bodyThumbFile(p.id))}" loading="lazy"></a>`
+        + `<figcaption title="${esc(p.url)}">${esc(new URL(p.url).pathname)}</figcaption>`
+        + '</figure>'), '</div>');
+  }
+  return out;
+}
+
 function sectionFragments(fragments) {
   const out = ['<h2 id="fragments">Shared documents</h2>'];
   if (!fragments) return [...out, '<p>None found yet: the chrome step has not run.</p>'];
@@ -268,14 +299,16 @@ export async function renderHtml(cwd, { now = new Date() } = {}) {
     readWebsite(cwd), readTable(cwd), readFragments(cwd), readTypes(cwd), readInventory(cwd),
     listSelections(cwd), listRuns(cwd), notesIndex(cwd).then((i) => i.notes),
   ]);
-  const nav = ['state', 'website', 'pages', 'fragments', 'elements', 'runs', 'notes']
+  const nav = ['state', 'website', 'pages', 'bodies', 'fragments', 'elements', 'runs',
+    'notes']
     .map((id) => `<a href="#${id}">${id}</a>`).join(' · ');
   const body = [
     `<h1>${esc(migration.source.scope)}</h1>`,
     `<p class="lead">Migration ${code(migration.id)} · ${nav}</p>`,
     ...sectionState(state), ...sectionWebsite(site),
     ...await sectionPages(cwd, pages, selections),
-    ...sectionFragments(fragments), ...sectionElements(types, inventory), ...sectionRuns(runs),
+    ...await sectionBodies(cwd, pages), ...sectionFragments(fragments),
+    ...sectionElements(types, inventory), ...sectionRuns(runs),
     ...await sectionNotes(cwd, notes),
     `<footer>Rendered ${when(now.toISOString())} from migration/ — regenerate with`
       + ` ${code('migration.mjs report --html')}; do not edit.</footer>`,

@@ -39,6 +39,10 @@ register('pages/visual-tree', 1, 'derived', {
 /** Above this, Chrome's full-page screenshot repeats the top and loses the bottom. */
 export const SCREENSHOT_LIMIT = 16384;
 export const shotFile = (pageId) => `pages/${pageId}/shots/page.jpg`;
+/** The page without its chrome: the screenshot from the header's bottom to the footer's top. */
+export const bodyFile = (pageId) => `pages/${pageId}/shots/body.jpg`;
+export const bodyThumbFile = (pageId) => `pages/${pageId}/shots/body-thumb.jpg`;
+export const BODY_THUMB_WIDTH = 320;
 
 /** Stores a page's tree; `minWidth` first so the head of the file carries it. */
 export function write(cwd, pageId, { minWidth, url, capturedAt, tree, text, nodeMap,

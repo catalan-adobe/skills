@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -45,6 +45,25 @@ function siteTree(n) {
 }
 const urlOf = (n) => `${O}${n === 10 ? 'campaign' : n >= 8 ? 'blog' : 'p'}/${n}.html`;
 
+/** A stand-in for sharp: knows the screenshot's size, writes what it is asked to. */
+function fakeSharp(height) {
+  const written = [];
+  const sharp = () => {
+    const chain = {
+      metadata: async () => ({ width: 1280, height }),
+      extract: () => chain, resize: () => chain, jpeg: () => chain,
+      toFile: async (file) => {
+        written.push(file);
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, 'jpg');
+      },
+    };
+    return chain;
+  };
+  sharp.written = written;
+  return sharp;
+}
+
 /** A fake browser: answers each expression as the bundle and the page would. */
 const numberOf = (url) => Number(/\/(\d+)\.html/.exec(url)?.[1]);
 
@@ -54,6 +73,7 @@ function fakeIo(treeOf, { failOn = [], pageOf = numberOf } = {}) {
   return {
     calls,
     treeBundle: '/bundle.js',
+    sharp: fakeSharp(3131),
     sleep: async () => {},
     startProxy: async ({ offline }) => {
       calls.proxies.push(offline);
@@ -116,6 +136,10 @@ test('the pure pieces: expressions, node finding, fragments of variants, flags',
   const tree = siteTree(1);
   assert.equal(findNode(tree, ['div.siteFooter']).id, 'xf-1abcdef');
   assert.equal(findNode(tree, ['nope']), null);
+  const twice = findNode(tree, ['div.experiencefragment'], { y: 2500, bottomOffset: 0 });
+  assert.equal(twice.bounds.y, 3131 - 600, 'two matches: the one near the bottom is the footer');
+  assert.equal(findNode(tree, ['div.experiencefragment'], { y: 53, bottomOffset: 3000 }).bounds.y,
+    53, 'the one near the top is the header band');
   const variants = [
     { members: [{ selector: '#u', bounds: box(0, 53) }], optional: [{ selector: '.cta' }],
       pages: ['a', 'b'] },
@@ -194,6 +218,9 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   assert.deepEqual([p1Facts.scrollHeight, p1Facts.shot], [3131, `pages/${p1.id}/shots/page.jpg`]);
   assert.deepEqual(Object.keys(p1Facts.timings), ['goto', 'prepare', 'tree', 'shot'],
     'every phase timed');
+  const bodies = io.sharp.written.filter((f) => f.endsWith('/body.jpg')).length;
+  assert.equal(bodies, 9, 'a body crop per page with a screenshot (not the tall one)');
+  assert.ok(io.sharp.written.some((f) => f.endsWith(`${p1.id}/shots/body-thumb.jpg`)));
   assert.ok(io.calls.shots.some(([f]) => f.endsWith(`${p1.id}/shots/page.jpg`)));
   assert.equal(io.calls.shots.filter(([f]) => f.endsWith('page.jpg')).length, 9,
     'not the tall one');
@@ -208,6 +235,10 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   const [run] = await runs.list(cwd, { step: 'chrome' });
   assert.equal(run.state, 'done');
   assert.deepEqual(await pending(cwd), [], 'detection matches the stored trees');
+  await rm(path.join(cwd, 'migration', trees.bodyFile(p1.id)));
+  assert.deepEqual(await pending(cwd), ['detect'], 'a body crop missing: detect again');
+  await workerMain(cwd, { io: fakeIo(siteTree) });
+  assert.deepEqual(await pending(cwd), []);
   assert.deepEqual(await check(cwd), { pass: true });
   // A new cached page: one tree to capture, then a stale detection; a rerun captures it only.
   await pages.upsert(cwd, [{ url: `${O}not-cached.html`, cache: { at: AT, path: 'y',

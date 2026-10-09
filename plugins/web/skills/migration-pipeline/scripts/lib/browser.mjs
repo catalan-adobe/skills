@@ -3,11 +3,22 @@
 // call goes through an injectable `io` so the loops can be tested without a browser.
 import { createHash } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { readSetupJson } from './setup.mjs';
+
+/** The image library setup installed under the project. */
+export function sharpOf(cwd) {
+  const req = createRequire(path.join(cwd, 'migration', '.work', 'node_modules', 'x.js'));
+  try {
+    return req('sharp');
+  } catch {
+    throw new Error('sharp is not installed under migration/.work; run pipeline setup --install');
+  }
+}
 
 /** A free port from `from` upward, held on no interface. */
 export async function freePort(from = 3001) {

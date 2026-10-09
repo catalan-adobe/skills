@@ -4,8 +4,8 @@
 // the structure; a page flagged by either is parked — odd, specific — until someone looks.
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import path from 'node:path';
+import { sharpOf } from './browser.mjs';
 import { readablePages } from './capture.mjs';
 import { data } from './data.mjs';
 import { ask, deployment } from './system1.mjs';
@@ -36,16 +36,6 @@ export const QUESTIONS_HASH = createHash('sha256').update(JSON.stringify(QUESTIO
   .digest('hex').slice(0, 8);
 export const asked = () => Object.fromEntries(Object.entries(QUESTIONS)
   .map(([id, q]) => [id, `${q} ${LOOK}`]));
-
-/** The image library setup installed under the project. */
-export function sharpOf(cwd) {
-  const req = createRequire(path.join(cwd, 'migration', '.work', 'node_modules', 'x.js'));
-  try {
-    return req('sharp');
-  } catch {
-    throw new Error('sharp is not installed under migration/.work; run pipeline setup --install');
-  }
-}
 
 /**
  * The screenshot cut top to bottom into at most four slices of 1280 × 768 (one image is

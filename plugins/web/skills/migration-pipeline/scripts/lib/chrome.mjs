@@ -4,22 +4,24 @@
 // part, each fragment's composition (its bands as sections), every page's composition with
 // the fragments it carries, a flag on pages without, and crops as evidence.
 import { createHash } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { access, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import {
-  cacheDir, defaultIo, parseEval, playwright, proxyStarter, sessionName, tools, viaProxy,
-  writeBrowserConfig,
+  cacheDir, defaultIo, parseEval, playwright, proxyStarter, sessionName, sharpOf, tools,
+  viaProxy, writeBrowserConfig,
 } from './browser.mjs';
 import {
   MIN_WIDTH, captureTrees, pagesToCapture, preparedAtTop, readablePages,
 } from './capture.mjs';
 import { pageExpression } from './cache.mjs';
+import { PARTS } from './chrome-parts.mjs';
 import { candidates } from './chrome-candidates.mjs';
+import { bodyEdges, cropBody } from './crops.mjs';
 import { detectChrome } from './chrome-detect.mjs';
 import { data } from './data.mjs';
 
 export const METHOD = 'visual-tree';
-export const PARTS = ['header', 'footer'];
+export { PARTS };
 export const OUTLINE = '4px solid #e00';
 
 /** The detector's input: every readable page's tree, with the group it belongs to. */
@@ -38,17 +40,29 @@ async function captures(cwd) {
 export const inputsHash = (ids, minWidth) => createHash('sha256')
   .update(`${minWidth}|${[...ids].sort().join(' ')}`).digest('hex').slice(0, 16);
 
-/** The first node of a tree whose selector is one of `selectors`; null when none. */
-export function findNode(tree, selectors) {
+/**
+ * The node of a tree whose selector is one of `selectors` — and, when several match (a
+ * selector learned on one page is not unique on every other), the one nearest the member's
+ * known place: its distance from the top, or from the bottom of the page. Null when none.
+ */
+export function findNode(tree, selectors, near = null) {
   const wanted = new Set(selectors);
+  const matches = [];
   const stack = [tree];
   while (stack.length) {
     const node = stack.shift();
-    if (wanted.has(node.selector)) return node;
-    if ((node.collapsed ?? []).some((c) => wanted.has(c.selector))) return node;
+    if (wanted.has(node.selector) || (node.collapsed ?? []).some((c) => wanted.has(c.selector))) {
+      matches.push(node);
+    }
     stack.push(...(node.children ?? []));
   }
-  return null;
+  if (!near || matches.length < 2) return matches[0] ?? null;
+  const pageHeight = tree.bounds.height;
+  const distance = (n) => Math.min(
+    Math.abs(n.bounds.y - near.y),
+    Math.abs((pageHeight - (n.bounds.y + n.bounds.height)) - near.bottomOffset),
+  );
+  return matches.sort((a, b) => distance(a) - distance(b))[0];
 }
 
 const union = (boxes) => {
@@ -101,7 +115,8 @@ export function pageComposition(capture, fragments, at) {
   const placed = [];
   for (const f of fragments) {
     if (!f.variant.pages.includes(capture.url)) continue;
-    const nodes = f.variant.members.map((m) => findNode(capture.tree, [m.selector, ...m.selectors]))
+    const nodes = f.variant.members
+      .map((m) => findNode(capture.tree, [m.selector, ...m.selectors], m.bounds))
       .filter(Boolean);
     const first = nodes[0] ?? null;
     placed.push({
@@ -272,8 +287,16 @@ export async function detect(cwd, { io, run, access, visit, minWidth = MIN_WIDTH
     // eslint-disable-next-line no-await-in-loop
     await composition.writeFragment(cwd, f.id, fragmentComposition(f, at));
   }
-  await composition.writeMany(cwd, all.map((c) => (
-    { pageId: c.page.id, composition: pageComposition(c, fragments, at) })));
+  const compositions = all.map((c) => (
+    { pageId: c.page.id, composition: pageComposition(c, fragments, at) }));
+  await composition.writeMany(cwd, compositions);
+  await runs.update(cwd, run.id, { current: 'body crops' });
+  const plain = fragments.map(({ variant, ...f }) => f);
+  for (const [i, c] of all.entries()) {
+    const edges = bodyEdges(compositions[i].composition, plain, c.scrollHeight ?? 0);
+    // eslint-disable-next-line no-await-in-loop
+    await cropBody(cwd, c.page.id, edges, { sharp: io.sharp, trees });
+  }
   const limit = trees.SCREENSHOT_LIMIT;
   const tall = all.filter((c) => c.scrollHeight > limit)
     .map((c) => ({ id: c.page.id, scrollHeight: c.scrollHeight }));
@@ -287,7 +310,10 @@ export async function detect(cwd, { io, run, access, visit, minWidth = MIN_WIDTH
   return { summary, fragments: fragments.length };
 }
 
-/** Pending work: trees to capture, or a detection older than the stored trees. */
+/**
+ * Pending work: trees to capture, or a detection older than the stored trees, or a page
+ * with a screenshot and no body crop (the detection writes them).
+ */
 export async function pending(cwd) {
   const { website, trees } = await data(cwd);
   const toCapture = await pagesToCapture(cwd);
@@ -296,7 +322,21 @@ export async function pending(cwd) {
   const stored = (await trees.list(cwd)).filter((id) => readable.has(id));
   if (!stored.length) return [];
   const fragments = await website.readFragments(cwd);
-  return fragments?.method.inputs === inputsHash(stored, MIN_WIDTH) ? [] : ['detect'];
+  if (fragments?.method.inputs !== inputsHash(stored, MIN_WIDTH)) return ['detect'];
+  const root = path.join(cwd, 'migration');
+  const has = (rel) => access(path.join(root, rel)).then(() => true, () => false);
+  const { composition } = await data(cwd);
+  for (const id of stored) {
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await has(trees.shotFile(id))) || await has(trees.bodyFile(id))) continue;
+    // No crop: a body of no height (header meeting footer) is not one that is missing.
+    // eslint-disable-next-line no-await-in-loop
+    const [comp, tree] = await Promise.all([composition.read(cwd, id), trees.read(cwd, id)]);
+    if (!comp || !fragments) return ['detect'];
+    const edges = bodyEdges(comp, fragments.fragments, tree?.page?.scrollHeight ?? 0);
+    if (edges.bottom - edges.top >= 2) return ['detect'];
+  }
+  return [];
 }
 
 /** Done when every readable page has a tree and the fragments were detected from them. */
@@ -327,6 +367,7 @@ export async function realIo(cwd) {
   return {
     ...defaultIo,
     treeBundle,
+    sharp: sharpOf(cwd),
     startProxy: proxyStarter(proxyScript, cacheDir(cwd), defaultIo, { also }),
     browsers,
     browser: browsers[0],
