@@ -17,8 +17,10 @@ export const MAX_CONSECUTIVE_FAILURES = 5;
  * is taken. Bumped when that changes; a tree taken by an older version is stale.
  *   2 — an empty header/footer landmark is a hole; the page is at the top, instantly,
  *       before the tree is read (sticky headers were measured mid-scroll).
+ *   3 — page-tree walks through `display: contents` elements (a whole MDN page had been
+ *       sixteen nodes).
  */
-export const CAPTURE_VERSION = 2;
+export const CAPTURE_VERSION = 3;
 export const captureExpression = (minWidth = MIN_WIDTH) => (
   `JSON.stringify(window.__visualTree.captureVisualTree(${minWidth}))`);
 export const HEIGHT_EXPRESSION = 'document.documentElement.scrollHeight';

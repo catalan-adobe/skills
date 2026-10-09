@@ -28,9 +28,9 @@ const cli = async (cwd, ...args) => {
 test('the layer is found beside this skill; every module loads', async () => {
   assert.match(await layerDir(), /migration-data\/scripts\/lib$/);
   const d = await data(await mkdtemp(path.join(os.tmpdir(), 'mpipe-x-')));
-  assert.deepEqual(Object.keys(d).sort(), ['chrome', 'composition', 'elements', 'inventory',
-    'migration', 'notes', 'pages', 'runs', 'selections', 'state', 'store', 'trees', 'triage',
-    'views', 'website']);
+  assert.deepEqual(Object.keys(d).sort(), ['bands', 'chrome', 'composition', 'elements',
+    'inventory', 'migration', 'notes', 'pages', 'runs', 'selections', 'state', 'store', 'trees',
+    'triage', 'views', 'website']);
 });
 
 test('collect: sitemaps and crawls through the crawler, a list from a file', async () => {

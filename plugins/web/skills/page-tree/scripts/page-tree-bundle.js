@@ -30,6 +30,7 @@ window.__visualTree = (() => {
     formatTreeAsText: () => formatTreeAsText,
     isContainedIn: () => isContainedIn,
     isDefaultBackground: () => isDefaultBackground,
+    layoutChildren: () => layoutChildren,
     parseRgb: () => parseRgb,
     processTree: () => processTree,
     promoteEscapedNodes: () => promoteEscapedNodes,
@@ -298,6 +299,16 @@ window.__visualTree = (() => {
       (lab1[0] - lab2[0]) ** 2 + (lab1[1] - lab2[1]) ** 2 + (lab1[2] - lab2[2]) ** 2
     );
   }
+  // An element with `display: contents` has no box of its own: its children are laid
+  // out as its parent's. For the tree it is transparent, its children walked in its place.
+  function layoutChildren(element, getStyle = (el) => window.getComputedStyle(el)) {
+    const out = [];
+    for (const child of element.children) {
+      if (getStyle(child).display === "contents") out.push(...layoutChildren(child, getStyle));
+      else out.push(child);
+    }
+    return out;
+  }
   function buildVisualNode(element, minWidth) {
     if (element.id?.startsWith("vibe-blueprint-")) {
       return {
@@ -397,7 +408,8 @@ window.__visualTree = (() => {
         }
       }
     }
-    for (const child of element.children) {
+    const laidOut = layoutChildren(element);
+    for (const child of laidOut) {
       const childRect = child.getBoundingClientRect();
       const passesWidth = childRect.width >= minWidth;
       const isFixed = !passesWidth && window.getComputedStyle(child).position === "fixed";
@@ -410,7 +422,7 @@ window.__visualTree = (() => {
       }
     }
     const allChildBoxes = [];
-    for (const child of element.children) {
+    for (const child of laidOut) {
       if (child.id?.startsWith("vibe-blueprint-")) continue;
       const childStyle = window.getComputedStyle(child);
       const hidden = childStyle.display === "none" || childStyle.visibility === "hidden" || childStyle.opacity === "0";

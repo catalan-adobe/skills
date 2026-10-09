@@ -237,3 +237,17 @@ test('processTree: a fixed element is never absorbed by a collapse; it floats to
     ['#utility', 'div.content', 'div.footer', '#cmp']);
   assert.deepEqual(plain(nodeMap.rc4.overlay), { occluding: ['rc2'] });
 });
+
+test('layoutChildren walks through display: contents elements to the boxes they hold', () => {
+  const { layoutChildren } = window.__visualTree;
+  const el = (name, display, children = []) => ({ name, display, children });
+  const main = el('main', 'contents', [el('article', 'block'), el('aside', 'block')]);
+  const wrapper = el('div', 'block', [el('nav', 'block'), main, el('footer', 'block')]);
+  const styles = (e) => ({ display: e.display });
+  // Arrays born in the vm realm compare by value once copied into this one.
+  assert.deepEqual([...layoutChildren(wrapper, styles).map((e) => e.name)],
+    ['nav', 'article', 'aside', 'footer'], 'main is transparent; its children take its place');
+  const nested = el('div', 'block',
+    [el('a', 'contents', [el('b', 'contents', [el('c', 'block')])])]);
+  assert.deepEqual([...layoutChildren(nested, styles).map((e) => e.name)], ['c']);
+});

@@ -4,6 +4,7 @@
 import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import * as bands from './lib/bands.mjs';
 import * as elements from './lib/elements.mjs';
 import * as inventory from './lib/inventory.mjs';
 import * as migration from './lib/migration.mjs';
@@ -51,6 +52,10 @@ export const COMMANDS = [
     help: 'render the annotation sheet for a selection: views/annotate-<selection>.html' },
   { name: 'verdicts', usage: '[import <file.json>]',
     help: 'the verdicts on pages; import what an annotation sheet exported' },
+  { name: 'annotate-bands', usage: '<selection>',
+    help: 'render the band correction sheet: views/annotate-bands-<selection>.html' },
+  { name: 'band-verdicts', usage: '[import <file.json>]',
+    help: 'the verdicts on bands; import what a band sheet exported' },
 ];
 
 const FLAGS = {
@@ -62,7 +67,7 @@ const FLAGS = {
   page: [], 'decide-page': [], selections: [], website: [], types: ['--undecided'],
   'decide-type': ['--notes'], inventory: [], note: ['--page'], notes: ['--step'],
   access: ['--note'],
-  report: ['--html'], annotate: [], verdicts: [],
+  report: ['--html'], annotate: [], verdicts: [], 'annotate-bands': [], 'band-verdicts': [],
 };
 const BOOLEAN = new Set(['--text', '--cached', '--uncached', '--undecided', '--html']);
 
@@ -200,6 +205,16 @@ export async function main(argv, cwd = process.cwd()) {
     case 'annotate':
       if (!positional[0]) throw new Error('usage: annotate <selection>');
       return views.writeAnnotate(cwd, positional[0]);
+    case 'annotate-bands':
+      if (!positional[0]) throw new Error('usage: annotate-bands <selection>');
+      return views.writeAnnotateBands(cwd, positional[0]);
+    case 'band-verdicts': {
+      if (positional[0] === 'import') {
+        if (!positional[1]) throw new Error('usage: band-verdicts import <file.json>');
+        return bands.importVerdicts(cwd, JSON.parse(await readFile(positional[1], 'utf8')));
+      }
+      return (await bands.readVerdicts(cwd)) ?? { verdicts: [] };
+    }
     case 'verdicts': {
       if (positional[0] === 'import') {
         const file = positional[1];
