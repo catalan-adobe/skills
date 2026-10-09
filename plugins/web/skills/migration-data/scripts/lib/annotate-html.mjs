@@ -6,7 +6,7 @@ import { esc } from './report-html.mjs';
 import { read as readSelection } from './selections.mjs';
 import { read as readTable } from './pages.mjs';
 import { bodyFile, bodyThumbFile } from './trees.mjs';
-import { CATEGORIES, CONSTRUCTS, LAYOUTS } from './verdicts.mjs';
+import { CATEGORIES, CONSTRUCTS, LAYOUTS, PROBLEMS } from './verdicts.mjs';
 import { read as readVerdicts } from './verdicts.mjs';
 
 const CSS = `
@@ -20,7 +20,8 @@ main { max-width: 1400px; margin: 0 auto; padding: 20px; }
 .page.done { background: #f3faf3; }
 .shot a { display: block; max-height: 520px; overflow: auto; border: 1px solid #ddd; }
 .shot img { width: 100%; display: block; }
-.shot .url { font-size: 12px; color: #666; word-break: break-all; margin-top: 4px; }
+.shot .url { font-size: 16px; font-weight: 600; word-break: break-all; margin: 0 0 6px; }
+.shot .url small { color: #666; font-weight: 400; }
 fieldset { border: 0; padding: 0; margin: 0 0 10px; }
 legend { font-weight: 600; margin-bottom: 4px; }
 label.opt { display: inline-block; margin: 2px 10px 2px 0; }
@@ -35,6 +36,8 @@ const state = JSON.parse(localStorage.getItem(KEY) || '{}');
 const pages = [...document.querySelectorAll('.page')];
 const read = (el) => {
   const v = { page: el.dataset.page, constructs: [] };
+  const problem = el.querySelector('[name=problem]').value;
+  if (problem) v.problem = problem;
   v.sameAs = el.querySelector('[name=sameAs]').value || null;
   v.category = el.querySelector('[name=category]').value;
   v.layout = el.querySelector('[name=layout]').value;
@@ -47,6 +50,7 @@ const read = (el) => {
 };
 const write = (el, v) => {
   if (!v) return;
+  el.querySelector('[name=problem]').value = v.problem || '';
   el.querySelector('[name=sameAs]').value = v.sameAs || '';
   el.querySelector('[name=category]').value = v.category || '';
   el.querySelector('[name=layout]').value = v.layout || '';
@@ -55,7 +59,7 @@ const write = (el, v) => {
   el.querySelector('[name=bands]').value = v.bands ?? '';
   el.querySelector('[name=note]').value = v.note || '';
 };
-const complete = (v) => Boolean(v.category && v.layout);
+const complete = (v) => Boolean(v.problem || (v.category && v.layout));
 const refresh = () => {
   let n = 0;
   for (const el of pages) {
@@ -99,18 +103,27 @@ export async function renderAnnotate(cwd, selectionName) {
     + pages.slice(0, i).map((p) => `<option value="${p.id}">${esc(short(p))}</option>`).join('')
     + '</select>';
   const cards = pages.map((p, i) => `<section class="page" data-page="${p.id}">
-<div class="shot"><a href="../${esc(bodyFile(p.id))}" target="_blank">
-<img src="../${esc(bodyThumbFile(p.id))}" loading="lazy"></a>
-<div class="url">${i + 1}. ${esc(short(p))}</div></div>
+<div class="shot"><div class="url"><small>${i + 1}.</small> ${esc(short(p))}</div>
+<a href="../${esc(bodyFile(p.id))}" target="_blank">
+<img src="../${esc(bodyThumbFile(p.id))}" loading="lazy"></a></div>
 <div>
+<fieldset><legend>Problem</legend>${options('problem', PROBLEMS)}
+<span class="hint">capture-fault: the picture is wrong (cut short, blank, an overlay) ·
+odd: not a page of the site's kind (a tool, a campaign, a shell). Set it and move on;
+the rest may stay empty.</span></fieldset>
 <fieldset><legend>Same template as</legend>${sameAs(i)}
 <span class="hint">an earlier page on this sheet whose structure this one repeats</span></fieldset>
 <fieldset><legend>Category</legend>${options('category', CATEGORIES)}
-<span class="hint">document: a plain document says it all · bands: recurring constructs
-(hero, cards, CTA) · composed: columns, tabs, tools, forms</span></fieldset>
+<span class="hint">of the main content only — document: a plain document says it all ·
+bands: recurring constructs (hero, cards, CTA band) · composed: columns, tabs, tools,
+forms</span></fieldset>
 <fieldset><legend>Layout</legend>${options('layout', LAYOUTS)}
-<span class="hint">a side column persisting beside the content</span></fieldset>
-<fieldset><legend>Constructs</legend>${CONSTRUCTS.map((c) => (
+<span class="hint">a narrower side column of secondary content running beside the main
+content: main-left (a side nav, a contents or fact column on the left) · main-right
+(related links, a table of contents, a share rail on the right) · both · single (none).
+A hero or a card grid is not a layout, it is a construct.</span></fieldset>
+<fieldset><legend>Constructs</legend><span class="hint">in the main content; a table of
+contents in a side column still counts as toc</span><br>${CONSTRUCTS.map((c) => (
     `<label class="opt"><input type="checkbox" name="construct" value="${c}"> ${c}</label>`))
     .join('')}
 </fieldset>

@@ -12,6 +12,9 @@ export const CATEGORIES = ['document', 'bands', 'composed'];
 export const LAYOUTS = ['single', 'main-left', 'main-right', 'both'];
 export const CONSTRUCTS = ['hero', 'cards', 'columns', 'accordion-tabs', 'carousel', 'form',
   'table', 'embed', 'cta-band', 'gallery', 'metadata-box', 'toc'];
+// A page a person could not judge as a page: the picture is wrong, or it is not of the
+// site's kind. With a problem set, the other fields may stay empty.
+export const PROBLEMS = ['capture-fault', 'odd'];
 
 const idPattern = (prefix) => ({ type: 'string', pattern: `^${prefix}-[0-9a-f]{12}$` });
 
@@ -26,12 +29,13 @@ register('pages/verdicts', 1, 'decision', {
       type: 'array',
       items: {
         type: 'object',
-        required: ['page', 'by', 'at', 'category', 'layout', 'constructs'],
+        required: ['page', 'by', 'at', 'constructs'],
         additionalProperties: false,
         properties: {
           page: idPattern('pag'),
           by: { type: 'string' },
           at: { type: 'string', format: 'date-time' },
+          problem: { enum: PROBLEMS },
           sameAs: { type: ['string', 'null'], pattern: '^pag-[0-9a-f]{12}$' },
           category: { enum: CATEGORIES },
           layout: { enum: LAYOUTS },
@@ -49,8 +53,11 @@ export const read = (cwd) => openStore(cwd).read(FILE, SCHEMA);
 const summarise = (verdicts) => {
   const by = (k) => CATEGORIES.map((c) => `${verdicts.filter((v) => v[k] === c).length} ${c}`)
     .join(', ');
-  const templates = verdicts.filter((v) => !v.sameAs).length;
-  return `${verdicts.length} page(s) judged: ${by('category')}; ${templates} template(s)`;
+  const judged = verdicts.filter((v) => !v.problem);
+  const templates = judged.filter((v) => !v.sameAs).length;
+  const problems = verdicts.length - judged.length;
+  return `${verdicts.length} page(s): ${by('category')}; ${templates} template(s)`
+    + (problems ? `; ${problems} with a problem` : '');
 };
 
 /**
@@ -65,8 +72,14 @@ export async function upsert(cwd, entries, { by }) {
   const at = store.now().toISOString();
   const byPage = new Map(current.verdicts.map((v) => [v.page, v]));
   for (const e of entries) {
-    const v = { page: e.page, by, at, sameAs: e.sameAs ?? null, category: e.category,
-      layout: e.layout, constructs: [...new Set(e.constructs ?? [])] };
+    if (!e.problem && !(e.category && e.layout)) {
+      throw new Error(`${e.page}: a verdict says category and layout, or names a problem`);
+    }
+    const v = { page: e.page, by, at, sameAs: e.sameAs ?? null,
+      constructs: [...new Set(e.constructs ?? [])] };
+    if (e.problem) v.problem = e.problem;
+    if (e.category) v.category = e.category;
+    if (e.layout) v.layout = e.layout;
     if (Number.isInteger(e.bands)) v.bands = e.bands;
     if (e.note) v.note = e.note;
     byPage.set(e.page, v);

@@ -19,11 +19,18 @@ test('verdicts: a decision per page, closed words, the latest word wins', async 
     /name who judged/);
   await assert.rejects(upsert(cwd, [{ page: a, category: 'article', layout: 'single' }],
     { by: 'me' }), /category: must be one of/);
+  await assert.rejects(upsert(cwd, [{ page: a, category: 'document' }], { by: 'me' }),
+    /says category and layout, or names a problem/);
+  const flagged = await upsert(cwd, [{ page: a, problem: 'capture-fault', note: 'cut short' }],
+    { by: 'me' });
+  assert.deepEqual([flagged.verdicts[0].problem, flagged.verdicts[0].category],
+    ['capture-fault', undefined]);
+  assert.match(flagged.summary, /1 with a problem$/);
   const first = await upsert(cwd, [
     { page: a, category: 'document', layout: 'main-right', constructs: ['toc', 'toc'], bands: 3 },
     { page: b, sameAs: a, category: 'document', layout: 'main-right', note: 'same as a' },
   ], { by: 'me' });
-  assert.equal(first.summary, '2 page(s) judged: 2 document, 0 bands, 0 composed; 1 template(s)');
+  assert.equal(first.summary, '2 page(s): 2 document, 0 bands, 0 composed; 1 template(s)');
   assert.deepEqual(first.verdicts[0].constructs, ['toc'], 'once each');
   assert.equal(first.verdicts[1].sameAs, a);
   const again = await importFile(cwd, { by: 'you', verdicts: [

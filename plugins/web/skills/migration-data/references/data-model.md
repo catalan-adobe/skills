@@ -258,7 +258,10 @@ read ("fifty pages, one per group") and remade.
 
 Ground truth for the bench: a person's word on what a page is, from its body crop, in
 half a minute — `sameAs` (an earlier page whose template this one repeats, or none),
-`category` (`document` · `bands` · `composed`: how much of it a plain document expresses),
+a `problem` when the page cannot be judged as one (`capture-fault`: the picture is wrong;
+`odd`: not of the site's kind — the other fields may then stay empty),
+`category` (`document` · `bands` · `composed`: how much of the main content a plain
+document expresses; side columns are said by the layout only),
 `layout` (`single` · `main-left` · `main-right` · `both`: a side column persisting beside
 the content), `constructs` (hero, cards, columns, accordion-tabs, carousel, form, table,
 embed, cta-band, gallery, metadata-box, toc), a rough `bands` count, a note; with who
