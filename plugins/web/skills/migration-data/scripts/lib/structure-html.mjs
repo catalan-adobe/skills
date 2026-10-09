@@ -62,10 +62,39 @@ function overlay(structure, scale, H) {
     parts.push(`<rect x="2" y="${y}" width="${SHEET_WIDTH - 4}" height="${h}" fill="none"`
       + ` stroke="${colour}" stroke-width="3"/>`);
     const label = `${b.id} · ${b.kind}${b.layout !== 'single' ? ` · ${b.layout}` : ''}`
-      + (b.members.length > 1 ? ` · ${b.members.join('+')}` : '');
+      + (b.members.length > 1 ? ` · ${b.members.join('+')}` : '') + (b.leaf ? ' · leaf' : '');
     parts.push(`<text x="8" y="${y + 14}" font-size="12" font-family="sans-serif"`
       + ` font-weight="600" fill="${colour}" stroke="#fff" stroke-width="3" paint-order="stroke">`
       + `${esc(label)}</text>`);
+    // level 2: the side columns hatched, the children dashed inside the band
+    const sides = (x) => [...(x.side ?? []), ...(x.children ?? []).flatMap(sides)];
+    for (const sd of sides(b)) {
+      const [sx, sy] = [Math.round(sd.x * scale), Math.round(sd.top * scale)];
+      const [sw, sh] = [Math.round(sd.w * scale), Math.round((sd.bottom - sd.top) * scale)];
+      parts.push(`<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}"`
+        + ' fill="rgba(10,79,209,0.08)" stroke="#0a4fd1" stroke-width="1"'
+        + ' stroke-dasharray="2 3"/>');
+      parts.push(`<text x="${sx + sw - 4}" y="${sy + 12}" font-size="10" font-family="sans-serif"`
+        + ' fill="#0a4fd1" text-anchor="end" stroke="#fff" stroke-width="3" paint-order="stroke">'
+        + 'side</text>');
+    }
+    const drawChildren = (children, depth) => {
+      for (const k of children) {
+        const ky = Math.round(k.top * scale);
+        const kh = Math.max(2, Math.round((k.bottom - k.top) * scale));
+        const kc = COLOUR[k.kind] ?? '#999';
+        const inset = 14 * depth;
+        parts.push(`<rect x="${inset}" y="${ky + depth}" width="${SHEET_WIDTH - 2 * inset}"`
+          + ` height="${Math.max(2, kh - 2 * depth)}" fill="none" stroke="${kc}" stroke-width="1.5"`
+          + ' stroke-dasharray="6 4"/>');
+        const kl = `${k.id} ${k.kind}${k.layout !== 'single' ? ` · ${k.layout}` : ''}`;
+        parts.push(`<text x="${SHEET_WIDTH - inset - 4}" y="${ky + 11 + 12 * (depth - 1)}"`
+          + ` font-size="11" font-family="sans-serif" fill="${kc}" text-anchor="end" stroke="#fff"`
+          + ` stroke-width="3" paint-order="stroke">${esc(kl)}</text>`);
+        if (k.children) drawChildren(k.children, depth + 1);
+      }
+    };
+    drawChildren(b.children ?? [], 1);
   }
   return `<svg width="${SHEET_WIDTH}" height="${Math.round(H * scale)}">${parts.join('')}</svg>`;
 }
@@ -75,11 +104,17 @@ const outline = (structure) => structure.bands.map((b) => (
 
 function table(structure) {
   const bandOf = new Map(structure.bands.flatMap((b) => b.members.map((m) => [m, b.id])));
-  const rows = structure.candidates.map((c) => {
+  const mark = (k) => {
+    for (const m of k.members) bandOf.set(m, k.id);
+    (k.children ?? []).forEach(mark);
+  };
+  for (const b of structure.bands) (b.children ?? []).forEach(mark);
+  const rows = [...structure.candidates, ...(structure.children ?? [])].map((c) => {
     const p = c.probabilities ?? {};
-    const probs = `default ${pct(p.default_content)} · block ${pct(p.block)} · section`
-      + ` ${pct(p.section)} · title↑ ${pct(p.title_above)}`;
-    const rule = c.kind !== c.judged ? `<span class="rule">model said ${esc(c.judged)}</span>` : '';
+    const probs = c.probabilities ? `default ${pct(p.default_content)} · block ${pct(p.block)}`
+      + ` · section ${pct(p.section)} · title↑ ${pct(p.title_above)}` : '';
+    const rule = c.rule ? `<span class="rule">${esc(c.rule)}</span>`
+      : c.kind !== c.judged ? `<span class="rule">model said ${esc(c.judged)}</span>` : '';
     const merge = c.merge === null || c.id === structure.candidates[0]?.id ? ''
       : c.empty ? '<small>empty</small>' : `${pct(c.merge)} %`;
     const f = c.facts ?? {};

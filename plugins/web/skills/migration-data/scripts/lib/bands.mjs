@@ -91,6 +91,7 @@ register('pages/structure', 2, 'derived', {
     body: { type: 'object' },
     candidates: { type: 'array', items: { type: 'object' } },
     bands: { type: 'array', items: { type: 'object' } },
+    children: { type: 'array', items: { type: 'object' } },
     usage: { type: 'object' },
   },
 });

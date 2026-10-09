@@ -22,8 +22,15 @@ const TREE = node('BODY', 'body', box(0, 0, 1280, 4000), [
     node('DIV', 'main > div.wrap', box(0, 100, 1280, 3700), [
       node('DIV', 'div.hero', box(0, 100, 1280, 600)),
       node('DIV', 'div.breadcrumb', box(0, 700, 1280, 60)),
-      node('DIV', 'div.article', box(60, 800, 760, 3000)),
-      node('ASIDE', 'aside.side', box(900, 800, 320, 900)),
+      node('DIV', 'div.article', box(60, 800, 760, 3000), [
+        node('H1', 'div.article > h1', box(60, 820, 700, 40)),
+        ...Array.from({ length: 6 }, (_, i) => node('P', `div.article > p:nth-of-type(${i + 1})`,
+          box(60, 900 + i * 300, 700, 200))),
+      ]),
+      node('ASIDE', 'aside.side', box(900, 800, 320, 900), [
+        node('H3', 'aside.side > h3', box(900, 820, 300, 30)),
+        node('UL', 'aside.side > ul', box(900, 860, 300, 60)),
+      ]),
     ]),
   ]),
   node('FOOTER', 'body > footer', box(0, 3800, 1280, 200)),
@@ -142,6 +149,11 @@ test('derive: merges by the answer, mixed kinds make a section, the widest layou
     ['B1', ['C1', 'C2'], 'section', 'columns', 0, 400],
     ['B2', ['C3'], 'default_content', 'single', 400, 500],
   ]);
+  const inside = derive(cands, [d('default_content', 0), d('block', MERGE, 'columns'),
+    d('block', MERGE, 'columns')], { sameKind: true });
+  assert.deepEqual(inside.map((b) => [b.members, b.kind]),
+    [[['C1'], 'default_content'], [['C2', 'C3'], 'block']],
+    'inside a section a heading never joins the block below it; two block pieces do');
 });
 
 async function project() {
@@ -193,9 +205,9 @@ test('structurePage: candidates asked with facts and crops, bands derived, compo
       },
     };
     const out = await structure(cwd, 'ten', { io, dep: { model: 'fake' } });
-    assert.deepEqual(out, [{ id: page.id, candidates: 3, bands: 3, kinds: 'b d s/main-left',
-      tokens: 3000 }]);
-    assert.equal(asked.length, 3);
+    assert.deepEqual(out, [{ id: page.id, candidates: 3, bands: 3, kinds: 'b d s/main-left[d]',
+      children: 1, tokens: 3000 }]);
+    assert.equal(asked.length, 3, 'the section opens into one text run: default content, unasked');
     assert.deepEqual(asked[0].qs, ['is_default', 'is_block', 'is_section', 'title_above']);
     assert.deepEqual(asked[2].images, ['data:image/jpeg;base64,800-3800',
       'data:image/jpeg;base64,700-3800'], 'the band, then the previous above it');
@@ -211,8 +223,18 @@ test('structurePage: candidates asked with facts and crops, bands derived, compo
     const comp = await composition.read(cwd, page.id);
     assert.equal(comp.sections.length, 3);
     assert.deepEqual(comp.sections[2].style, { background: 'none', layout: 'main-left' });
-    assert.deepEqual(comp.sections[2].items.map((i) => i.role), ['content']);
+    assert.deepEqual(comp.sections[2].items.map((i) => [i.role, i.selector]), [
+      ['content', 'div.article > h1, div.article > p:nth-of-type(1),'
+        + ' div.article > p:nth-of-type(2), div.article > p:nth-of-type(3),'
+        + ' div.article > p:nth-of-type(4), div.article > p:nth-of-type(5),'
+        + ' div.article > p:nth-of-type(6)'],
+      ['content', 'aside.side'],
+    ], 'the text run as one item, the side column beside it');
     assert.equal(comp.sections[2].selector, 'div.article, aside.side');
+    assert.deepEqual(s.bands[2].children.map((k) => [k.id, k.kind]), [['B3.1', 'default_content']]);
+    assert.equal(s.children[0].rule, 'text run');
+    assert.equal(s.children[0].layout, 'single', 'a child\'s layout is its own, not the band\'s');
+    assert.equal(s.bands[2].side[0].selector, 'aside.side');
     assert.equal(comp.fragments.length, 2, 'the chrome stays as placed');
   });
 

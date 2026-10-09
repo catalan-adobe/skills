@@ -23,6 +23,14 @@ export const IMAGE_WIDTH = 1280; // crops are fitted in IMAGE_WIDTH × 0.6 IMAGE
 export const KINDS = ['default_content', 'block', 'section'];
 export const LAYOUTS = ['single', 'main-left', 'main-right', 'main-centre', 'columns'];
 
+// Level 2: a side column is a child narrower than this share of its container and taller
+// than this share of the band, at an edge; EDS default content is a run of these elements.
+export const MAX_DEPTH = 3; // sections are opened this deep: section → children → grandchildren
+export const SIDE_MAX_WIDTH = 0.4;
+export const SIDE_MIN_HEIGHT = 0.4; // of the band, starting in its upper fifth
+export const TEXT_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'PRE',
+  'BLOCKQUOTE', 'PICTURE', 'IMG', 'HR', 'A', 'SPAN', 'EM', 'STRONG', 'CODE', 'FIGURE', 'DL']);
+
 const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
 const count = (n) => WORDS[n] ?? 'many';
 
@@ -71,8 +79,79 @@ export function candidates(tree, body) {
       .map((n) => ({ x: n.bounds.x, w: n.bounds.width, selector: n.selector }))
       .sort((p, q) => p.x - q.x)
       .filter((p, j, all) => !all.slice(0, j).some((q) => Math.abs(q.x - p.x) < 40));
-    return { id: `C${i + 1}`, top: b.top, bottom: b.bottom, parts };
+    return { id: `C${i + 1}`, top: b.top, bottom: b.bottom, parts, nodes: b.nodes };
   });
+}
+
+/**
+ * The children of a section band, for level 2: the band's node's children inside it, side
+ * columns set aside (the layout), the rest cut into candidates as at level 1, then
+ * consecutive runs of text elements merged — in EDS, default content is such a run
+ * between blocks. A band merged from several candidates is opened into its members.
+ */
+export function open(band, cands, tree) {
+  const members = band.members.map((id) => cands.find((c) => c.id === id));
+  if (members.some((m) => !m)) return { side: [], children: [], leaf: true };
+  if (members.length > 1) {
+    return { side: [], children: members.map((c, i) => (
+      { ...c, id: `${band.id}.${i + 1}`, from: c.id })) };
+  }
+  const [c] = members;
+  const main = c.parts.length > 1 ? c.parts.reduce((a, p) => (p.w > a.w ? p : a)) : c.parts[0];
+  // The other parts beside the main one are side columns already.
+  const asides = c.parts.filter((p) => p !== main)
+    .map((p) => ({ selector: p.selector, x: p.x, w: p.w, top: band.top, bottom: band.bottom }));
+  let node = main?.selector ? findSelector(tree, main.selector) : null;
+  const range = { top: band.top, bottom: band.bottom };
+  const H = band.bottom - band.top;
+  let side = [];
+  let cut = [];
+  // Through the wrapper chains, as at level 1, to the level where the parts are siblings;
+  // when the siblings fold into one candidate as tall as the band (a background layer under
+  // the content), into that candidate's largest node, a few times.
+  for (let depth = 0; node && depth < 4; depth += 1) {
+    const level = siblings(node, range);
+    const kids = level.length > 1 ? level : [];
+    if (!kids.length) break;
+    const W = node.bounds.width;
+    const x0 = node.bounds.x;
+    const atEdge = (k) => k.bounds.x <= x0 + 0.1 * W || k.bounds.x + k.bounds.width >= x0 + 0.9 * W;
+    side = kids.filter((k) => k.bounds.width < SIDE_MAX_WIDTH * W
+      && k.bounds.height >= SIDE_MIN_HEIGHT * H && k.bounds.y <= band.top + 0.2 * H && atEdge(k));
+    const rest = kids.filter((k) => !side.includes(k));
+    cut = candidates({ ...node, children: rest }, range);
+    if (cut.length !== 1 || cut[0].bottom - cut[0].top < 0.95 * H) break;
+    node = cut[0].nodes.reduce((a, n) => (
+      n.bounds.width * n.bounds.height > a.bounds.width * a.bounds.height ? n : a));
+    cut = [];
+  }
+  if (!cut.length) return { side: asides, children: [], leaf: true };
+  const isText = (cc) => cc.nodes.every((n) => TEXT_TAGS.has(n.tag));
+  const runs = [];
+  for (const cc of cut) {
+    const last = runs.at(-1);
+    if (last && isText(last) && isText(cc)) {
+      last.bottom = cc.bottom;
+      last.nodes.push(...cc.nodes);
+      last.parts.push(...cc.parts);
+    } else runs.push({ ...cc, nodes: [...cc.nodes], parts: [...cc.parts] });
+  }
+  // A run's parts are its columns (distinct x); its selectors are every element in it.
+  const children = runs.map((r, i) => ({ id: `${band.id}.${i + 1}`, top: r.top, bottom: r.bottom,
+    parts: r.parts.filter((p, j, all) => !all.slice(0, j).some((q) => Math.abs(q.x - p.x) < 40)),
+    selectors: [...new Set(r.nodes.map((n) => n.selector).filter(Boolean))], text: isText(r) }));
+  return { side: [...asides, ...side.map((k) => ({ selector: k.selector, x: k.bounds.x,
+    w: k.bounds.width, top: Math.max(band.top, k.bounds.y),
+    bottom: Math.min(band.bottom, k.bounds.y + k.bounds.height) }))], children };
+}
+
+function findSelector(node, selector) {
+  if (node.selector === selector) return node;
+  for (const c of node.children ?? []) {
+    const found = findSelector(c, selector);
+    if (found) return found;
+  }
+  return null;
 }
 
 const sideOf = (boxes) => {
@@ -113,7 +192,7 @@ const covering = (bgs, c) => bgs.filter((b) => b.y <= c.top + 2 && b.y + b.h >= 
  * What a reader needs to know and a System 1 model cannot count, from the band capture:
  * columns, images by size and likeness, headings, text amount, links, inputs, embeds.
  */
-export function facts(c, capture) {
+export function facts(c, capture, { inside: within = false } = {}) {
   const { W } = capture;
   const h = c.bottom - c.top;
   const inside = inBand(contentLeaves(capture.leaves), { y: c.top, h });
@@ -140,7 +219,9 @@ export function facts(c, capture) {
   return {
     inside, cols, images: images.length, big: big.length, alike: alike?.length ?? 0, headings,
     chars, long, links, inputs, embeds,
-    layout: layoutOf(c, capture, cols),
+    // Inside a section its side column is set aside already: a child's layout is its own parts'.
+    layout: within ? (c.parts.filter((p) => p.w >= 120).length >= 2
+      ? sideOf(c.parts.filter((p) => p.w >= 120)) : 'single') : layoutOf(c, capture, cols),
     imageOnly: images.length >= 1 && chars === 0 && headings === 0 && links <= 1 && inputs === 0,
     fullBleed: big.some((im) => im.w >= FULL_BLEED * W),
     loneHeading: headings === 1 && chars === 0 && images.length === 0 && links <= 1,
@@ -249,14 +330,19 @@ export function decide(answers, f) {
 
 /**
  * The bands after merging: a candidate joins the one before it when its merge answer says
- * so; a band of one kind keeps it, of mixed kinds is a section; the layout is the widest
- * named among its members.
+ * so (inside a section, only a candidate of the same kind); a band of one kind keeps it, of
+ * mixed kinds is a section; the layout is the widest named among its members.
  */
-export function derive(cands, decisions) {
+export function derive(cands, decisions, { sameKind = false } = {}) {
   const out = [];
   cands.forEach((c, i) => {
     const d = decisions[i];
-    if (i > 0 && d.merge >= MERGE) {
+    // Inside a section (sameKind), two children are one item only when they are pieces of
+    // the same kind of thing — more cards of one grid, more paragraphs of one text — never a
+    // heading and the block it introduces: those are two items of the section.
+    const joins = d.merge >= MERGE && (!sameKind
+      || (d.kind === decisions[i - 1]?.kind && d.kind !== 'section'));
+    if (i > 0 && joins) {
       const last = out.at(-1);
       last.bottom = c.bottom;
       last.members.push(c.id);
@@ -301,28 +387,100 @@ export async function structurePage(cwd, pageId, { io, dep, now = () => new Date
   if (!capture || !chromeComp || !tree || !tree.page?.shot) return null;
   const fragments = (await website.readFragments(cwd))?.fragments ?? [];
   const body = bodyEdges(chromeComp, fragments, capture.H);
-  const cands = candidates(tree.tree, body);
   const shot = path.join(cwd, 'migration', tree.page.shot);
-  const decisions = [];
-  let inputTokens = 0;
-  for (const [i, c] of cands.entries()) {
-    const f = facts(c, capture);
-    const prev = cands[i - 1];
+  const usage = { inputTokens: 0, requests: 0 };
+  const ask = async (list, { within = false } = {}) => {
+    const decisions = [];
+    for (const [i, c] of list.entries()) {
+      const f = facts(c, capture, { within });
+      const prev = list[i - 1];
+      if (c.from) {
+        // A member of a band merged at level 1 is a child by construction: asked its kind,
+        // never merged again.
+        const d = await askOne(c, f, null);
+        decisions.push({ ...d, merge: 0 });
+        continue;
+      }
+      if (c.text) {
+        // A run of text elements between blocks is default content, as EDS defines it.
+        decisions.push({ kind: 'default_content', judged: 'default_content', layout: f.layout,
+          probabilities: null, merge: 0, empty: f.inside.length === 0,
+          state: stateOf(c, capture, f), answers: null, rule: 'text run' });
+        continue;
+      }
+      decisions.push(await askOne(c, f, prev));
+    }
+    return decisions;
+  };
+  async function askOne(c, f, prev) {
     const state = { band: stateOf(c, capture, f) };
     if (prev) state.previous = stateOf(prev, capture);
     const images = [await io.crop(shot, c.top, c.bottom, capture)];
     if (prev) images.push(await io.crop(shot, prev.top, c.bottom, capture));
-    const { answers, usage } = await io.askQuestions(dep,
+    const { answers, usage: u } = await io.askQuestions(dep,
       { state, questions: questions(Boolean(prev)), images });
-    inputTokens += usage.inputTokens ?? 0;
-    const d = decide(answers, f);
-    decisions.push({ ...d, state: state.band,
-      answers: Object.fromEntries(Object.entries(answers).map(([k, a]) => [k, a.noul])) });
+    usage.inputTokens += u.inputTokens ?? 0;
+    usage.requests += 1;
+    return { ...decide(answers, f), state: state.band,
+      answers: Object.fromEntries(Object.entries(answers).map(([k, a]) => [k, a.noul])) };
   }
+  const record = (c, d, within = false) => {
+    const { inside, cols, ...rest } = facts(c, capture, { within });
+    const { state, ...decision } = d;
+    return { id: c.id, top: c.top, bottom: c.bottom, parts: c.parts,
+      ...(c.selectors ? { selectors: c.selectors } : {}), columns: cols.length,
+      facts: { ...rest, leaves: inside.length }, state, ...decision };
+  };
+  // Level 1: the body's candidates, asked, derived into bands.
+  const cands = candidates(tree.tree, body);
+  const decisions = await ask(cands);
   const bands = derive(cands, decisions);
+  // Levels 2 and 3: each section opened into its children, asked the same way; a child
+  // that is a section again is opened once more. Every candidate asked is on record.
+  const opened = [];
+  const pool = [...cands];
+  const queue = bands.filter((b) => b.kind === 'section').map((b) => ({ band: b, depth: 2 }));
+  while (queue.length) {
+    const { band, depth } = queue.shift();
+    const { side, children, leaf } = open(band, pool, tree.tree);
+    if (leaf || !children.length) { band.leaf = true; band.side = side; continue; }
+    // eslint-disable-next-line no-await-in-loop
+    const kids = await ask(children, { within: true });
+    band.side = side;
+    band.children = derive(children, kids, { sameKind: true })
+      .map((b, i) => ({ ...b, id: `${band.id}.${i + 1}` }));
+    pool.push(...children);
+    opened.push(...children.map((c, i) => record(c, kids[i], true)));
+    if (depth < MAX_DEPTH) {
+      queue.push(...band.children.filter((k) => k.kind === 'section')
+        .map((k) => ({ band: k, depth: depth + 1 })));
+    }
+  }
   const at = now().toISOString();
   const { W } = capture;
   const byId = new Map(cands.map((c, i) => [c.id, { c, d: decisions[i] }]));
+  // A section's items are the leaves of its opened children — EDS has no nested sections —
+  // plus its side columns, in reading order.
+  const selectorFor = (ids) => ids.flatMap((m) => {
+    const o = opened.find((x) => x.id === m);
+    return o ? (o.selectors ?? o.parts.map((p) => p.selector)) : [selectorOf(byId.get(m).c)];
+  }).filter(Boolean).join(', ');
+  const items = (band) => {
+    const aside = (band.side ?? []).map((sd) => ({ role: 'content', selector: sd.selector,
+      bounds: { x: sd.x, y: sd.top, width: sd.w, height: sd.bottom - sd.top } }));
+    if (!band.children) {
+      const own = band.members.map((m) => {
+        const { c, d } = byId.get(m);
+        return { role: d.kind === 'block' ? 'block' : 'content', selector: selectorOf(c),
+          bounds: boxOf(c.top, c.bottom, W) };
+      });
+      return [...own, ...aside];
+    }
+    const own = band.children.flatMap((k) => (k.children ? items(k)
+      : [{ role: k.kind === 'block' ? 'block' : 'content',
+        selector: selectorFor(k.members) || `band@${k.top}`, bounds: boxOf(k.top, k.bottom, W) }]));
+    return [...own, ...aside];
+  };
   const comp = {
     method: { name: METHOD, version: WORDING, at, inputs: capture.updatedAt ?? at },
     fragments: chromeComp.fragments,
@@ -330,23 +488,14 @@ export async function structurePage(cwd, pageId, { io, dep, now = () => new Date
       id: `s${i + 1}`, selector: selectorOf(byId.get(b.members[0]).c),
       bounds: boxOf(b.top, b.bottom, W),
       style: { background: byId.get(b.members[0]).d.state.background, layout: b.layout },
-      items: b.members.map((m) => {
-        const { c, d } = byId.get(m);
-        return { role: d.kind === 'block' ? 'block' : 'content', selector: selectorOf(c),
-          bounds: boxOf(c.top, c.bottom, W) };
-      }),
+      items: items(b),
     })),
     omitted: [],
   };
   const structure = {
     page: pageId, method: { name: METHOD, model: dep.model, wording: WORDING, at }, body,
-    candidates: cands.map((c, i) => {
-      const { inside, cols, ...rest } = facts(c, capture);
-      const { state, ...d } = decisions[i];
-      return { id: c.id, top: c.top, bottom: c.bottom, parts: c.parts, columns: cols.length,
-        facts: { ...rest, leaves: inside.length }, state, ...d };
-    }),
-    bands, usage: { inputTokens },
+    candidates: cands.map((c, i) => record(c, decisions[i])),
+    bands, children: opened, usage,
   };
   await layer.writeStructure(cwd, pageId, structure);
   return { structure, composition: comp };
@@ -374,9 +523,10 @@ export async function structure(cwd, selectionName, { io, dep } = {}) {
     await composition.write(cwd, id, result.composition);
     const s = result.structure;
     out.push({ id, candidates: s.candidates.length, bands: s.bands.length,
-      kinds: s.bands.map((b) => b.kind[0] + (b.layout === 'single' ? '' : `/${b.layout}`))
+      kinds: s.bands.map((b) => b.kind[0] + (b.layout === 'single' ? '' : `/${b.layout}`)
+        + (b.children ? `[${b.children.map((k) => k.kind[0]).join('')}]` : b.leaf ? '[leaf]' : ''))
         .join(' '),
-      tokens: s.usage.inputTokens });
+      children: s.children.length, tokens: s.usage.inputTokens });
   }
   return out;
 }
