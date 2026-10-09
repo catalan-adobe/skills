@@ -164,6 +164,11 @@ test('the pure pieces: expressions, node finding, fragments of variants, flags',
   const comp = pageComposition({ url: urlOf(1), tree }, [frag], AT);
   assert.deepEqual(comp.fragments, [{ ref: 'frg-000000000001', selector: 'div.utility',
     bounds: box(0, 133) }], 'the bands united into one box on this page');
+  const withOptional = { ...frag, variant: { pages: [urlOf(1)],
+    members: [{ selector: 'div.utility', selectors: [], bounds: box(0, 53) }],
+    optional: [{ selector: 'div.experiencefragment', selectors: [], bounds: box(53, 80) }] } };
+  assert.deepEqual(pageComposition({ url: urlOf(1), tree }, [withOptional], AT).fragments[0]
+    .bounds, box(0, 133), 'an optional band present on the page belongs to the box');
   assert.deepEqual([comp.sections, comp.omitted], [[], []]);
   assert.deepEqual(pageComposition({ url: 'other', tree }, [frag], AT).fragments, []);
 });

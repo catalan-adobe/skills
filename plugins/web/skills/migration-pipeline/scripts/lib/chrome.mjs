@@ -42,8 +42,9 @@ async function captures(cwd) {
  *   3 — candidates by element key and position cluster; off-screen, narrow, tall and
  *       text-changing bands are no chrome; text stability judged within groups, on the
  *       pages that have text; a child is dropped only for a chrome-eligible parent.
+ *   4 — a fragment is located on a page by its optional members too, where present.
  */
-export const DETECT_VERSION = 3;
+export const DETECT_VERSION = 4;
 
 /** How many candidates the sheet shows, beyond the members themselves. */
 export const SHEET_SIZE = 16;
@@ -186,13 +187,14 @@ export function fragmentComposition(fragment, at) {
 
 /**
  * A page's composition at this stage: the template fragments it carries, each located
- * on this page by its members' selectors; sections empty — `elements` fills them.
+ * on this page by its members' selectors — the optional ones too, where this page has
+ * them; sections empty — `elements` fills them.
  */
 export function pageComposition(capture, fragments, at) {
   const placed = [];
   for (const f of fragments) {
     if (!f.variant.pages.includes(capture.url)) continue;
-    const nodes = f.variant.members
+    const nodes = [...f.variant.members, ...(f.variant.optional ?? [])]
       .map((m) => findNode(capture.tree, [m.selector, ...m.selectors], m.bounds))
       .filter(Boolean);
     const first = nodes[0] ?? null;
