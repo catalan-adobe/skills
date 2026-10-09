@@ -49,6 +49,10 @@ waits for `migration.mjs approve <step>`.
 | `blocks` | medium | `elements/elements.json` decisions, `elements/inventory.json` — coming |
 | `report` | low | `views/report.md`, `views/report.html` |
 
+Not a step: `pipeline sample --count 10 --write <name>` takes normal pages, one per group
+in turn, as a selection to judge or to measure a method on; `migration.mjs annotate
+<name>` renders the sheet a person judges them on.
+
 ## Look, then act
 
 The commands do the mechanical work on every page; the agent's work is to look at what

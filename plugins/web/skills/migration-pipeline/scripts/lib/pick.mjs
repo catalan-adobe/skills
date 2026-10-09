@@ -68,6 +68,30 @@ export function choose(pages, scope, { count = 2, exclude = [], audit = 0 } = {}
   return [...picks, ...pool.slice(0, audit)];
 }
 
+/**
+ * A sample of the pages already read — cached, a page, not parked by any flag — one per
+ * group in turn, the groups largest first; written as a selection: what a person judges
+ * for the bench, what a method is measured on.
+ */
+export async function sample(cwd, { count = 10, write } = {}) {
+  const { pages, selections } = await data(cwd);
+  const table = await pages.read(cwd);
+  const normal = table.pages.filter((p) => p.cache && p.kind === 'page'
+    && p.verdict.status !== 'out' && !p.verdict.reasons.some((r) => r.kind === 'flag'));
+  const byGroup = new Map();
+  for (const p of normal) byGroup.set(p.group ?? '', [...(byGroup.get(p.group ?? '') ?? []), p]);
+  const lists = [...byGroup.values()].sort((a, b) => b.length - a.length)
+    .map((list) => [...list].sort((a, b) => (a.id < b.id ? -1 : 1)));
+  const picked = interleave(lists).slice(0, count);
+  const out = picked.map((p) => ({ id: p.id, url: p.url, group: p.group }));
+  if (!write) return { picks: out };
+  const selection = await selections.create(cwd, write, out.map((p) => p.id), {
+    criteria: { count, among: 'normal' },
+    summary: `${out.length} normal pages, one per group in turn, for judging`,
+  });
+  return { picks: out, selection: selection.name, pages: selection.pages.length };
+}
+
 /** The command: picks, and writes a selection when `write` names one. */
 export async function pick(cwd, { count = 2, exclude = [], audit = 0, write } = {}) {
   const { migration, pages, selections } = await data(cwd);

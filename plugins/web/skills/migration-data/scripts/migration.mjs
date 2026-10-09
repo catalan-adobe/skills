@@ -2,6 +2,7 @@
 // The migration data CLI: one client of the layer among others. JSON on stdout by default;
 // --text for people; errors on stderr, exit 1. Run from the folder holding migration/.
 import { realpathSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import * as elements from './lib/elements.mjs';
 import * as inventory from './lib/inventory.mjs';
@@ -11,6 +12,7 @@ import * as pages from './lib/pages.mjs';
 import * as runs from './lib/runs.mjs';
 import * as selections from './lib/selections.mjs';
 import * as state from './lib/state.mjs';
+import * as verdicts from './lib/verdicts.mjs';
 import * as views from './lib/views.mjs';
 import * as website from './lib/website.mjs';
 
@@ -45,6 +47,10 @@ export const COMMANDS = [
   { name: 'note', usage: '<step> <author> <text...> [--page <pag-id>]', help: 'add a note' },
   { name: 'notes', usage: '[--step <id>]', help: 'the notes index' },
   { name: 'report', usage: '[--html]', help: 'render views/report.md, or views/report.html' },
+  { name: 'annotate', usage: '<selection>',
+    help: 'render the annotation sheet for a selection: views/annotate-<selection>.html' },
+  { name: 'verdicts', usage: '[import <file.json>]',
+    help: 'the verdicts on pages; import what an annotation sheet exported' },
 ];
 
 const FLAGS = {
@@ -56,7 +62,7 @@ const FLAGS = {
   page: [], 'decide-page': [], selections: [], website: [], types: ['--undecided'],
   'decide-type': ['--notes'], inventory: [], note: ['--page'], notes: ['--step'],
   access: ['--note'],
-  report: ['--html'],
+  report: ['--html'], annotate: [], verdicts: [],
 };
 const BOOLEAN = new Set(['--text', '--cached', '--uncached', '--undecided', '--html']);
 
@@ -191,6 +197,17 @@ export async function main(argv, cwd = process.cwd()) {
       return notes.list(cwd, { step: flags['--step'] });
     case 'report':
       return views.writeReport(cwd, { html: Boolean(flags['--html']) });
+    case 'annotate':
+      if (!positional[0]) throw new Error('usage: annotate <selection>');
+      return views.writeAnnotate(cwd, positional[0]);
+    case 'verdicts': {
+      if (positional[0] === 'import') {
+        const file = positional[1];
+        if (!file) throw new Error('usage: verdicts import <file.json>');
+        return verdicts.importFile(cwd, JSON.parse(await readFile(file, 'utf8')));
+      }
+      return (await verdicts.read(cwd)) ?? { verdicts: [] };
+    }
     default:
       throw new Error(`usage:\n${usage()}`);
   }

@@ -276,3 +276,21 @@ test('a redirect that only adds a trailing slash is the page it lands on', async
   assert.deepEqual([p.kind, p.http.status, p.redirect, p.verdict.status],
     ['page', 200, null, 'in']);
 });
+
+test('sample: normal pages only, one per group in turn, largest groups first', async () => {
+  const { sample } = await import('./pick.mjs');
+  const cwd = await project(['a/1', 'a/2', 'a/3', 'b/1', 'b/2', 'c/1', 'flagged']
+    .map((p) => `${O}${p}`));
+  const { pages } = await data(cwd);
+  const ids = (await pages.read(cwd)).pages;
+  await pages.upsert(cwd, ids.map((p) => ({ url: p.url, kind: 'page',
+    cache: { at: AT, path: 'x', selection: 's' } })));
+  await pages.setReasons(cwd, 'triage', { [pages.pageId(`${O}flagged`)]:
+    [{ code: 'empty', kind: 'flag' }] });
+  const out = await sample(cwd, { count: 4, write: 'judge-4' });
+  assert.deepEqual(out.picks.map((p) => p.group), ['a', 'b', 'c', 'a'], 'one per group in turn');
+  assert.equal(new Set(out.picks.map((p) => p.id)).size, 4);
+  assert.equal(out.pages, 4);
+  assert.deepEqual((await sample(cwd, { count: 10 })).picks.map((p) => p.group),
+    ['a', 'b', 'c', 'a', 'b', 'a'], 'the flagged page is never sampled');
+});

@@ -10,6 +10,7 @@ import { read as readTable } from './pages.mjs';
 import { HEAD, register } from './schema.mjs';
 import { read as readState } from './state.mjs';
 import { openStore } from './store.mjs';
+import { renderAnnotate } from './annotate-html.mjs';
 import { renderHtml } from './report-html.mjs';
 import { readFragments, readWebsite } from './website.mjs';
 
@@ -29,7 +30,7 @@ register('views/views', 1, 'derived', {
         required: ['file', 'from', 'at'],
         additionalProperties: false,
         properties: {
-          file: { type: 'string', pattern: '^views/[a-z-]+\\.(md|html)$' },
+          file: { type: 'string', pattern: '^views/[a-z0-9-]+\\.(md|html)$' },
           from: { type: 'array', items: { type: 'string' } },
           at: { type: 'string', format: 'date-time' },
         },
@@ -100,6 +101,14 @@ export async function write(cwd, name, text, from, ext = 'md') {
 const REPORT_FROM = ['state.json', 'website/website.json', 'pages/pages.json',
   'pages/selections', 'website/fragments.json', 'elements/types.json',
   'elements/inventory.json', 'runs', 'notes/notes.json'];
+
+/** Renders and writes the annotation sheet for a selection. */
+export async function writeAnnotate(cwd, selectionName) {
+  const html = await renderAnnotate(cwd, selectionName);
+  return write(cwd, `annotate-${selectionName}`, html,
+    ['pages/pages.json', `pages/selections/${selectionName}.json`, 'pages/verdicts.json'],
+    'html');
+}
 
 /** Renders and writes the report view: Markdown, or the one-file HTML with `html`. */
 export async function writeReport(cwd, { html = false, ...options } = {}) {

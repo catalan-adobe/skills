@@ -13,7 +13,7 @@ import { command as workerCommand } from './lib/worker.mjs';
 import { CHECKS } from './lib/checks.mjs';
 import { data } from './lib/data.mjs';
 import { discover } from './lib/discover.mjs';
-import { pick } from './lib/pick.mjs';
+import { pick, sample } from './lib/pick.mjs';
 import {
   commandOnPath, defaultExec, detect, install, missingReasons, readSetupJson, sourceReasons,
   unknownSources, writeSetupJson,
@@ -29,6 +29,8 @@ export const COMMANDS = [
       + ' website/access.json' },
   { name: 'pick', usage: '[--count 2] [--exclude <group>]... [--audit 0] [--write <selection>]',
     help: 'representative uncached pages, one per largest group in turn; --write a selection' },
+  { name: 'sample', usage: '[--count <n>] [--write <name>]',
+    help: 'a sample of the normal pages already read, one per group in turn, as a selection' },
   { name: 'cache', usage: '[fill|status|stop]',
     help: 'cache every approved selection not yet cached, in a detached worker; fill the'
       + ' cached pages\' assets from the named origins; status; stop' },
@@ -43,7 +45,8 @@ export const COMMANDS = [
 ];
 const FLAGS = {
   setup: ['--install'], discover: ['--strategy', '--list'], access: ['--write'],
-  pick: ['--count', '--exclude', '--audit', '--write'], cache: ['--worker'],
+  pick: ['--count', '--exclude', '--audit', '--write'], sample: ['--count', '--write'],
+  cache: ['--worker'],
   chrome: ['--worker', '--by', '--label', '--note'], triage: ['--worker'], report: [],
   website: [],
   state: ['--text'],
@@ -63,7 +66,8 @@ export function parse(argv) {
     if (!FLAGS[name].includes(arg)) throw new Error(`${name}: unknown flag ${arg}\n${usage(name)}`);
     const value = rest[i + 1];
     const hasValue = value !== undefined && !value.startsWith('--');
-    if (BOOLEAN.has(arg) && (!hasValue || name !== 'pick')) { flags[arg] = true; continue; }
+    const takesName = arg === '--write' && ['pick', 'sample'].includes(name);
+    if (BOOLEAN.has(arg) && (!hasValue || !takesName)) { flags[arg] = true; continue; }
     if (!hasValue) throw new Error(`${arg} needs a value`);
     if (REPEATABLE.has(arg)) flags[arg] = [...(flags[arg] ?? []), value];
     else flags[arg] = value;
@@ -124,6 +128,9 @@ export async function main(argv, cwd = process.cwd()) {
         audit: Number(flags['--audit'] ?? 0),
         write: typeof flags['--write'] === 'string' ? flags['--write'] : undefined,
       });
+    case 'sample':
+      return sample(cwd, { count: Number(flags['--count'] ?? 10),
+        write: typeof flags['--write'] === 'string' ? flags['--write'] : undefined });
     case 'cache': {
       const out = await workerCommand(cwd, 'cache', positional,
         { pending: cachePending, worker: cacheWorker, flags });

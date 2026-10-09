@@ -56,6 +56,7 @@ migration/
     pages.json              the table: one record per URL, with its verdict         derived+facts
     selections/<name>.json  a named set of page ids with its criteria               decision
     decisions.json          the operator's word on single pages: in or out, why     decision
+    verdicts.json           a person's word on what a page is, for the bench         decision
     <id>/                   one page's artefacts
       composition.json      the page in EDS shape: fragments, sections, items     derived
       visual-tree.json      the rendered page measured by the page-tree bundle      derived
@@ -253,6 +254,18 @@ by reason; a step's state note may cite them ("chrome: 2 pages without a footer"
 A selection freezes the ids it chose and keeps the criteria that chose them, so it can be
 read ("fifty pages, one per group") and remade.
 
+### pages/verdicts.json — *decision*
+
+Ground truth for the bench: a person's word on what a page is, from its body crop, in
+half a minute — `sameAs` (an earlier page whose template this one repeats, or none),
+`category` (`document` · `bands` · `composed`: how much of it a plain document expresses),
+`layout` (`single` · `main-left` · `main-right` · `both`: a side column persisting beside
+the content), `constructs` (hero, cards, columns, accordion-tabs, carousel, form, table,
+embed, cta-band, gallery, metadata-box, toc), a rough `bands` count, a note; with who
+judged and when. Never derived, never read by a method; a method's reading of the same
+pages is measured against it. The annotation sheet (`migration.mjs annotate <selection>`
+→ `views/annotate-<selection>.html`) is the tool; `verdicts import` records its export.
+
 ### pages/<id>/composition.json — *derived*
 
 The page in **EDS document shape** — the one structure every decomposition method writes,
@@ -375,7 +388,7 @@ it exists and that it is disposable.
   `writeMany`, `read`, `writeFragment`, `readFragment`, `items`, `fragmentRefs`;
   `trees.mjs` — `write`, `read`, `head`, `list` (the visual tree, a method's artefact);
   `chrome.mjs` — `writeCandidates`, `readCandidates`, `choose`, `readChoice`, `candidateId`,
-  `choiceHash`;
+  `choiceHash`; `verdicts.mjs` — `upsert`, `read`, `importFile`;
   `triage.mjs` — `write`, `read`, `list`, `flagsOf` (what a System 1 model saw).
 - `website.mjs` — `refresh`, `writeAccess`/`readAccess`, `writeFragments`/`readFragments`,
   `pagesUsing`.
