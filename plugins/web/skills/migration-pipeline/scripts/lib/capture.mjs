@@ -22,10 +22,20 @@ export const MAX_CONSECUTIVE_FAILURES = 5;
  *   3 — page-tree walks through `display: contents` elements (a whole MDN page had been
  *       sixteen nodes).
  *   4 — the band dump and its analysis, from the site census, stored beside the tree.
+ *   5 — the page is pinned to the top before each reading, and a dump taken scrolled fails
+ *       the capture (a side navigation had scrolled the page after it was prepared).
  */
-export const CAPTURE_VERSION = 4;
+export const CAPTURE_VERSION = 5;
+/**
+ * Back at the top, instantly, before anything is read: a script may scroll the page after
+ * it was prepared (a side navigation bringing its active item into view), and a reading
+ * taken scrolled puts every fixed element, and the picture, where the scroll happened.
+ */
+export const AT_TOP = '(() => { document.documentElement.style.scrollBehavior = "auto";'
+  + ' window.scrollTo({ top: 0, left: 0, behavior: "instant" }); return window.scrollY; })()';
 export const captureExpression = (minWidth = MIN_WIDTH) => (
-  `JSON.stringify(window.__visualTree.captureVisualTree(${minWidth}))`);
+  `(() => { ${AT_TOP}; return JSON.stringify(window.__visualTree.captureVisualTree(${minWidth}));`
+  + ' })()');
 export const HEIGHT_EXPRESSION = 'document.documentElement.scrollHeight';
 
 /**
@@ -122,6 +132,7 @@ const firstLine = (text) => String(text ?? '').split('\n').find((l) => l.trim())
  * screenshots whole: past it the picture repeats the top and loses the bottom.
  */
 async function screenshot(cwd, pageId, browser, trees) {
+  await browser.eval(AT_TOP);
   const scrollHeight = Number(parseEval(await browser.eval(HEIGHT_EXPRESSION))) || 0;
   if (scrollHeight > trees.SCREENSHOT_LIMIT) return { scrollHeight, shot: null };
   const rel = trees.shotFile(pageId);
@@ -161,8 +172,10 @@ async function captureOne(cwd, page, { browser, visit, prepare, minWidth, now, t
     throw new Error('the page-tree bundle returned no tree (was it injected?)');
   }
   const facts = await timed('shot', () => screenshot(cwd, page.id, browser, trees));
+  await browser.eval(AT_TOP);
   const dump = await timed('bands', async () => parseEval(await browser.eval(DUMP)));
   if (!dump?.leaves) throw new Error('the band dump returned no leaves');
+  if (dump.sy) throw new Error(`the page scrolled ${dump.sy} px while it was read`);
   const { leaves: analysedLeaves, ...analysis } = analyse(dump);
   await bands.writeCapture(cwd, page.id, {
     url: page.url, ...dump, leaves: analysedLeaves,

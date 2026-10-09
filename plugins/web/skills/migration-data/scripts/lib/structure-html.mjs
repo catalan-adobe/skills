@@ -119,7 +119,8 @@ export async function renderStructure(cwd, selectionName, method = 'bands-system
     const W = tree.tree.bounds.width || 1280;
     const H = tree.page.scrollHeight;
     const scale = SHEET_WIDTH / W;
-    cards.push(`<section class="page"><div><div class="url">${esc(new URL(page.url).pathname)}</div>
+    cards.push(`<section class="page"><div><div class="url"><a href="${esc(page.url)}"`
+      + ` target="_blank">${esc(page.url)}</a></div>
 <div class="outline">${esc(outline(structure))} <small>· ${structure.bands.length} bands,`
       + ` ${structure.usage?.inputTokens ?? 0} tokens</small></div>
 <div class="stage"><img src="../${esc(shotFile(id))}" loading="lazy">
