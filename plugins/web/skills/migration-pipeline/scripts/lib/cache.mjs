@@ -47,7 +47,7 @@ export function cacheRelativePath(url) {
   const dir = `${u.hostname}_${createHash('sha256').update(u.origin).digest('hex').slice(0, 8)}`;
   let seg = u.pathname.slice(1);
   if (seg === '' || seg.endsWith('/')) seg += 'index.html';
-  else if (!path.extname(seg)) seg += '/index.html';
+  else if (!path.extname(seg)) seg += '/index~.html';
   let rel = `${dir}/${seg}`;
   if (u.search) {
     let qs = u.search.slice(1);

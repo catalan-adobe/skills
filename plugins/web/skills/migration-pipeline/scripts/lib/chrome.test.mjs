@@ -171,6 +171,8 @@ test('the pure pieces: expressions, node finding, fragments of variants, flags',
 test('the worker: trees captured offline, chrome detected, written in EDS terms', async () => {
   const cwd = await project();
   const io = fakeIo(siteTree);
+  assert.deepEqual(await check(await mkdtemp(path.join(os.tmpdir(), 'mpipe-empty-'))).then(
+    (c) => c.pass), false, 'nothing cached: not done');
   assert.deepEqual((await pending(cwd)).length, 10, 'ten cached pages without a tree');
   assert.deepEqual(await check(cwd), { pass: false, note: '10 page(s) without a visual tree' });
   const out = await workerMain(cwd, { io });

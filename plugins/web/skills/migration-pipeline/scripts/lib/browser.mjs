@@ -20,12 +20,15 @@ export function sharpOf(cwd) {
   }
 }
 
-/** A free port from `from` upward, held on no interface. */
+/**
+ * A free port from `from` upward, on the loopback interface the proxy binds to: a port
+ * held on 127.0.0.1 by another project's proxy is not free, whatever `::` says.
+ */
 export async function freePort(from = 3001) {
   const tryPort = (port) => new Promise((resolve) => {
     const s = createServer();
     s.once('error', () => resolve(false));
-    s.listen(port, () => s.close(() => resolve(true)));
+    s.listen(port, '127.0.0.1', () => s.close(() => resolve(true)));
   });
   for (let port = from; port < from + 1000; port += 1) {
     // eslint-disable-next-line no-await-in-loop

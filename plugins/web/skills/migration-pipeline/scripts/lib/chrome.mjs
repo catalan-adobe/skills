@@ -346,6 +346,9 @@ export async function check(cwd) {
   if (newest && ['queued', 'running'].includes(runs.liveness(newest))) {
     return { pass: false, note: `chrome run ${newest.current ?? ''}`.trim() };
   }
+  if (!(await readablePages(cwd)).length) {
+    return { pass: false, note: 'no cached page to read yet' };
+  }
   const work = await pending(cwd);
   if (!work.length) return { pass: true };
   if (work[0] === 'detect') return { pass: false, note: 'trees changed since the last detection' };

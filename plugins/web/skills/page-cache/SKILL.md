@@ -174,6 +174,9 @@ Cache misses in offline mode return HTTP 504 with a descriptive message.
 
 ## Cache Format
 
+`/x/` is stored as `x/index.html`; `/x` without an extension as `x/index~.html` — two
+URLs, two files, so a stored `/x` → `/x/` redirect never answers `/x/` itself.
+
 Each cached URL produces two files under the cache directory:
 
 | File | Content |

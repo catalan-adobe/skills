@@ -80,7 +80,9 @@ test('pure pieces: page expression, paths, site URLs, classification, stored fac
   assert.match(expr, /"#a\{\}\\nhtml\{\}"/);
   assert.match(expr, /loading="lazy"/);
   assert.match(cacheRelativePath(`${O}`), /^a\.example_[0-9a-f]{8}\/index\.html$/);
-  assert.match(cacheRelativePath(`${O}blogs/a?x=1`), /\/blogs\/a\/index!x=1\.html$/);
+  assert.match(cacheRelativePath(`${O}blogs/a?x=1`), /\/blogs\/a\/index~!x=1\.html$/);
+  assert.notEqual(cacheRelativePath(`${O}x`), cacheRelativePath(`${O}x/`),
+    'a redirect from /x to /x/ must not be stored where /x/ is read');
   assert.equal(siteUrl('http://127.0.0.1:4000/p?x=1&_origin=https%3A%2F%2Fa.example',
     'https://a.example'), 'https://a.example/p?x=1');
   assert.equal(classify({ url: 'u', sidecar: null, finalUrl: null }), 'unreachable');
@@ -247,4 +249,17 @@ test('a browser that is gone is opened again for the next page', async () => {
   assert.equal(io.calls.gone.length, 1);
   assert.equal(out.failures.length, 1);
   assert.deepEqual(out.kinds, { page: 2 });
+});
+
+test('freePort sees a port held on the loopback interface', async () => {
+  const { createServer } = await import('node:net');
+  const { freePort } = await import('./browser.mjs');
+  const held = createServer();
+  await new Promise((r) => { held.listen(0, '127.0.0.1', r); });
+  const { port } = held.address();
+  try {
+    assert.notEqual(await freePort(port), port, 'held on 127.0.0.1: not free');
+  } finally {
+    held.close();
+  }
 });

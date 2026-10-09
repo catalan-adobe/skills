@@ -233,6 +233,9 @@ export async function check(cwd) {
   if (newest && ['queued', 'running'].includes(runs.liveness(newest))) {
     return { pass: false, note: `looking at ${newest.current ?? 'pages'}` };
   }
+  if (!(await readablePages(cwd)).length) {
+    return { pass: false, note: 'no cached page to look at yet' };
+  }
   const todo = await pending(cwd);
   if (!todo.length) return { pass: true };
   try {

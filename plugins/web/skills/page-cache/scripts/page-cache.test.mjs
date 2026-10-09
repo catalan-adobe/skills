@@ -92,7 +92,25 @@ test('--also: another origin\'s assets go through the proxy, cached, served offl
     assert.equal(hits.cdn, 2, 'nothing fetched offline');
     await offline.stop();
 
-    // 4. The query goes upstream verbatim: a bare `$responsive$` stays what it was.
+    // 4. /x and /x/ are two files: a stored /x -> /x/ redirect never answers /x/.
+    const loop = await proxy(['--cache', dir]);
+    const redirectSite = await listen((req, res) => {
+      if (req.url === '/x') { res.writeHead(301, { location: '/x/' }); res.end(); return; }
+      res.writeHead(200, { 'content-type': 'text/html' }); res.end(`<p>${req.url}</p>`);
+    });
+    try {
+      const first = await fetch(`${loop.url}/x?_origin=${redirectSite.origin}`,
+        { redirect: 'manual' });
+      assert.equal(first.status, 301);
+      const second = await fetch(`${loop.url}/x/?_origin=${redirectSite.origin}`);
+      assert.equal(second.status, 200);
+      assert.equal(await second.text(), '<p>/x/</p>');
+    } finally {
+      redirectSite.server.close();
+      await loop.stop();
+    }
+
+    // 5. The query goes upstream verbatim: a bare `$responsive$` stays what it was.
     const verbatim = await proxy(['--cache', dir]);
     await fetch(`${verbatim.url}/img?qlt=82&$responsive$&fit=constrain&_origin=${site.origin}`)
       .then((r) => r.arrayBuffer());

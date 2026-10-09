@@ -80,11 +80,13 @@ function cachePath(url) {
   const originHash = createHash('sha256')
     .update(u.origin).digest('hex').slice(0, 8);
   const originDir = `${u.hostname}_${originHash}`;
+  // /x/ is x/index.html; /x without an extension is x/index~.html — two URLs, two
+  // files, so a stored /x -> /x/ redirect can never answer /x/ itself.
   let seg = u.pathname.substring(1);
   if (seg === '' || seg.endsWith('/')) {
     seg += 'index.html';
   } else if (!extname(seg)) {
-    seg += '/index.html';
+    seg += '/index~.html';
   }
   let p = join(originDir, seg);
   if (u.search) {
