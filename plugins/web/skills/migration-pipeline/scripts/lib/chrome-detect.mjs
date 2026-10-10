@@ -164,25 +164,34 @@ function attachAdjacent(placed, tolerance) {
 }
 
 /**
- * One part as a reader chose it: the chosen candidates are its members, the first of them
- * says which pages carry it, the others are optional where they are not on all of them.
- * No candidate chosen: the part has none on this site.
+ * One part as a reader chose it: the chosen candidates are its members, grouped by the
+ * pages they are on — a candidate sharing at least half its pages with a variant joins it
+ * (core where it is on all of the variant's pages, optional where not), the others start a
+ * variant of their own: one header at two DOM positions is two variants of one part. The
+ * first candidate of a variant says which pages carry it. No candidate chosen: the part
+ * has none on this site.
  */
 export function chosenPart(chosen, allPages, groupOf) {
   if (!chosen.length) return { variants: [], without: [...allPages] };
-  const [primary, ...rest] = chosen;
-  const pages = [...primary.pages];
-  const onAll = rest.filter((c) => pages.every((p) => c.pages.includes(p)));
-  const optional = rest.filter((c) => !onAll.includes(c))
-    .map((c) => ({ ...member(c), onPages: c.pages.filter((p) => pages.includes(p)).length }));
-  const own = [primary, ...onAll];
-  return {
-    variants: [{
-      id: '1', pages, support: pages.length / allPages.length, members: own.map(member),
+  const groups = [];
+  for (const c of chosen) {
+    const shared = (g) => c.pages.filter((p) => g.pages.includes(p)).length;
+    const home = groups.find((g) => shared(g) >= 0.5 * c.pages.length);
+    if (home) home.rest.push(c);
+    else groups.push({ primary: c, pages: [...c.pages], rest: [] });
+  }
+  const variants = groups.map(({ primary, pages, rest }, i) => {
+    const onAll = rest.filter((c) => pages.every((p) => c.pages.includes(p)));
+    const optional = rest.filter((c) => !onAll.includes(c))
+      .map((c) => ({ ...member(c), onPages: c.pages.filter((p) => pages.includes(p)).length }));
+    const own = [primary, ...onAll];
+    return {
+      id: String(i + 1), pages, support: pages.length / allPages.length, members: own.map(member),
       optional, representative: representative(pages, own), ...groupLabel(pages, groupOf),
-    }],
-    without: allPages.filter((p) => !pages.includes(p)),
-  };
+    };
+  });
+  const carried = new Set(variants.flatMap((v) => v.pages));
+  return { variants, without: allPages.filter((p) => !carried.has(p)) };
 }
 
 /**

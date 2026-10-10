@@ -45,8 +45,9 @@ async function captures(cwd) {
  *       pages that have text; a child is dropped only for a chrome-eligible parent.
  *   4 — a fragment is located on a page by its optional members too, where present.
  *   5 — a fixed layer taller than a band (a mega menu's curtain) is no chrome.
+ *   6 — a reader's choice of one part at two DOM positions is two variants of the part.
  */
-export const DETECT_VERSION = 5;
+export const DETECT_VERSION = 6;
 
 /** How many candidates the sheet shows, beyond the members themselves. */
 export const SHEET_SIZE = 16;

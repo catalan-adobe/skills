@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { candidates } from './chrome-candidates.mjs';
-import { detectChrome, place, rejectionReason } from './chrome-detect.mjs';
+import { chosenPart, detectChrome, place, rejectionReason } from './chrome-detect.mjs';
 
 const box = (y, height, width = 1280, x = 0) => ({ x, y, width, height });
 const el = (tag, className, bounds, children = [], extra = {}) => ({
@@ -162,3 +162,19 @@ test('text stability is judged within groups; small groups are pooled', async ()
   assert.ok(textStabilityOf(silent, byLocale) < 0.2, 'empty text is no evidence of stability');
   assert.equal(textStabilityOf(silent.filter((o) => !o.text), byLocale), 1, 'no text at all');
 });
+
+test('a choice of one part at two DOM positions: two variants, every page carrying one',
+  () => {
+    const pages = ['a', 'b', 'c', 'd', 'e'];
+    const cand = (key, on) => ({ key, anchored: 'top', fp: key, sample: { selector: `#${key}`,
+      url: on[0], text: key }, selectors: [`#${key}`], tags: ['DIV'],
+      bounds: { y: 0, height: 30 }, support: on.length / pages.length, pages: on });
+    const part = chosenPart([cand('lang1', ['a', 'b', 'c']), cand('menu1', ['a', 'b', 'c']),
+      cand('lang2', ['d']), cand('menu2', ['d']), cand('promo', ['a'])], pages, () => null);
+    assert.deepEqual(part.variants.map((v) => [v.id, v.pages, v.members.map((m) => m.selector),
+      v.optional.map((m) => m.selector)]), [
+      ['1', ['a', 'b', 'c'], ['#lang1', '#menu1'], ['#promo']],
+      ['2', ['d'], ['#lang2', '#menu2'], []],
+    ]);
+    assert.deepEqual(part.without, ['e']);
+  });
