@@ -91,9 +91,12 @@ export function stack(nodes, range) {
     parts: dedupeX(b.nodes.map(partOf)), nodes: b.nodes }));
 }
 
-/** The body's candidates: its siblings stacked, each as wide as the page. */
+/**
+ * The body's candidates: its siblings stacked, runs of prose as one, each as wide as the
+ * page — the cut of every depth, at the first.
+ */
 export function candidates(tree, body, W = 1280) {
-  return stack(siblings(tree, body), body)
+  return runs(stack(siblings(tree, body), body))
     .map((c, i) => ({ ...c, id: `C${i + 1}`, left: 0, right: W }));
 }
 
@@ -107,6 +110,29 @@ const sideBySide = (c) => {
     Math.min(p.x + p.w, q.x + q.w) - Math.max(p.x, q.x) <= SIDE_OVERLAP * Math.min(p.w, q.w))));
 };
 const weight = (n) => 1 + (n.children ?? []).reduce((s, k) => s + weight(k), 0);
+export const MIN_ALIKE = 3; // this many parts of one shape are a list of items: one component
+export const ALIKE_SHARE = 0.8; // of the nodes inside: a grid with its pagination still is one
+// Parts of one shape — the same tag and first class, most within a quarter of their median
+// size along the axis they repeat on — making up most of what is inside: cards of a grid
+// (in rows or not), items of a list, columns of one kind.
+export function alike(kids, side) {
+  const nodes = kids.flatMap((k) => k.nodes);
+  // The first class names the component; the others are its modifiers (a card's category).
+  const shape = (n) => `${n.tag}.${String(n.className ?? '').trim().split(/\s+/)[0]}`;
+  const counts = new Map();
+  // Prose is no item: a run of paragraphs counts in what is inside, never as the items.
+  for (const n of kids.filter((k) => !k.text).flatMap((k) => k.nodes)) {
+    counts.set(shape(n), (counts.get(shape(n)) ?? 0) + 1);
+  }
+  const [top, n] = [...counts].sort((x, y) => y[1] - x[1])[0] ?? [null, 0];
+  if (n < MIN_ALIKE || n < ALIKE_SHARE * nodes.length) return false;
+  // Most of them about one size: an odd one (a link styled like the cards) does not undo it.
+  const size = nodes.filter((x) => shape(x) === top)
+    .map((x) => (side ? x.bounds.width : x.bounds.height)).sort((x, y) => x - y);
+  const median = size[Math.floor(size.length / 2)];
+  const near = size.filter((x) => x >= 0.75 * median && x <= 1.25 * median).length;
+  return near >= MIN_ALIKE && near >= ALIKE_SHARE * size.length;
+}
 
 // Consecutive runs of text elements are one candidate: default content, as EDS defines it.
 function runs(cands) {
@@ -271,8 +297,9 @@ const LAYOUT_WORDS = {
 function partsWords(c) {
   const parts = c.parts.filter((p) => p.w >= MIN_PART_WIDTH);
   const total = c.right - c.left || 1;
-  return `${count(parts.length)} parts side by side, `
-    + `${parts.map((p) => `${Math.round((100 * p.w) / total)} %`).join(', ')} of the width`;
+  const shares = parts.map((p) => `${Math.round((100 * p.w) / total)} %`).join(', ');
+  const same = c.inner?.side && alike(c.inner.kids, true) ? 'alike ' : '';
+  return `${count(parts.length)} ${same}parts side by side, ${shares} of the width`;
 }
 
 // What is inside, one level down, in words: a model cannot count the parts of a tall band.
@@ -284,6 +311,7 @@ function stackWords(c) {
   const rest = kids.length - text - side;
   const of = [text && `${count(text)} of text`, side && `${count(side)} with parts side by side`,
     rest && `${count(rest)} other`].filter(Boolean);
+  if (alike(kids, false)) return `${count(kids.length)} alike parts one above another`;
   return `${count(kids.length)} parts one above another: ${of.join(', ')}`;
 }
 
@@ -373,7 +401,7 @@ export const WORDING = createHash('sha256')
  * block with a heading introducing it a section; parts side by side a layout when the model
  * says so, or when it saw several things in them; then what the content settles — a lone
  * heading is default content, an image alone a hero when full-bleed and an image in flow
- * when not. `rule` names what changed the model's judgement.
+ * when not, parts of one shape repeated a block. `rule` names what changed the judgement.
  */
 export function decide(answers, f) {
   const p = {
@@ -392,6 +420,8 @@ export function decide(answers, f) {
     kind = f.fullBleed ? 'block' : 'default_content';
     rule = f.fullBleed ? 'full-bleed image' : 'image in flow';
   }
+  // Parts of one shape repeated are a list of items — cards, tiles, a gallery: one component.
+  if (f.alikeParts) { kind = 'block'; rule = 'alike items'; }
   if (kind === judged) rule = null;
   const merge = f.inside.length === 0 ? 1 : (answers.merge?.noul ?? 0);
   return { kind, judged, rule, probabilities: p, merge, empty: f.inside.length === 0 };
@@ -399,16 +429,20 @@ export function decide(answers, f) {
 
 /**
  * Candidates into bands: a candidate joins the one before it when its merge answer says so,
- * or — inside a container (`runs`) — when both are default content: in EDS consecutive
- * default content is one run. A band of one kind keeps it, of mixed kinds — or of several
- * containers — is a section.
+ * or when both are default content — in EDS consecutive default content is one run — inside
+ * a container always (`runs`), at the first level on the same background: a section break
+ * there is a change of style, or it is nothing an author sees. A band of one kind keeps it,
+ * of mixed kinds — or of several containers — is a section.
  */
-export function derive(cands, decisions, { runs: oneRun = false } = {}) {
+export function derive(cands, decisions, { runs: oneRun = false, ground = false } = {}) {
   const out = [];
   cands.forEach((c, i) => {
     const d = decisions[i];
-    const run = oneRun && d.kind === 'default_content'
-      && decisions[i - 1]?.kind === 'default_content';
+    const prev = decisions[i - 1];
+    // Default content still to be checked inside is not plain default content yet.
+    const plain = (x) => x?.kind === 'default_content' && !x.check;
+    const run = plain(d) && plain(prev)
+      && (oneRun || (ground && (d.background ?? null) === (prev.background ?? null)));
     if (i > 0 && (d.merge >= MERGE || run)) {
       const last = out.at(-1);
       last.bottom = c.bottom;
@@ -481,36 +515,63 @@ function reader({ capture, shot, io, dep }) {
       c.inner = c.text ? { side: false, kids: [] } : cut(c);
       if (c.inner.side) seeColumns(c);
       const f = facts(c, capture);
+      // A list of bullets is prose, a list of cards is not: list items count as alike items
+      // only when the list holds pictures or headings.
+      const bullets = c.inner.kids.every((k) => k.nodes[0]?.tag === 'LI')
+        && f.images === 0 && f.headings === 0;
+      f.alikeParts = !bullets && alike(c.inner.kids, c.inner.side);
       // A run of text elements is default content, as EDS defines it: no model is asked.
       const d = c.text ? { kind: 'default_content', judged: null, rule: 'text run',
         probabilities: null, merge: 0, empty: f.inside.length === 0, state: null, answers: null }
         // eslint-disable-next-line no-await-in-loop
         : await askOne(c, f, stacked ? cands[i - 1] : null);
+      d.background = f.background;
+      d.check = d.kind === 'default_content' && !c.inner.side && c.inner.kids.length >= 2
+        && c.inner.kids.some((k) => !k.text);
       decisions.push(d);
       const { inside, cols, ...rest } = f;
       asked.push({ id: c.id, parent, depth, top: c.top, bottom: c.bottom, left: c.left,
         right: c.right, parts: c.parts, selectors: selectorsOf(c), columns: cols.length,
         facts: { ...rest, leaves: inside.length }, ...d });
     }
+    // Default content with parts inside, one of them not text, is dug into to check before
+    // anything is merged: what comes back all default content is plain default content (and
+    // runs with its neighbours); a block inside makes it a section.
+    const checked = new Map();
+    for (const [i, c] of cands.entries()) {
+      const d = decisions[i];
+      if (!d.check) continue;
+      const node = { id: c.id, members: [c.id], kind: d.kind };
+      // eslint-disable-next-line no-await-in-loop
+      await dig(node, c, depth + 1);
+      d.check = false;
+      if (node.children) {
+        Object.assign(d, { kind: 'section', rule: 'checked: holds more than text' });
+        checked.set(c.id, node);
+      } else if (node.kind !== 'default_content') {
+        Object.assign(d, { kind: node.kind, rule: 'checked: one component' });
+      }
+      Object.assign(asked.find((a) => a.id === c.id), { kind: d.kind, rule: d.rule,
+        check: false });
+    }
     const prefix = parent ? `${parent}.` : 'B';
-    const bands = derive(cands, decisions, { runs: depth > 1 && stacked })
+    const bands = derive(cands, decisions, { runs: depth > 1 && stacked, ground: depth === 1 })
       .map((b, i) => ({ id: `${prefix}${i + 1}`, ...b }));
     const byId = new Map(cands.map((c, i) => [c.id, { c, d: decisions[i] }]));
-    // Default content with parts inside, one of them not text, is dug into to check: what
-    // comes back all default content is one run again; a block inside makes a section.
-    const toCheck = (b) => {
-      if (b.kind !== 'default_content' || b.members.length !== 1) return false;
-      const { side, kids } = byId.get(b.members[0]).c.inner;
-      return !side && kids.length >= 2 && kids.some((k) => !k.text);
+    // A checked candidate's children, under the id the node now has.
+    const adopt = (node, id) => {
+      const from = checked.get(node.members[0]);
+      for (const a of asked) {
+        if (a.parent === from.id || a.parent?.startsWith(`${from.id}.`)) {
+          a.parent = id + a.parent.slice(from.id.length);
+        }
+      }
+      Object.assign(node, { checked: true, children: renumber(from.children, from.id, id) });
     };
-    for (const band of bands.filter(toCheck)) {
-      // eslint-disable-next-line no-await-in-loop
-      await dig(band, byId.get(band.members[0]).c, depth + 1);
-      if (band.children) Object.assign(band, { kind: 'section', checked: true });
-    }
     // A band merged from several candidates has its members as children, as decided; a
-    // container among them, or a container band of one candidate, is dug into.
-    for (const band of bands.filter((b) => CONTAINERS.has(b.kind) && !b.checked)) {
+    // container among them, or a container band of one candidate, is dug into — a checked
+    // one has been already.
+    for (const band of bands.filter((b) => CONTAINERS.has(b.kind))) {
       if (band.members.length > 1) {
         band.children = band.members.map((m, j) => {
           const { c, d } = byId.get(m);
@@ -520,6 +581,7 @@ function reader({ capture, shot, io, dep }) {
       }
       const containers = band.children?.filter((k) => CONTAINERS.has(k.kind)) ?? [band];
       for (const k of containers) {
+        if (checked.has(k.members[0])) { adopt(k, k.id); continue; }
         // eslint-disable-next-line no-await-in-loop
         await dig(k, byId.get(k.members[0]).c, depth + 1);
       }

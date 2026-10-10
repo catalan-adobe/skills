@@ -4,8 +4,8 @@ import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  CRITERIA, MERGE, METHOD, WORDING, candidates, cut, decide, derive, facts, layoutOf, questions,
-  siblings, stateOf, structure, structurePage, treeOf,
+  CRITERIA, MERGE, METHOD, WORDING, alike, candidates, cut, decide, derive, facts, layoutOf,
+  questions, siblings, stateOf, structure, structurePage, treeOf,
 } from './structure.mjs';
 import { data } from './data.mjs';
 
@@ -65,6 +65,15 @@ test('siblings and candidates: wrappers are walked through, side-by-side sibling
       'gaps go to the band above; the last ends at the footer');
     assert.deepEqual(cands[2].parts.map((p) => p.selector), ['div.article', 'aside.side']);
     assert.deepEqual([cands[0].left, cands[0].right], [0, 1280], 'the first level is page-wide');
+    const article = node('MAIN', 'main', box(0, 100, 1280, 900), [
+      node('H1', 'main > h1', box(0, 100, 1280, 60)),
+      ...Array.from({ length: 4 }, (_, i) => node('P', `main > p:nth-of-type(${i + 1})`,
+        box(0, 160 + i * 100, 1280, 100))),
+      node('DIV', 'main > div.cards', box(0, 560, 1280, 440)),
+    ]);
+    assert.deepEqual(candidates(article, { top: 100, bottom: 1000 })
+      .map((c) => [c.top, c.bottom, Boolean(c.text)]), [[100, 560, true], [560, 1000, false]],
+    'a body of paragraphs is one run at the first level too');
   });
 
 test('cut, at any depth: parts side by side are columns; one node is cut through its wrappers',
@@ -200,6 +209,35 @@ test('decide: the most probable kind, a layout when the model says so, then the 
   assert.deepEqual([empty.merge, empty.empty], [1, true], 'an empty band always merges');
 });
 
+test('alike: parts of one shape, sized within a quarter of each other, most of the inside',
+  () => {
+    const n = (cls, w, h, tag = 'DIV') => ({ tag, className: cls,
+      bounds: { width: w, height: h } });
+    const row = (...nodes) => ({ nodes });
+    assert.equal(alike([row(n('card', 300, 300)), row(n('card', 300, 280)),
+      row(n('card', 300, 310))], false), true);
+    assert.equal(alike([row(n('card', 300, 300)), row(n('card', 300, 280))], false), false,
+      'two are a pair');
+    assert.equal(alike([row(n('card', 300, 300)), row(n('card', 300, 100)),
+      row(n('card', 300, 300))], false), false, 'sizes apart');
+    const grid = [row(n('a', 380, 330), n('a', 380, 330), n('a', 380, 330)),
+      row(n('a', 380, 330), n('a', 380, 330), n('a', 380, 330)), row(n('nav', 600, 40))];
+    assert.equal(alike(grid, false), true, 'cards in rows, with the pagination below');
+    assert.equal(alike([row(n('card energy', 300, 300)), row(n('card mobility', 300, 300)),
+      row(n('card steel', 300, 300))], false), true, 'the first class names the card');
+    assert.equal(alike([row(n('h2', 600, 40, 'H2')), row(n('card', 300, 300)),
+      row(n('card', 300, 300)), row(n('card', 300, 300))], false), false,
+    'a heading over three cards: a section of a heading and a block');
+    assert.equal(alike([{ nodes: [n('', 700, 100, 'P'), n('', 700, 100, 'P'),
+      n('', 700, 100, 'P')], text: true }], false), false, 'a run of paragraphs is prose');
+    assert.equal(alike([row(n('col', 400, 900)), row(n('col', 400, 300)),
+      row(n('col', 380, 600))], true), true, 'side by side: the widths count');
+    assert.deepEqual([decide(answers(0.9, 0.1, 0.1), F({ alikeParts: true })).kind,
+      decide(answers(0.9, 0.1, 0.1), F({ alikeParts: true })).rule], ['block', 'alike items']);
+    assert.equal(decide(answers(0.1, 0.9, 0.1), F({ imageOnly: true, alikeParts: true })).kind,
+      'block', 'a gallery of alike images is one component, not images in flow');
+  });
+
 test('derive: merges by the answer; mixed kinds, or several containers, make a section', () => {
   const c = (id, top, bottom) => ({ id, top, bottom, left: 0, right: 1280 });
   const cands = [c('C1', 0, 100), c('C2', 100, 400), c('C3', 400, 500), c('C4', 500, 900),
@@ -216,8 +254,13 @@ test('derive: merges by the answer; mixed kinds, or several containers, make a s
     .map((b) => b.kind), ['block'], 'two pieces of one block are one block');
   const prose = [d('default_content', 0), d('default_content', 0.1), d('block', 0.1),
     d('default_content', 0.1)];
-  assert.equal(derive(cands.slice(0, 4), prose).length, 4,
-    'at the first level, the model\'s merges');
+  assert.equal(derive(cands.slice(0, 4), prose).length, 4, 'columns: the merge answers only');
+  assert.deepEqual(derive(cands.slice(0, 4), prose, { ground: true }).map((b) => b.members),
+    [['C1', 'C2'], ['C3'], ['C4']], 'at the first level, default next to default on one ground');
+  const grounds = [{ ...prose[0], background: null },
+    { ...prose[1], background: 'color:rgb(240, 240, 240)' }];
+  assert.equal(derive(cands.slice(0, 2), grounds, { ground: true }).length, 2,
+    'a change of background is a section break: the model\'s merge stands');
   assert.deepEqual(derive(cands.slice(0, 4), prose, { runs: true })
     .map((b) => [b.members, b.kind]), [[['C1', 'C2'], 'default_content'], [['C3'], 'block'],
     [['C4'], 'default_content']], 'inside a container, default content next to default is one run');
@@ -291,10 +334,10 @@ test('structurePage: asked, dug into until nothing is a container, composition r
     assert.equal(s.method.name, METHOD);
     const [, , split] = s.bands;
     assert.deepEqual(split.children.map((k) => [k.id, k.kind, k.collapsed ?? false]),
-      [['B3.1', 'default_content', true], ['B3.2', 'default_content', true]],
-      'the side column, a heading and a list, checked inside: one run of default content');
-    assert.deepEqual(s.candidates.filter((c) => c.parent === 'B3.2').map((c) => c.rule),
-      ['text run', null], 'its heading a run unasked, its list asked');
+      [['B3.1', 'default_content', true], ['B3.2', 'default_content', false]],
+      'the side column, a heading and a list, checked inside: plain default content');
+    assert.deepEqual(s.candidates.filter((c) => c.parent === 'B3:C2').map((c) => c.rule),
+      ['text run', null], 'its heading a run unasked, its list asked, under the candidate');
     const run = s.candidates.find((c) => c.parent === 'B3.1');
     assert.deepEqual([run.depth, run.rule, run.probabilities], [3, 'text run', null]);
     assert.equal(s.candidates.find((c) => c.id === 'C3').probabilities.layout, 0.8);
@@ -378,8 +421,11 @@ test('structurePage: default content checked inside; a block found there makes a
     assert.match(out.tree, /^b s\[d b\] /, 'judged default, holds a heading and a block');
     const { bands } = await data(cwd);
     const s = await bands.readStructure(cwd, page.id);
-    assert.deepEqual([s.bands[1].checked, s.candidates[1].kind], [true, 'default_content'],
-      'the answer stays on record; the node is what was found inside');
+    assert.deepEqual([s.bands[1].checked, s.candidates[1].kind, s.candidates[1].judged,
+      s.candidates[1].rule], [true, 'section', 'default_content', 'checked: holds more than text'],
+    'the model\'s answer stays on record; the decision is what was found inside');
+    assert.deepEqual(s.bands[1].children.map((k) => k.id), ['B2.1', 'B2.2'],
+      'the checked children under the band\'s id');
   });
 
 test('structurePage returns null for a page without a capture or a shot', async () => {
