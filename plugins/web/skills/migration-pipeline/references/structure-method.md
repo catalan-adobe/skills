@@ -1,9 +1,11 @@
 # The structure method: what is settled, what is not
 
-`pipeline structure <selection>` reads each page's body into EDS shape: sections with a
-layout at level 1, their items at level 2. This note records how the method came to be,
+`pipeline structure <selection>` reads each page's body into EDS shape, as one operation
+applied until it has nothing left to do: cut a part of the page into bands, qualify each —
+`section`, `block`, `default_content`, or `layout` (parts side by side) — and cut and
+qualify again inside every section and layout. This note records how the method came to be,
 what it was measured against, and where it stands — so that the next reader does not
-re-derive it or trust it beyond what was measured. Dates: 2026-10-09/10. Bench: seven
+re-derive it or trust it beyond what was measured. Dates: 2026-10-09/11. Bench: seven
 sites × 10 pages (`judge-10`): wknd, aem.live, NASA, MDN, MIT, gov.uk, Synopsys.
 
 ## How the method was chosen
@@ -36,72 +38,87 @@ Five readings of the same 70 pages, in order, each a lab run before anything was
 The lab files are outside the repository (`~/repos/ai/migration-tests/_lab/{haiku-wknd,
 hybrid,s1}`); their findings are copied into the migration project's `docs/research/`.
 
-## Level 1 — settled
+## The cut — the tree's, at every depth
 
-- **Candidates** (`candidates`): from the tree, through wrapper chains (one child inside
-  the body, or one child covering it with slivers beside) to the first level with two or
-  more children; siblings sharing a vertical range form one candidate with parts side by
-  side; gaps belong to the band above.
-- **Facts** (`facts`, `stateOf`), as words: position, height, background; layout from the
-  parts' widths (a part 1.6× wider than its neighbour is the main column; equal widths are
-  columns), else the leaves' columns (`columnsOf`, ignored when the band is a grid of alike
-  images), else a rail the dump set aside; a side layout needs 300 px of height. Pictures:
-  large image covering the band / N alike images of one size / N images. Text: none /
-  short texts / a few lines / paragraphs. Headings, links, inputs, embeds; 16 content
-  snippets.
-- **Questions** (`questions`), all yes/no, one request per candidate, two crops (the band;
-  the previous band above it): `is_default`, `is_block`, `is_section` (the three kinds as
-  questions; the most probable wins), `title_above` (a heading introducing a component
-  below → section), `merge` (do `previous` and `band` form one part for an author;
-  threshold 0.75).
-- **Rules** (`decide`): a side layout → section unless the model judged a block (a hero
-  beside its text panel); equal columns judged default → block (columns); one heading and
-  nothing else → default; an image alone → block when ≥ 90 % of the page wide, else
-  default (an image in flow); an empty band → merged.
+- **Candidates** (`candidates`, `stack`): at the body, the tree's siblings, through wrapper
+  chains (one child inside the range; or one child as tall as the range with nothing
+  *beside* it — clear of it across and more than a sliver) to the first level with two or
+  more children; siblings sharing a vertical range form one candidate with parts; gaps
+  belong to the band above.
+- **Inside a candidate** (`cut`), the same at every depth: its columns when its parts are
+  side by side (two parts at least 120 px wide overlapping across by at most a quarter of
+  the narrower — a grid's margin, not a layer); else its nodes stacked; else, for one node,
+  through its wrappers to its siblings. One candidate of layers over each other passes into
+  the layer with most content, the other layers carried along once and stacked with its
+  children (a breadcrumb drawn over a section's top is kept, a background is dropped).
+  Consecutive prose elements (`TEXT_TAGS`: paragraphs, headings, quotes, code, figures,
+  images — not lists, links or spans, which can be a nav, tabs or cards) are one text run.
+- **Looked at before asking**: every candidate's cut is computed first. Siblings side by
+  side under wrappers make the candidate side by side; a column without content (the
+  page's grid) is not a part; the reader is told the parts and, for a stack, how many parts
+  of what are inside (`stack`: "three parts one above another: one of text, two other").
+
+## Qualifying — the reader and the rules
+
+- **Facts** (`facts`, `stateOf`), as words: position, height, background; the arrangement
+  (a part 1.6× wider than its neighbour is the main column; equal widths are columns; else
+  the leaves' columns, not a grid's; else a rail the dump set aside); parts side by side
+  with their shares of the width; what is stacked inside; pictures (large image covering
+  the band / N alike images / N images); text (none / short / a few lines / paragraphs);
+  headings, links, inputs, embeds; 16 content snippets. A column sees only its own leaves,
+  a side rail's included.
+- **Questions** (`questions`), all yes/no, one request per candidate: `is_default`,
+  `is_block`, `is_section` (the most probable wins), `title_above` (a heading introducing a
+  component below), `is_layout` only when the parts are side by side, `merge` only when
+  there is a candidate above in the same stack (columns are not a stack). Crops: the
+  candidate at its own extent; with a merge question, the previous one above it too.
+- **Rules** (`decide`, `derive`): a block under a heading that introduces it → section;
+  side by side and `is_layout` ≥ 0.5 → layout; side by side and judged section → layout;
+  one heading and nothing else → default; an image alone → block when ≥ 90 % of the page
+  wide, else default; an empty candidate merges. A band merged from candidates of one kind
+  keeps it; of mixed kinds, or of several containers, it is a section whose children are
+  its members. Inside a container, default content next to default content is one run
+  (EDS); at the first level the model's merges stand, for there the section breaks are.
+- **Digging** (`reader`): every section and layout is cut and qualified again; nothing
+  left to cut leaves it `unresolved`; one child makes it that child (`collapsed`). Default
+  content with parts inside, one of them not text, is dug into to check (`checked`): what
+  comes back all default content is one run again; a block inside makes it a section.
+  `MAX_DEPTH` 12 is a guard; on the bench the trees end by depth 6.
 - **What did not work**: a three-way `choice` (System 1 does not compose: 1 block found
   in 59); image-only or text-only input; dropping the content snippets (merge 85 → 78);
-  dropping the pair image (merge 85 → 80).
+  dropping the pair image (merge 85 → 80); telling the reader what is stacked inside
+  without checking (MDN's home page, three headed card grids, stayed "default content").
 
-## Level 2 — built, not settled
+## Where it stands (2026-10-11, 70 pages)
 
-What is built (`open`, the queue in `structurePage`): a section band is opened into its
-main part's siblings (same wrapper walk; into a lone candidate as tall as the band when
-the siblings fold into one); side columns set aside (narrower than 40 % of the container,
-taller than 40 % of the band, starting in its top fifth, at an edge) and fed back as the
-band's layout; consecutive runs of text elements (`TEXT_TAGS`) merged and typed default
-content without asking; the other children asked the same five questions; inside a
-section two children join only when of the same kind (a heading never joins the block it
-introduces); members of a band merged at level 1 are children by construction; a child
-that is a section again is opened once more (`MAX_DEPTH` 3). The composition's items are
-the leaves of that tree plus the side columns.
-
-What is not settled, and why it matters:
-
-- **Level 2 is not level 1 again.** Inside a section EDS has *items*, not bands: runs of
-  default content, blocks, and side columns that are layout. Reusing the band machinery
-  found, one page at a time, where its assumptions do not hold (wrappers, side-column
-  thresholds, merge semantics, the stop rule). Each fix was right; the sequence has no end.
-- **The stop rule is a proxy.** A child is opened again when the model calls it a section.
-  The judgement actually needed is *is this subtree one component, or a group of several?*
-  — a component stops, a group opens. That question has not been asked as such.
-- **EDS depth is fixed, not N.** Section → items → (inside a block) rows → cells. Level 3
-  is block internals — alike children as rows, their children as cells — pure geometry
-  and the start of the block vocabulary. Not begun.
-- **Thresholds were set by eye** on three pages (NASA Chas Hoff, wknd Beervana, Synopsys
-  offices); there is no reference for level 2 yet. The level-1 lesson applies: build the
-  measurement first (a sample of opened sections with the right items marked), then set
-  thresholds against it.
-
-Proposed contract for the next iteration, not yet implemented: candidate kinds `text run |
-subtree | side column`; one question per subtree, *one component or a group*; stop at a
-component or a text run; block internals as a separate, structural pass.
+- **Cost**: 895 questions, ~21 k tokens a page, ≈ $0.005 a page — level 1 alone was
+  $0.0015. All 70 trees end; 6 containers are unresolved (MDN's sidebar, two code samples,
+  MIT's related links and an image pair, one aem.live tutorial step) — the tree has no
+  children to give there, often because the content sits in another subtree.
+- **Level 1 against Haiku** (which had no layout kind: parts side by side were a section
+  with a side layout or a block with columns): plain default content 110/115, plain blocks
+  17/20, plain sections 9/15; merge 85 %. Haiku's side-by-side calls split three ways and
+  the split is mostly a naming difference, not an error: a row of address columns is our
+  layout and Haiku's columns block; a heading over a card row is our `s[d b]` and Haiku's
+  section with columns. Haiku can confirm the plain cases and cannot judge the rest.
+- **Read on the pages**: wknd Beervana `d b s[d l[d s[b d]]]` — title, hero, the title of
+  the article, its facts column beside the main column of tabs and text; NASA's article
+  page a layout of byline and article; MDN's home page `s[s[d b] s[d b] d]` on one run.
+- **Unstable near ties**: one phrase added to a criterion ("a code sample") flipped MDN's
+  home page back to default content and turned NASA's photo-with-caption into a block.
+  Kind decisions where two probabilities lie within ~10 points move with wording; the
+  measures over 255 candidates hardly move. Single pages cannot tell which wording is
+  better: **a human reference is the next step**, and the review collects it.
 
 ## Artefacts
 
-`pages/<id>/structure.candidates-system1.json` (schema `pages/structure@2`): `candidates`
-with facts, state, answers, decision and rule; `bands` with members, kind, layout,
-`children` (recursive) and `side`; `usage`. `pages/<id>/composition.json`: sections with
-`style.layout`, items as leaves. `migration.mjs structure-review <selection>` →
-`views/structure-<selection>.html`: candidate cuts dashed blue, bands by kind, children
-dashed and inset by depth, side columns hatched; a row per candidate with probabilities
-and the rule that changed the decision.
+`pages/<id>/structure.candidates-system1.json` (schema `pages/structure@3`): `candidates`,
+every one cut at any depth, with `parent`, `depth`, extent, parts, facts, state, answers,
+decision and rule; `bands`, the tree: each node with members, kind, extent, `children`,
+`unresolved`, `collapsed`, `checked`; `usage`. `pages/<id>/composition.json`: a section
+per first-level band, its items the leaves of the tree under it in reading order —
+flattening nested sections into EDS's one level is a later phase's. `migration.mjs
+structure-review <selection>` → `views/structure-<selection>.html`: the first level solid,
+deeper nodes dashed at their own extent, unresolved tinted red, the tree in letters
+(`s[d l[d b]]`); a row per node with probabilities and the rule; a mark per node (ok, the
+kind it should be, wrong cut) and a note, kept in the browser, exported as JSON.

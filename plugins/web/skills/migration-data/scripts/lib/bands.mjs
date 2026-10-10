@@ -7,7 +7,7 @@ import { HEAD, register } from './schema.mjs';
 import { openStore } from './store.mjs';
 
 export const CAPTURE_SCHEMA = 'pages/band-capture@1';
-export const STRUCTURE_SCHEMA = 'pages/structure@2';
+export const STRUCTURE_SCHEMA = 'pages/structure@3';
 export const structureFile = (pageId, method = 'candidates-system1') => (
   `pages/${pageId}/structure.${method}.json`);
 export const VERDICTS_FILE = 'pages/band-verdicts.json';
@@ -71,10 +71,11 @@ register('pages/pixel-check', 1, 'derived', {
     flags: { type: 'array', items: { enum: ['bg-mismatch', 'unpainted', 'unclaimed-ink'] } },
   },
 });
-// A method's reading of a page's first level: the candidates from the tree with their
-// facts, the model's answers and the decision on each; the bands derived from them. The
-// record a review reads and a correction is made against.
-register('pages/structure', 2, 'derived', {
+// A method's reading of a page: every candidate it cut, at every depth, with its facts, the
+// model's answers and the decision on each; the bands derived from them as a tree — a
+// section's or a layout's children cut and qualified again. The record a review reads and
+// a correction is made against.
+register('pages/structure', 3, 'derived', {
   type: 'object',
   required: ['schema', 'page', 'method', 'body', 'candidates', 'bands'],
   additionalProperties: false,
@@ -91,7 +92,6 @@ register('pages/structure', 2, 'derived', {
     body: { type: 'object' },
     candidates: { type: 'array', items: { type: 'object' } },
     bands: { type: 'array', items: { type: 'object' } },
-    children: { type: 'array', items: { type: 'object' } },
     usage: { type: 'object' },
   },
 });

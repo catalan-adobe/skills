@@ -44,8 +44,9 @@ export const COMMANDS = [
   { name: 'pixels', usage: '[selection]',
     text: 'the screenshot checks each band capture; flags where they disagree' },
   { name: 'structure', usage: '<selection>',
-    help: 'lab: a selection\'s first level — candidate bands from the tree, each a section, a'
-      + ' block or default content by a System 1 model (needs the S1_* environment)' },
+    help: 'lab: a selection\'s structure — bands from the tree, each a section, a layout, a'
+      + ' block or default content by a System 1 model, cut and qualified again inside every'
+      + ' section and layout (needs the S1_* environment)' },
   { name: 'report', usage: '', help: 'render views/report.md and views/report.html' },
   { name: 'website', usage: '', help: 'refresh the website summary from the table' },
   { name: 'state', usage: '[--text]', help: 'every step\'s state, computed and written' },
