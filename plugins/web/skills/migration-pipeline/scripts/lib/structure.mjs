@@ -167,11 +167,13 @@ const sideOf = (boxes) => {
  * its leaves; else a rail the dump set aside that overlaps it. A narrow part beside a wide
  * one is a side column; a layout needs height to be one (a byline is not).
  */
-export function layoutOf(c, capture, cols) {
+export function layoutOf(c, capture, cols, { grid = false } = {}) {
   const h = c.bottom - c.top;
   const parts = c.parts.filter((p) => p.w >= 120);
+  // Columns read from the leaves of a grid of alike items are the grid's, not the band's.
+  const fromLeaves = !grid && cols.length >= 2;
   const boxes = parts.length >= 2 ? parts
-    : cols.length >= 2 ? cols.map((k) => ({ x: k.x0, w: k.x1 - k.x0 })) : [];
+    : fromLeaves ? cols.map((k) => ({ x: k.x0, w: k.x1 - k.x0 })) : [];
   let layout = boxes.length >= 2 ? sideOf(boxes) : 'single';
   if (layout === 'single') {
     const rails = (capture.analysis?.rails ?? []).filter((r) => (
@@ -221,7 +223,8 @@ export function facts(c, capture, { inside: within = false } = {}) {
     chars, long, links, inputs, embeds,
     // Inside a section its side column is set aside already: a child's layout is its own parts'.
     layout: within ? (c.parts.filter((p) => p.w >= 120).length >= 2
-      ? sideOf(c.parts.filter((p) => p.w >= 120)) : 'single') : layoutOf(c, capture, cols),
+      ? sideOf(c.parts.filter((p) => p.w >= 120)) : 'single')
+      : layoutOf(c, capture, cols, { grid: (alike?.length ?? 0) >= 3 }),
     imageOnly: images.length >= 1 && chars === 0 && headings === 0 && links <= 1 && inputs === 0,
     fullBleed: big.some((im) => im.w >= FULL_BLEED * W),
     loneHeading: headings === 1 && chars === 0 && images.length === 0 && links <= 1,
@@ -447,6 +450,12 @@ export async function structurePage(cwd, pageId, { io, dep, now = () => new Date
     // eslint-disable-next-line no-await-in-loop
     const kids = await ask(children, { within: true });
     band.side = side;
+    // What opening found is the layout: a side column on the left makes the main column right.
+    if (side.length) {
+      const mid = (sd) => sd.x + sd.w / 2 < capture.W / 2;
+      band.layout = side.every(mid) ? 'main-right' : side.every((sd) => !mid(sd)) ? 'main-left'
+        : 'main-centre';
+    }
     band.children = derive(children, kids, { sameKind: true })
       .map((b, i) => ({ ...b, id: `${band.id}.${i + 1}` }));
     pool.push(...children);
