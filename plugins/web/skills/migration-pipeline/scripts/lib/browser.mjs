@@ -183,21 +183,30 @@ export function playwright(cli, { io = defaultIo, cwd, session }) {
 }
 
 /**
- * The playwright-cli config file for a step: the access recipe's config; with `onlyProxy`
- * (offline sessions) the proxy is the only allowed origin, so nothing leaves the machine;
- * with `initScript`, a script injected into every page (the visual-tree bundle).
+ * The playwright-cli config file for a step: the access recipe's config; the recipe's
+ * stealth script, when it has one, injected into every page first — online and offline
+ * alike, so a page behaves the same in both; with `onlyProxy` (offline sessions) the proxy
+ * is the only allowed origin, so nothing leaves the machine; with `initScript`, a script
+ * injected into every page (the visual-tree bundle).
  */
 export async function writeBrowserConfig(cwd, kind, access, port, {
   initScript, onlyProxy = false,
 } = {}) {
+  const dir = path.join(cwd, 'migration', '.work', kind);
+  await mkdir(dir, { recursive: true });
+  const scripts = [];
+  if (access.browser.stealthInitScript) {
+    const stealth = path.join(dir, 'stealth.js');
+    await writeFile(stealth, access.browser.stealthInitScript);
+    scripts.push(stealth);
+  }
+  if (initScript) scripts.push(initScript);
   const base = access.browser.config ?? { browser: { browserName: access.browser.engine } };
   const config = {
     ...base,
-    browser: { ...base.browser, ...(initScript ? { initScript: [initScript] } : {}) },
+    browser: { ...base.browser, ...(scripts.length ? { initScript: scripts } : {}) },
     ...(onlyProxy ? { network: { allowedOrigins: [`http://127.0.0.1:${port}`] } } : {}),
   };
-  const dir = path.join(cwd, 'migration', '.work', kind);
-  await mkdir(dir, { recursive: true });
   const file = path.join(dir, 'browser-config.json');
   await writeFile(file, `${JSON.stringify(config, null, 2)}\n`);
   return file;

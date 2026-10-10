@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
   assetOriginsInCache, assetsInWords, cacheRelativePath, cacheSelection, check, classify,
   fill, pageExpression, pending, pendingSelections, siteUrl, storedFacts,
 } from './cache.mjs';
-import { cacheDir, proxyStarter } from './browser.mjs';
+import { cacheDir, proxyStarter, writeBrowserConfig } from './browser.mjs';
 import { data } from './data.mjs';
 
 const O = 'https://a.example/';
@@ -295,3 +295,23 @@ test('sample: normal pages only, one per group in turn, largest groups first', a
   assert.deepEqual((await sample(cwd, { count: 10 })).picks.map((p) => p.group),
     ['a', 'b', 'c', 'a', 'b', 'a'], 'the flagged page is never sampled');
 });
+
+test('the browser config: the recipe\'s stealth script injected first, online and offline',
+  async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), 'mpipe-config-'));
+    const access = { browser: { engine: 'chromium', stealthInitScript: '(() => 1)();',
+      config: { browser: { browserName: 'chromium', launchOptions: {} } } } };
+    const read = async (file) => JSON.parse(await readFile(file, 'utf8'));
+    const online = await read(await writeBrowserConfig(cwd, 'cache', access, 9));
+    const stealth = path.join(cwd, 'migration', '.work', 'cache', 'stealth.js');
+    assert.deepEqual(online.browser.initScript, [stealth]);
+    assert.equal(await readFile(stealth, 'utf8'), '(() => 1)();');
+    const offline = JSON.parse(await readFile(await writeBrowserConfig(cwd, 'chrome', access, 9,
+      { initScript: '/bundle.js', onlyProxy: true }), 'utf8'));
+    assert.deepEqual(offline.browser.initScript,
+      [path.join(cwd, 'migration', '.work', 'chrome', 'stealth.js'), '/bundle.js']);
+    assert.deepEqual(offline.network.allowedOrigins, ['http://127.0.0.1:9']);
+    const plain = JSON.parse(await readFile(await writeBrowserConfig(cwd, 'cache',
+      { browser: { engine: 'chromium' } }, 9), 'utf8'));
+    assert.equal(plain.browser.initScript, undefined, 'no recipe script, none injected');
+  });
