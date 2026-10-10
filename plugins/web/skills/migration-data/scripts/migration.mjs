@@ -39,8 +39,10 @@ export const COMMANDS = [
     help: 'the operator\'s word on a page' },
   { name: 'selections', usage: '', help: 'every selection' },
   { name: 'website', usage: '', help: 'the website summary, refreshed from the table' },
-  { name: 'access', usage: 'overlay <selector> hide|click|remove | rendering "<css>" [--note]',
-    help: 'add an overlay rule, or a rendering rule (CSS before a page is read), to access' },
+  { name: 'access',
+    usage: 'overlay <selector> hide|click|remove | rendering "<css>" [--note] [--remove]',
+    help: 'add an overlay rule, or a rendering rule (CSS before a page is read), to access;'
+      + ' --remove takes a rendering rule out (the capture does what it did)' },
   { name: 'types', usage: '[--undecided]', help: 'the element types, or the ones to decide' },
   { name: 'decide-type', usage: '<typ-id> <kind> [<name-or-style>] [--notes <text>]',
     help: 'what a type is: section|block|default-content|fragment|wrapper|skip' },
@@ -66,10 +68,11 @@ const FLAGS = {
   pages: ['--group', '--status', '--reason', '--cached', '--uncached', '--fragment', '--text'],
   page: [], 'decide-page': [], selections: [], website: [], types: ['--undecided'],
   'decide-type': ['--notes'], inventory: [], note: ['--page'], notes: ['--step'],
-  access: ['--note'],
+  access: ['--note', '--remove'],
   report: ['--html'], annotate: [], verdicts: [], 'band-verdicts': [], 'structure-review': [],
 };
-const BOOLEAN = new Set(['--text', '--cached', '--uncached', '--undecided', '--html']);
+const BOOLEAN = new Set(['--text', '--cached', '--uncached', '--undecided', '--html',
+  '--remove']);
 
 export function parse(argv) {
   const [name, ...rest] = argv;
@@ -170,6 +173,7 @@ export async function main(argv, cwd = process.cwd()) {
     case 'access': {
       const [verb, selector, action] = positional;
       if (verb === 'rendering') {
+        if (flags['--remove']) return website.removeRendering(cwd, selector);
         return website.addRendering(cwd, { css: selector, note: flags['--note'] });
       }
       if (verb !== 'overlay') {

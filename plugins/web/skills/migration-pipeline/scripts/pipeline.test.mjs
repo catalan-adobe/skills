@@ -161,8 +161,13 @@ test('access folds the probe and prep findings into access.json; verified pages 
     await writeFile(path.join(dir, 'page-prep.json'), JSON.stringify({
       checked: [O, `${O}a`, `${O}new`], overlays: [], residual: [],
     }));
-    await writeAccess(cwd);
+    const { website } = await data(cwd);
+    await website.addOverlay(cwd, { selector: '.gate', action: 'hide', note: 'seen later' });
+    await website.addRendering(cwd, { css: '.x { opacity: 1 }' });
+    const again = (await writeAccess(cwd)).access;
     assert.deepEqual(await check(cwd), { pass: true });
+    assert.deepEqual([again.overlays.map((o) => o.selector), again.rendering.map((r) => r.css)],
+      [['.gate'], ['.x { opacity: 1 }']], 'a rerun keeps what was added through the layer');
     const { pages } = await data(cwd);
     const added = await pages.get(cwd, `${O}new`);
     assert.equal(added.discovered.from, 'link', 'a checked page the table did not know is added');

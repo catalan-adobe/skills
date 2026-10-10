@@ -8,7 +8,8 @@ import { init } from './migration.mjs';
 import { pageId, upsert } from './pages.mjs';
 import { classOf } from './schema.mjs';
 import {
-  ACCESS_SCHEMA, FRAGMENTS_SCHEMA, PLACEMENTS, WEBSITE_SCHEMA, addOverlay, fragmentId,
+  ACCESS_SCHEMA, FRAGMENTS_SCHEMA, PLACEMENTS, WEBSITE_SCHEMA, addOverlay, addRendering,
+  fragmentId, removeRendering,
   pagesUsing, readAccess, readFragments, readWebsite, refresh, writeAccess, writeFragments,
 } from './website.mjs';
 
@@ -78,13 +79,21 @@ test('access.json: one decision on how to open a page', async () => {
     note: 'floating chat widget over the content' });
   assert.deepEqual(added.overlays.at(-1), { selector: '#chat-bar', action: 'hide',
     css: ['#chat-bar { display: none !important; }'],
-    note: 'floating chat widget over the content' });
+    note: 'floating chat widget over the content', by: 'reader' });
   assert.equal(added.overlays.length, a.overlays.length + 1);
   assert.deepEqual(added.verifiedOn, a.verifiedOn, 'not verified by adding');
   const replaced = await addOverlay(cwd, { selector: '#chat-bar', action: 'remove' });
   assert.equal(replaced.overlays.filter((o) => o.selector === '#chat-bar').length, 1);
   assert.equal(replaced.overlays.at(-1).css, undefined);
   await assert.rejects(addOverlay(cwd, { selector: '#x', action: 'nuke' }), /one of hide/);
+  // A rendering rule added, then taken out once the capture does what it did.
+  const css = '.parallax { background-attachment: scroll !important; }';
+  assert.deepEqual((await addRendering(cwd, { css, note: 'blank banners' })).rendering,
+    [{ css, note: 'blank banners' }]);
+  await assert.rejects(removeRendering(cwd, '.other { x: y }'), /no rendering rule.*parallax/);
+  const removed = await removeRendering(cwd, css);
+  assert.equal(removed.rendering, undefined);
+  assert.equal(removed.overlays.length, replaced.overlays.length, 'nothing else touched');
 });
 
 test('fragments.json defines the shared documents; pages using one is a query', async () => {

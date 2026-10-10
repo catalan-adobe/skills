@@ -43,7 +43,9 @@ export function overlaysOf(prep) {
 /**
  * Folds the probe's and the prep's findings into website/access.json. The pages the
  * recipe was verified on (the prep's `checked`) are made known to the table when they
- * are not, so `verifiedOn` holds page ids.
+ * are not, so `verifiedOn` holds page ids. What a reader added since through the layer —
+ * overlay rules (`by: reader`) for selectors the prep does not name, rendering rules — is
+ * kept: a rerun after an edit of the prep must not lose what was found in the captures.
  */
 export async function writeAccess(cwd, { dir = path.join(cwd, WORK) } = {}) {
   const recipe = await readJson(path.join(dir, RECIPE_FILE));
@@ -63,9 +65,14 @@ export async function writeAccess(cwd, { dir = path.join(cwd, WORK) } = {}) {
     await website.refresh(cwd); // whoever changes the table refreshes the summary
   }
   const run = await runs.start(cwd, 'access', { recipe: RECIPE_FILE, prep: PREP_FILE });
+  const before = await website.readAccess(cwd);
+  const fromPrep = overlaysOf(prep);
+  const named = new Set(fromPrep.map((o) => o.selector));
   const access = await website.writeAccess(cwd, {
     browser: browserOf(recipe),
-    overlays: overlaysOf(prep),
+    overlays: [...fromPrep, ...(before?.overlays ?? [])
+      .filter((o) => o.by === 'reader' && !named.has(o.selector))],
+    rendering: before?.rendering ?? [],
     ...(prep.scroll_fix ? { scrollFix: prep.scroll_fix } : {}),
     verifiedOn: checked.map((u) => pages.pageId(u)),
   });

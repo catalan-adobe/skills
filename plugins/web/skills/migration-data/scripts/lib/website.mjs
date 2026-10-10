@@ -91,6 +91,9 @@ register('website/access', 1, 'decision', {
           action: { enum: OVERLAY_ACTIONS },
           css: { type: 'array', items: { type: 'string' } },
           note: { type: 'string' },
+          // added by a reader through the layer, after the access step's prep: kept when
+          // the step folds its prep again
+          by: { const: 'reader' },
         },
       },
     },
@@ -261,7 +264,7 @@ export async function addOverlay(cwd, { selector, action, css, note }) {
   const rule = {
     selector, action,
     ...(action === 'hide' ? { css: css ?? [`${selector} { display: none !important; }`] } : {}),
-    ...(note ? { note } : {}),
+    ...(note ? { note } : {}), by: 'reader',
   };
   const overlays = [...access.overlays.filter((o) => o.selector !== selector), rule];
   const { schema, updatedAt, summary, ...rest } = access;
@@ -281,6 +284,22 @@ export async function addRendering(cwd, { css, note }) {
   const rendering = [...(access.rendering ?? []).filter((r) => r.css !== rule.css), rule];
   const { schema, updatedAt, summary, ...rest } = access;
   return writeAccess(cwd, { ...rest, rendering });
+}
+
+/**
+ * Takes a rendering rule out — when the capture itself came to do what it did. The css must
+ * be one already there; trees older than the change are stale.
+ */
+export async function removeRendering(cwd, css) {
+  const access = await readAccess(cwd);
+  if (!access) throw new Error('no website/access.json yet; run the access step first');
+  const rendering = access.rendering ?? [];
+  if (!rendering.some((r) => r.css === css?.trim())) {
+    throw new Error(`no rendering rule "${css}"; the rules: ${rendering.map((r) => r.css)
+      .join(' | ') || 'none'}`);
+  }
+  const { schema, updatedAt, summary, ...rest } = access;
+  return writeAccess(cwd, { ...rest, rendering: rendering.filter((r) => r.css !== css.trim()) });
 }
 
 /**
