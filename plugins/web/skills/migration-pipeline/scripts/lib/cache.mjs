@@ -24,10 +24,15 @@ const BINARY_EXT = /\.(pdf|zip|jpe?g|png|gif|svg|webp|mp4|mp3|docx?|xlsx?|pptx?|
 /**
  * Animations and transitions end at once: a reveal that eases in over a second is read
  * where it ends, not midway; and smooth scrolling is instant, so a scroll is where it says.
+ * A fixed background scrolls with its box: a full-page screenshot paints a fixed one
+ * against the viewport, so a parallax banner came out blank behind its text. What overflows
+ * the page across is clipped (`clip`: no scroll container, sticky still sticks): a slider's
+ * track 40 000 px wide had made the screenshot as wide.
  */
 export const FREEZE = '*, *::before, *::after { animation-duration: 0s !important;'
   + ' animation-delay: 0s !important; transition-duration: 0s !important;'
-  + ' transition-delay: 0s !important } html, body { scroll-behavior: auto !important }';
+  + ' transition-delay: 0s !important; background-attachment: scroll !important }'
+  + ' html, body { scroll-behavior: auto !important } body > * { overflow-x: clip !important }';
 
 export function pageExpression(access) {
   const css = [

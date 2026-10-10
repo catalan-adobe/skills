@@ -148,11 +148,11 @@ export const DUMP = `(() => {
     if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
-    if (cs.position === 'fixed') {
+    if (cs.position === 'fixed' && !keepLayer(el)) {
       // A fixed element is a floating layer itself unless it is the site header bar or an app
-      // shell.
+      // shell — those are read like the page, their own background with them.
       const fr = layerBox(el);
-      if (fr.width >= 2 && fr.height >= 2 && !keepLayer(el)) addOverlay(el);
+      if (fr.width >= 2 && fr.height >= 2) addOverlay(el);
       continue;
     }
     // An open modal (a consent dialog, a newsletter popup) sits over the page and is not page

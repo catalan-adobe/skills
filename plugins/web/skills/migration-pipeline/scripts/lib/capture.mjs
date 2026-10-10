@@ -34,8 +34,11 @@ export const MAX_CONSECUTIVE_FAILURES = 5;
  *       named on its leaf, with its host.
  *  11 — images pinned to their chosen candidate before the screenshot (the full-page
  *       layout had made them pick others, uncached, and the page grow).
+ *  12 — fixed backgrounds scroll, what overflows across is clipped (a parallax banner
+ *       blank, a 40 112 px wide screenshot); a fixed header bar kept in the dump keeps its
+ *       own background (every page of a navy fixed header read as misread).
  */
-export const CAPTURE_VERSION = 11;
+export const CAPTURE_VERSION = 12;
 /**
  * Back at the top, instantly, before anything is read: a script may scroll the page after
  * it was prepared (a side navigation bringing its active item into view), and a reading
