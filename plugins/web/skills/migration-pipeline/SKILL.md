@@ -67,6 +67,8 @@ judge, and the data has a place for the reaction:
 - a fact about the site the next step needs (assets on another host, a second design,
   a group that is a different product): `migration.mjs note <step> agent "…"`, and the
   setting or decision it calls for;
+- what `structure` reads and how far to trust it: `references/structure-method.md` —
+  level 1 measured, level 2 built and not settled, the contract proposed for it;
 - a page whose picture disagrees with its reading (`misread`): `references/misread-pages.md`
   says what each detail is and the act it calls for — an asset origin to name, a reveal
   to hold open (`access rendering`), an embed to write down;
