@@ -52,7 +52,8 @@ hybrid,s1}`); their findings are copied into the migration project's `docs/resea
   the layer with most content, the other layers carried along once and stacked with its
   children (a breadcrumb drawn over a section's top is kept, a background is dropped).
   Consecutive prose elements (`TEXT_TAGS`: paragraphs, headings, quotes, code, figures,
-  images — not lists, links or spans, which can be a nav, tabs or cards) are one text run.
+  images — not lists, links or spans, which can be a nav, tabs or cards) are one text run,
+  at the first level as at every other (a JSW article had been 53 questions, 26 bands).
 - **Looked at before asking**: every candidate's cut is computed first. Siblings side by
   side under wrappers make the candidate side by side; a column without content (the
   page's grid) is not a part; the reader is told the parts and, for a stack, how many parts
@@ -75,14 +76,18 @@ hybrid,s1}`); their findings are copied into the migration project's `docs/resea
 - **Rules** (`decide`, `derive`): a block under a heading that introduces it → section;
   side by side and `is_layout` ≥ 0.5 → layout; side by side and judged section → layout;
   one heading and nothing else → default; an image alone → block when ≥ 90 % of the page
-  wide, else default; an empty candidate merges. A band merged from candidates of one kind
-  keeps it; of mixed kinds, or of several containers, it is a section whose children are
-  its members. Inside a container, default content next to default content is one run
-  (EDS); at the first level the model's merges stand, for there the section breaks are.
+  wide, else default; parts of one shape (`alike`: tag and first class, most within a
+  quarter of their median size, 80 % of the nodes inside, three at least; prose never, list
+  items only where the list holds pictures or headings) → block, a list of items; an empty
+  candidate merges. A band merged from candidates of one kind keeps it; of mixed kinds, or
+  of several containers, it is a section whose children are its members. Default content
+  next to default content is one run (EDS): inside a container always, at the first level
+  on the same background — a section break there is a change of style or nothing at all.
 - **Digging** (`reader`): every section and layout is cut and qualified again; nothing
   left to cut leaves it `unresolved`; one child makes it that child (`collapsed`). Default
-  content with parts inside, one of them not text, is dug into to check (`checked`): what
-  comes back all default content is one run again; a block inside makes it a section.
+  content with parts inside, one of them not text, is dug into to check (`checked`) before
+  anything is merged: what comes back all default content is plain default content and
+  runs with its neighbours; a block inside makes it a section.
   `MAX_DEPTH` 12 is a guard; on the bench the trees end by depth 6.
 - **What did not work**: a three-way `choice` (System 1 does not compose: 1 block found
   in 59); image-only or text-only input; dropping the content snippets (merge 85 → 78);
@@ -109,6 +114,24 @@ hybrid,s1}`); their findings are copied into the migration project's `docs/resea
   Kind decisions where two probabilities lie within ~10 points move with wording; the
   measures over 255 candidates hardly move. Single pages cannot tell which wording is
   better: **a human reference is the next step**, and the review collects it.
+
+## Seven more sites (2026-10-11, bench-level3)
+
+myastrazeneca.ch, continental.com, wknd-adventures.com, aig.com, moosemountainvineyards.com,
+gehealthcare.com, jsw.in — 50 pages each through the pipeline, `judge-10` each read:
+70 pages, 1 361 questions, $0.003–0.015 a page (median ≈ $0.005; the checks are most of the
+rise), depth ≤ 6, 10 containers unresolved (GE and Continental: content the tree has no
+children for). What the sites taught, each made generic: the stealth script applied to
+every session (it was stored, never used); a chosen part at two DOM positions is two
+variants; fixed backgrounds scroll and what overflows across is clipped in the capture; a
+fixed header bar keeps its background in the dump; an access rerun keeps a reader's rules;
+the four structure rules above. What stayed site-specific, as data: overlays (consent
+banners of six kinds, a professional gate, a fraud-disclaimer modal), JSW's GSAP wrapper
+held static, chrome choices on four sites (rules took a hero teaser, a hero background
+layer, a slider into the header; JSW's 26 empty result posts pulled support down). Open:
+an image layer whose picture changes across pages is content, not chrome (wknd-adventures'
+hero background read as stable text-less chrome); AIG's light-blue panels claimed and
+painted paler (a translucent layer).
 
 ## Artefacts
 
