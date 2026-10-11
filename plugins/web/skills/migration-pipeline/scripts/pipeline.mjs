@@ -3,8 +3,11 @@
 // knows is read and written through the layer. JSON on stdout, --text for people.
 import { realpathSync } from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeAccess } from './lib/access.mjs';
+import { prepPages } from './lib/access-prep.mjs';
+import { defaultIo, playwright, sessionName, tools } from './lib/browser.mjs';
 import { pending as cachePending, workerMain as cacheWorker } from './lib/cache.mjs';
 import { pending as chromePending, workerMain as chromeWorker } from './lib/chrome.mjs';
 import { render as renderReport } from './lib/report.mjs';
@@ -26,8 +29,9 @@ export const COMMANDS = [
     help: 'detect Node, playwright-cli, the crawler and the sibling skills; --install fixes' },
   { name: 'discover', usage: '[--strategy sitemaps|http|list] [--list <file>]',
     help: 'every URL of the site into the page table; the website summary; the proposal' },
-  { name: 'access', usage: '--write',
-    help: 'fold the probe recipe and the prep overlays (migration/.work/access/) into'
+  { name: 'access', usage: 'prep [url...] | --write',
+    help: 'prep: open pages with the probe recipe, detect overlays, screenshot them (the home'
+      + ' page and two picked pages by default); --write: fold the recipe and the prep into'
       + ' website/access.json' },
   { name: 'pick', usage: '[--count 2] [--exclude <group>]... [--audit 0] [--write <selection>]',
     help: 'representative uncached pages, one per largest group in turn; --write a selection' },
@@ -113,6 +117,22 @@ export async function setup(cwd, { shouldInstall, exec = defaultExec, nodeVersio
   return { reasons, installs, unknown, setup: written };
 }
 
+/** `access prep`: the given pages, or the home page and two picked from other groups. */
+async function accessPrep(cwd, urls) {
+  const { migration } = await data(cwd);
+  const origin = (await migration.open(cwd)).source.origin;
+  const pages = urls.length ? urls
+    : [origin, ...(await pick(cwd, { count: 2 })).picks.map((p) => p.url)];
+  const { cli, overlayDb } = await tools(cwd);
+  const run = (args) => defaultIo.execFile(process.execPath, [overlayDb, ...args],
+    { maxBuffer: 1 << 26 });
+  await run(['refresh']);
+  const bundle = (await run(['bundle'])).stdout;
+  const browser = playwright(cli, { cwd: path.join(cwd, 'migration', '.work'),
+    session: sessionName(cwd, 'access') });
+  return prepPages(cwd, pages, { io: { browser, bundle, sleep: defaultIo.sleep } });
+}
+
 export async function main(argv, cwd = process.cwd()) {
   const { name, flags, positional } = parse(argv);
   switch (name) {
@@ -127,7 +147,8 @@ export async function main(argv, cwd = process.cwd()) {
       return out;
     }
     case 'access': {
-      if (!flags['--write']) throw new Error(`access needs --write\n${usage('access')}`);
+      if (positional[0] === 'prep') return accessPrep(cwd, positional.slice(1));
+      if (!flags['--write']) throw new Error(`access needs prep or --write\n${usage('access')}`);
       const out = await writeAccess(cwd);
       await writeState(cwd);
       return out;

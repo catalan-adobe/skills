@@ -18,19 +18,17 @@ written once as `website/access.json`. Two phases, two sibling skills. Tier: med
    `notes`). When no headless configuration loads the site, write a note saying so with
    the signals and the options (`migration.mjs note access agent "…"`) and stop: the
    operator decides. When the main content is not in the initial HTML, say so in `notes`.
-2. **Prep.** Open the home page with `playwright-cli open --config <the recipe's
-   cliConfig as a file>` and follow `page-prep` in thorough mode: detect, dismiss or hide
-   every overlay, run the residual check. `playwright-cli eval` takes one expression
-   (wrap statements in `(() => { … })()`); keep only the lines between `### Result` and
-   `### Ran`; dismiss with `playwright-cli click <selector>`. Screenshots under
-   `migration/.work/access/`. Record the outcome as `migration/.work/access/page-prep.json`:
-   `{ "checked": [urls], "overlays": [{ "selector", "type", "hide": [css], "dismiss":
-   [{ "action": "click", "selector" }] }], "scroll_fix": css|null, "residual": [] }`.
-3. **Verify** the rules on two more pages from different groups —
-   `node <skill>/scripts/pipeline.mjs pick --count 2` — open each with the configuration,
-   apply every `hide` rule in one `eval`, run the residual check; add overlays the home
-   page did not have; append the two URLs to `checked`. A page that does not answer: pick
-   again with `--exclude <its group>`.
+2. **Prep.** `node <skill>/scripts/pipeline.mjs access prep` opens the home page and two
+   picked from other groups with the recipe, runs page-prep's detection and a residual
+   check, and takes a viewport screenshot of each (`migration/.work/access/prep-<n>.png`):
+   a consent manager it recognises becomes a hide rule in `page-prep.json`; what a
+   heuristic or the residual check found is listed under `toJudge`. **Read every
+   screenshot.** In `page-prep.json` add what still covers the page — `{ "selector",
+   "type", "hide": [css], "dismiss": [] }` (a click only on a button that does not
+   navigate) — and remove what is not an overlay (a closed side cart, the site's header).
+3. **Verify.** Run `access prep` again: the rules found so far are applied before each
+   look. Repeat until every screenshot is clean. A page that does not answer: `access prep
+   <url>` with others (`pipeline pick --count 2 --exclude <its group>`).
 4. `node <skill>/scripts/pipeline.mjs access --write` folds both files into
    `website/access.json` (browser, overlays as hide and click rules, scroll fix, the
    verified pages as ids), records a run and a runner note. Rerun it after any edit.

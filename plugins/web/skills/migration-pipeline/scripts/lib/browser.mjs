@@ -69,6 +69,7 @@ export async function tools(cwd) {
   return {
     proxyScript: script('page-cache', 'page-cache.js'),
     treeBundle: script('page-tree', 'page-tree-bundle.js'),
+    overlayDb: script('page-prep', 'overlay-db.js'),
     cli,
   };
 }
@@ -176,8 +177,10 @@ export function playwright(cli, { io = defaultIo, cwd, session }) {
       ...(persistent ? ['--persistent'] : []), url),
     goto: (url) => run('goto', url),
     eval: async (expression) => evalResult((await run('eval', expression)).stdout),
-    screenshot: (file, target, { type } = {}) => run('screenshot', ...(target ? [target] : []),
-      '--filename', file, ...(type ? ['--type', type] : []), ...(target ? [] : ['--full-page'])),
+    screenshot: (file, target, { type, viewport = false } = {}) => run('screenshot',
+      ...(target ? [target] : []), '--filename', file, ...(type ? ['--type', type] : []),
+      ...(target || viewport ? [] : ['--full-page'])),
+    resize: (w, h) => run('resize', String(w), String(h)),
     close: () => run('close'),
   };
 }

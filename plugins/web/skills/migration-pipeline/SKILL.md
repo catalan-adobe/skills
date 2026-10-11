@@ -63,7 +63,9 @@ judge, and the data has a place for the reaction:
 - an element the recipe should have hidden (a chat widget, a late banner):
   `migration.mjs access overlay <selector> hide --note "…"`, then capture again;
 - a page that is not what its record says (a cookie wall, an empty template):
-  `migration.mjs decide-page <url> out <why>`;
+  `migration.mjs decide-page <url> out <why>` — `--by agent` when the operator left it to
+  you; decide every page first, then run what the decisions make stale (`pipeline chrome`)
+  once;
 - a fact about the site the next step needs (assets on another host, a second design,
   a group that is a different product): `migration.mjs note <step> agent "…"`, and the
   setting or decision it calls for;
