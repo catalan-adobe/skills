@@ -145,6 +145,12 @@ test('the operator decides a page, with a reason, and wins; get and list answer 
     assert.deepEqual(k.reasons.map((r) => r.code), ['off-scope', 'operator']);
     const decisions = await openStore(cwd).read('pages/decisions.json', DECISIONS_SCHEMA);
     assert.equal(Object.keys(decisions.pages).length, 2);
+    // An agent deciding on the operator's delegation is recorded as the agent.
+    const byAgent = await decide(cwd, `${ORIGIN}legal`, 'out', 'a login shell', { by: 'agent' });
+    assert.deepEqual(byUrl(byAgent)[`${ORIGIN}legal`].verdict.reasons.map((r) => [r.code, r.by]),
+      [['agent', 'agent']], 'the agent\'s decision replaces the operator\'s, as its own');
+    await assert.rejects(decide(cwd, `${ORIGIN}legal`, 'out', 'x', { by: 'bot' }),
+      /decision is by operator or agent/);
     assert.equal((await get(cwd, `${ORIGIN}legal/`)).id, pageId(`${ORIGIN}legal`));
     assert.equal((await get(cwd, pageId(`${ORIGIN}legal`))).url, `${ORIGIN}legal`);
     assert.equal(await get(cwd, `${ORIGIN}zzz`), null);

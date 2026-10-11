@@ -35,8 +35,8 @@ export const COMMANDS = [
     + ' [--cached] [--uncached] [--fragment <frg-id>] [--text]',
     help: 'the page table, filtered; --text as a list' },
   { name: 'page', usage: '<id-or-url>', help: 'one page record' },
-  { name: 'decide-page', usage: '<id-or-url> in|out <reason...>',
-    help: 'the operator\'s word on a page' },
+  { name: 'decide-page', usage: '<id-or-url> in|out <reason...> [--by operator|agent]',
+    help: 'the word on a page: the operator\'s, or an agent\'s on their delegation' },
   { name: 'selections', usage: '', help: 'every selection' },
   { name: 'website', usage: '', help: 'the website summary, refreshed from the table' },
   { name: 'access',
@@ -66,7 +66,7 @@ const FLAGS = {
   runs: ['--step'],
   state: ['--text'],
   pages: ['--group', '--status', '--reason', '--cached', '--uncached', '--fragment', '--text'],
-  page: [], 'decide-page': [], selections: [], website: [], types: ['--undecided'],
+  page: [], 'decide-page': ['--by'], selections: [], website: [], types: ['--undecided'],
   'decide-type': ['--notes'], inventory: [], note: ['--page'], notes: ['--step'],
   access: ['--note', '--remove'],
   report: ['--html'], annotate: [], verdicts: [], 'band-verdicts': [], 'structure-review': [],
@@ -164,7 +164,10 @@ export async function main(argv, cwd = process.cwd()) {
         throw new Error(`decide-page needs a page, in or out, and the reason\n${
           usage('decide-page')}`);
       }
-      return pages.decide(cwd, which, status, why.join(' '));
+      const decided = await pages.decide(cwd, which, status, why.join(' '),
+        { by: flags['--by'] ?? 'operator' });
+      await website.refresh(cwd); // whoever changes the table refreshes the summary
+      return decided;
     }
     case 'selections':
       return selections.list(cwd);

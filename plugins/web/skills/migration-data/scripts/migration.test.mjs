@@ -85,6 +85,12 @@ test('the CLI reaches every unit: pages, decisions, website, types, notes, repor
   const decided = await cli(cwd, 'decide-page', 'https://a.example/d.pdf', 'in',
     'migrated', 'as', 'an', 'asset');
   assert.equal(decided.pages.find((p) => p.kind === 'binary').verdict.status, 'in');
+  const byAgent = await cli(cwd, 'decide-page', 'https://a.example/d.pdf', 'out', 'an asset',
+    '--by', 'agent');
+  assert.equal(byAgent.pages.find((p) => p.kind === 'binary').verdict.reasons.at(-1).by, 'agent');
+  const { readWebsite } = await import('./lib/website.mjs');
+  assert.match((await readWebsite(cwd)).summary, /1 in, 1 out/,
+    'the decision refreshed the summary itself');
   const badDecision = await cli(cwd, 'decide-page', 'https://a.example/x', 'maybe', 'why')
     .catch((e) => e);
   assert.match(badDecision.stderr, /decide-page needs a page, in or out, and the reason/);

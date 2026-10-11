@@ -16,7 +16,9 @@ export const DISCOVERED_FROM = ['sitemap', 'crawl', 'list', 'link'];
 export const STATUSES = ['in', 'out', 'undecided'];
 export const REASON_KINDS = ['exclude', 'flag'];
 export const REASON_BY = ['discover', 'plan', 'cache', 'chrome', 'triage', 'pixels',
-  'composition', 'operator'];
+  'composition', 'operator', 'agent'];
+/** Who decides a page: the operator, or an agent on the operator's delegation. */
+export const DECIDERS = ['operator', 'agent'];
 /** The closed vocabulary of reasons; the schema is their documentation. */
 export const REASONS = {
   'off-scope': 'the URL is not under source.scope',
@@ -34,6 +36,7 @@ export const REASONS = {
   misread: 'the screenshot disagrees with what the DOM claims is painted: look before judging',
   unread: 'System 1 could not answer on the page twice in a row: look at it',
   operator: 'the operator decided',
+  agent: 'an agent decided, on the operator\'s delegation',
 };
 export const REASON_CODES = Object.keys(REASONS);
 
@@ -144,6 +147,7 @@ register('pages/decisions', 1, 'decision', {
           status: { enum: ['in', 'out'] },
           reason: { type: 'string' },
           at: { type: 'string', format: 'date-time' },
+          by: { enum: DECIDERS },
         },
       },
     },
@@ -212,9 +216,10 @@ export function factReasons(rec, { scope, finalUrls, at }) {
  * in it: out, over budget; a budget without a selection: undecided; no plan: in.
  */
 export function verdict(rec, reasons, { decision, plan, selected, at }) {
-  const all = reasons.filter((r) => r.by !== 'operator');
+  const all = reasons.filter((r) => !DECIDERS.includes(r.by));
   if (decision) {
-    all.push(reason('operator', decision.status === 'out' ? 'exclude' : 'flag', 'operator',
+    const by = decision.by ?? 'operator';
+    all.push(reason(by, decision.status === 'out' ? 'exclude' : 'flag', by,
       decision.at, decision.reason));
     return { status: decision.status, reasons: all };
   }
@@ -281,7 +286,7 @@ export async function write(cwd, pages) {
       finalUrls.set(p.finalUrl, p.id);
     }
   }
-  const recomputed = new Set(['discover', 'cache', 'plan', 'operator']);
+  const recomputed = new Set(['discover', 'cache', 'plan', ...DECIDERS]);
   const judged = pages.map((p) => {
     const kept = p.verdict.reasons.filter((r) => !recomputed.has(r.by));
     const facts = factReasons(p, { scope: migration.source.scope, finalUrls, at });
@@ -358,15 +363,17 @@ export async function list(cwd, {
 }
 
 /** Records the operator's word on a page; `status` in or out, with the reason. */
-export async function decide(cwd, idOrUrl, status, why) {
+export async function decide(cwd, idOrUrl, status, why, { by = 'operator' } = {}) {
   const store = openStore(cwd);
   const page = await get(cwd, idOrUrl);
   if (!page) throw new Error(`no page ${idOrUrl} in the table`);
   if (!why) throw new Error('a decision needs its reason, in words');
+  if (!DECIDERS.includes(by)) throw new Error(`a decision is by ${DECIDERS.join(' or ')}`);
   const current = await decisions(cwd);
   await store.write(DECISIONS_FILE, {
     schema: DECISIONS_SCHEMA,
-    pages: { ...current, [page.id]: { status, reason: why, at: store.now().toISOString() } },
+    pages: { ...current, [page.id]: { status, reason: why, at: store.now().toISOString(),
+      ...(by === 'operator' ? {} : { by }) } },
   });
   return rejudge(cwd);
 }

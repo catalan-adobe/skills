@@ -47,6 +47,8 @@ test('website.json is a summary of the table: discovery, counts, groups in scope
   assert.equal(site.summary, `${ORIGIN}: 4 URLs in scope (5 known) in 3 groups; 3 in, 2 out, `
     + '0 undecided; 1 cached, 0 composed.');
   assert.deepEqual(await readWebsite(cwd), site);
+  assert.equal((await refresh(cwd)).updatedAt, site.updatedAt,
+    'nothing new: not written again, so what is rendered from it stays fresh');
   // Composed means read into sections: a composition of template fragments only is not.
   const home = pageId(`${ORIGIN}`);
   const method = { name: 'visual-tree', at: AT };

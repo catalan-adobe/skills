@@ -223,9 +223,14 @@ export async function refresh(cwd) {
   const summary = `${migration.source.scope}: ${counts.inScope} URLs in scope`
     + ` (${pages.length} known) in ${groups.length} groups; ${counts.in} in, ${counts.out} out,`
     + ` ${counts.undecided} undecided; ${counts.cached} cached, ${counts.composed} composed.`;
-  return openStore(cwd).write(WEBSITE_FILE, {
-    schema: WEBSITE_SCHEMA, summary, source: migration.source, discovery, counts, groups,
-  });
+  const next = { schema: WEBSITE_SCHEMA, summary, source: migration.source, discovery, counts,
+    groups };
+  // Nothing new is not a change: written only when it differs, so what is rendered from
+  // it (the report) is not made stale by a refresh.
+  const store = openStore(cwd);
+  const { updatedAt, ...was } = (await store.read(WEBSITE_FILE, WEBSITE_SCHEMA)) ?? {};
+  if (JSON.stringify(was) === JSON.stringify(next)) return { ...was, updatedAt };
+  return store.write(WEBSITE_FILE, next);
 }
 
 export const readWebsite = (cwd) => openStore(cwd).read(WEBSITE_FILE, WEBSITE_SCHEMA);
