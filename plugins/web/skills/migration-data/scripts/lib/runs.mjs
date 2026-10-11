@@ -48,7 +48,11 @@ const file = (id) => `${DIR}/${id}.json`;
 export async function start(cwd, step, input = {}, { pid } = {}) {
   const store = openStore(cwd);
   const now = store.now();
-  const id = runId(step, now);
+  // Two runs of a step started in the same second must not share an id: the second would
+  // overwrite the first. A taken id gets a suffix, which sorts after it.
+  let id = runId(step, now);
+  // eslint-disable-next-line no-await-in-loop
+  for (let n = 2; await store.read(file(id), SCHEMA); n += 1) id = `${runId(step, now)}-${n}`;
   return store.write(file(id), {
     schema: SCHEMA, id, step, state: 'queued', started: now.toISOString(), finished: null,
     ...(pid ? { pid } : {}), total: null, done: 0, failed: [], current: null, input,
@@ -95,7 +99,10 @@ export async function list(cwd, { step } = {}) {
   const names = await store.list(DIR);
   const runs = await Promise.all(names.filter((n) => n.endsWith('.json'))
     .map((n) => store.read(`${DIR}/${n}`, SCHEMA)));
-  return runs.filter((r) => r && (!step || r.step === step));
+  // By start, then the id: a suffixed id (`…-triage-2`) comes after the one it follows.
+  return runs.filter((r) => r && (!step || r.step === step)).sort((a, b) => (
+    a.started.localeCompare(b.started) || a.id.length - b.id.length
+      || a.id.localeCompare(b.id)));
 }
 
 /** The newest run of a step, or null. */

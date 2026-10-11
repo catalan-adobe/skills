@@ -66,6 +66,16 @@ test('list is oldest first and per step; newest is the last of a step', async ()
   assert.deepEqual(await list(await fresh()), [], 'no runs directory yet: none');
 });
 
+test('two runs of a step started in the same second keep two records, in order', async () => {
+  const cwd = await fresh();
+  const a = await start(cwd, 'triage');
+  const b = await start(cwd, 'triage');
+  const c = await start(cwd, 'triage');
+  assert.notEqual(a.id, b.id);
+  assert.deepEqual((await list(cwd, { step: 'triage' })).map((r) => r.id), [a.id, b.id, c.id]);
+  assert.equal((await newest(cwd, 'triage')).id, c.id);
+});
+
 test('liveness: recorded state, or interrupted by a dead pid or a stale heartbeat', () => {
   const at = (iso) => new Date(iso);
   const base = { state: 'running', updatedAt: '2026-09-22T10:00:00.000Z' };
