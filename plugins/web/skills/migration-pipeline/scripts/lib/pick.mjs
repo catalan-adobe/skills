@@ -69,14 +69,16 @@ export function choose(pages, scope, { count = 2, exclude = [], audit = 0 } = {}
 }
 
 /**
- * A sample of the pages already read — cached, a page, not parked by any flag — one per
- * group in turn, the groups largest first; written as a selection: what a person judges
- * for the bench, what a method is measured on.
+ * A sample of the pages already read — cached, a page, triaged, not parked by any flag —
+ * one per group in turn, the groups largest first; written as a selection: what a person
+ * judges for the bench, what a method is measured on. A page without a triage is not known
+ * to be normal.
  */
 export async function sample(cwd, { count = 10, write } = {}) {
-  const { pages, selections } = await data(cwd);
+  const { pages, selections, triage } = await data(cwd);
   const table = await pages.read(cwd);
-  const normal = table.pages.filter((p) => p.cache && p.kind === 'page'
+  const triaged = new Set(await triage.list(cwd));
+  const normal = table.pages.filter((p) => p.cache && p.kind === 'page' && triaged.has(p.id)
     && p.verdict.status !== 'out' && !p.verdict.reasons.some((r) => r.kind === 'flag'));
   const byGroup = new Map();
   for (const p of normal) byGroup.set(p.group ?? '', [...(byGroup.get(p.group ?? '') ?? []), p]);

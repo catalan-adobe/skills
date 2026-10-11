@@ -49,9 +49,9 @@ waits for `migration.mjs approve <step>`.
 | `blocks` | medium | `elements/elements.json` decisions, `elements/inventory.json` — coming |
 | `report` | low | `views/report.md`, `views/report.html` |
 
-Not a step: `pipeline sample --count 10 --write <name>` takes normal pages, one per group
-in turn, as a selection to judge or to measure a method on; `migration.mjs annotate
-<name>` renders the sheet a person judges them on.
+Not a step: `pipeline sample --count 10 --write <name>` takes normal (triaged, unflagged)
+pages, one per group in turn, as a selection to judge or to measure a method on;
+`migration.mjs annotate <name>` renders the sheet a person judges them on.
 
 ## Look, then act
 
@@ -72,7 +72,8 @@ judge, and the data has a place for the reaction:
 - a page whose picture disagrees with its reading (`misread`): `references/misread-pages.md`
   says what each detail is and the act it calls for — an asset origin to name, a reveal
   to hold open (`access rendering`), an embed to write down;
-- a doubt about the method's finding: say so in the note; never edit a derived file.
+- a doubt about the method's finding: say so in the note; never edit a derived file;
+- what a note says you looked at, you opened: name the pages by id, only those.
 
 What is site-specific is for the agent to notice and name; what is the same on every
 site is in the commands. A step is not done because its command ran: it is done when
