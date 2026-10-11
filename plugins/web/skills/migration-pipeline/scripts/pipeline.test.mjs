@@ -38,6 +38,8 @@ test('collect: sitemaps and crawls through the crawler, a list from a file', asy
   const calls = [];
   const crawl = async (start, options) => {
     calls.push([start, options.strategy, options.inclusionPatterns]);
+    assert.match(options.httpHeaders['user-agent'], /^Mozilla\/5\.0 .*Chrome\//,
+      'a browser\'s agent, not none: the crawler sends these headers');
     await options.urlStreamFn([
       { url: `${O}a`, status: 'valid', origin: 'sitemap.xml' },
       { url: `${O}b`, status: 'redirect', origin: 'sitemap.xml' },

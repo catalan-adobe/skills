@@ -9,6 +9,10 @@ import { data } from './data.mjs';
 
 export const STRATEGIES = ['sitemaps', 'http', 'list'];
 export const CRAWL_LIMIT = 5000;
+// What a visitor's browser sends: a CDN answered the crawler's default agent with 403 and
+// this with 200 (myastrazeneca.ch's sitemap, behind CloudFront).
+export const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+  + ' (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 /** The crawler module from the project-scoped install. */
 async function crawler(cwd) {
@@ -41,7 +45,8 @@ export async function collect(cwd, { strategy = 'sitemaps', list, crawl } = {}) 
   const urls = [];
   const result = await run(strategy === 'sitemaps' ? site.origin : m.source.scope, {
     strategy, timeout: 15000, sameDomain: true,
-    limit: strategy === 'http' ? CRAWL_LIMIT : undefined, httpHeaders: {},
+    // the crawler sends `httpHeaders` with every request; its `userAgent` option goes unused
+    limit: strategy === 'http' ? CRAWL_LIMIT : undefined, httpHeaders: { 'user-agent': USER_AGENT },
     inclusionPatterns: scopePath ? [`${scopePath}*`] : [],
     urlStreamFn: async (batch) => {
       for (const e of batch) {
