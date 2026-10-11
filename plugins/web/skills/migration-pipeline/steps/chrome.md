@@ -30,9 +30,9 @@ composition; and the capture itself checked against its pictures. Offline. Tier:
    is wrong on this site — a broken image (its host named), an embed not rendered
    offline, a body revealed on scroll. Tell the operator what the site's chrome is —
    designs, pages each, pages with none and why — and what the pictures show about the
-   capture. What the recipe can fix, fix and capture again: an overlay (`access
-   overlay`), an asset origin (`assets`, then `cache fill`), a reveal held closed
-   (`access rendering "<css>"`); what it cannot, write down for the next level.
+   capture. What the recipe can fix, fix — all of it, then capture once: each fix makes
+   every tree stale — an overlay (`access overlay`), an asset origin (`assets`, `cache
+   fill`), a reveal held closed (`access rendering "<css>"`); what it cannot, write down.
 4. The rules propose; you choose. `website/chrome-candidates.json` (the report's "Chrome
    candidates") lists what recurs across the pages with a crop, the numbers the rules
    read — support, width, text stability, height — and their verdict. Read the crops as

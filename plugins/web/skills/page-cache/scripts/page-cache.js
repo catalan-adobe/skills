@@ -181,8 +181,9 @@ function rewriteAlsoUrls(buf, contentType) {
   if (charset && charset !== 'utf-8' && charset !== 'utf8') return buf;
   let text = buf.toString('utf-8');
   for (const also of ALSO) {
-    const esc = also.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`${esc}(/[^\\s"'<>)\\\\]*)?(?![\\w.-])`, 'g');
+    // `https://host` and `//host` alike: a page may reference the origin either way.
+    const esc = also.replace(/^https?:/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(?:https?:)?${esc}(/[^\\s"'<>)\\\\]*)?(?![\\w.-])`, 'g');
     const param = `_origin=${encodeURIComponent(also)}`;
     text = text.replace(re, (_, p) => {
       const path = p || '/';

@@ -46,6 +46,7 @@ test('--also: another origin\'s assets go through the proxy, cached, served offl
     res.end(`<html><body><img src="${cdn.origin}/a.jpg">`
       + `<img srcset="${cdn.origin}/b.jpg?w=1 1x, ${cdn.origin}/b.jpg?w=2 2x">`
       + `<a href="${cdn.origin}">cdn</a><a href="${cdn.origin}.evil/x">not cdn</a>`
+      + `<img src="${cdn.origin.replace(/^http:/, '')}/d.jpg">`
       + `<style>.h{background:url(${cdn.origin}/c.png)}</style></body></html>`);
   });
   const dir = await mkdtemp(path.join(os.tmpdir(), 'page-cache-also-'));
@@ -70,6 +71,7 @@ test('--also: another origin\'s assets go through the proxy, cached, served offl
       new RegExp(`srcset="/b.jpg\\?w=1&_origin=${enc} 1x, /b.jpg\\?w=2&_origin=${enc} 2x"`));
     assert.match(html, new RegExp(`href="/\\?_origin=${enc}"`), 'a bare origin');
     assert.match(html, new RegExp(`href="${cdn.origin}.evil/x"`), 'another host untouched');
+    assert.match(html, new RegExp(`src="/d.jpg\\?_origin=${enc}"`), 'a protocol-relative one');
     assert.match(html, new RegExp(`url\\(/c.png\\?_origin=${enc}\\)`));
     const img = await fetch(`${also.url}/a.jpg?_origin=${enc}`,
       { headers: { 'sec-fetch-site': 'same-origin' } });

@@ -188,7 +188,8 @@ test('assets from other origins: counted from the cached HTML, named, filled', a
   const cdn = 'https://images.example';
   const html = `<html><img src="${cdn}/1.jpg"><img srcset="${cdn}/2.jpg 1x, ${O}3.jpg 2x">`
     + `<script src="https://tags.example/t.js"></script><script src="${cdn}/x.js"></script>`
-    + `<link href="https://fonts.example/f.css"></html>`;
+    + '<link href="https://fonts.example/f.css"><script src="//lib.example/j.js"></script>'
+    + '</html>';
   await fakeSite(cwd, { [`${O}a`]: { status: 200, type: 'text/html', body: html },
     [`${O}b`]: { status: 200, type: 'text/html', body: `<img src="${cdn}/4.jpg">` } });
   const first = await cacheSelection(cwd, 'all', { io: fakeIo(), pace: 0 });
@@ -196,7 +197,8 @@ test('assets from other origins: counted from the cached HTML, named, filled', a
     { origin: cdn, assets: 3, scripts: 1 },
     { origin: 'https://fonts.example', assets: 1, scripts: 0 },
     { origin: 'https://tags.example', assets: 0, scripts: 1 },
-  ], 'references per origin, the site itself left out, scripts apart');
+    { origin: 'https://lib.example', assets: 0, scripts: 1 },
+  ], 'references per origin, the site itself left out, scripts apart, `//host` as https');
   const { notes, migration } = await data(cwd);
   const [note] = await notes.list(cwd, { step: 'cache' });
   assert.match(await notes.body(cwd, note.id), /\| https:\/\/images.example \| 3 \| 1 \| no \|/);
@@ -280,12 +282,18 @@ test('a redirect that only adds a trailing slash is the page it lands on', async
 
 test('sample: normal pages only, one per group in turn, largest groups first', async () => {
   const { sample } = await import('./pick.mjs');
-  const cwd = await project(['a/1', 'a/2', 'a/3', 'b/1', 'b/2', 'c/1', 'flagged']
+  const cwd = await project(['a/1', 'a/2', 'a/3', 'b/1', 'b/2', 'c/1', 'flagged', 'untriaged']
     .map((p) => `${O}${p}`));
-  const { pages } = await data(cwd);
+  const { pages, triage } = await data(cwd);
   const ids = (await pages.read(cwd)).pages;
   await pages.upsert(cwd, ids.map((p) => ({ url: p.url, kind: 'page',
     cache: { at: AT, path: 'x', selection: 's' } })));
+  for (const p of ids.filter((x) => !x.url.endsWith('untriaged'))) {
+    // eslint-disable-next-line no-await-in-loop
+    await triage.write(cwd, p.id, { method: { name: 'clef', model: 'clef', at: AT, inputs: 'x' },
+      answers: { header: 0.9, footer: 0.9, broken: 0.1, empty: 0.1 },
+      images: { slices: 1, scale: 1, quality: 80, bytes: 1 }, usage: { inputTokens: 1 } });
+  }
   await pages.setReasons(cwd, 'triage', { [pages.pageId(`${O}flagged`)]:
     [{ code: 'empty', kind: 'flag' }] });
   const out = await sample(cwd, { count: 4, write: 'judge-4' });
@@ -293,7 +301,7 @@ test('sample: normal pages only, one per group in turn, largest groups first', a
   assert.equal(new Set(out.picks.map((p) => p.id)).size, 4);
   assert.equal(out.pages, 4);
   assert.deepEqual((await sample(cwd, { count: 10 })).picks.map((p) => p.group),
-    ['a', 'b', 'c', 'a', 'b', 'a'], 'the flagged page is never sampled');
+    ['a', 'b', 'c', 'a', 'b', 'a'], 'the flagged page and the untriaged one are never sampled');
 });
 
 test('the browser config: the recipe\'s stealth script injected first, online and offline',

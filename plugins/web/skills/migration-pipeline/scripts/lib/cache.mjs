@@ -268,8 +268,11 @@ async function visit(cwd, { name, targets, input, io, pace }) {
     assets };
 }
 
-const HTML_URL = /\b(?:src|srcset|href|poster|data-src|data-srcset)=["']?(https?:\/\/[^/"'\s>]+)/g;
-const SCRIPT_TAG = /<script\b[^>]*\bsrc=["']?(https?:\/\/[^/"'\s>]+)/g;
+// `https://host` or protocol-relative `//host`, which a page loads over https.
+const HTML_URL = new RegExp('\\b(?:src|srcset|href|poster|data-src|data-srcset)='
+  + '["\']?((?:https?:)?\\/\\/[^/"\'\\s>]+)', 'g');
+const SCRIPT_TAG = /<script\b[^>]*\bsrc=["']?((?:https?:)?\/\/[^/"'\s>]+)/g;
+const originOf = (o) => (o.startsWith('//') ? `https:${o}` : o);
 
 /**
  * The other origins the cached pages reference, from their HTML: how many references each
@@ -290,9 +293,11 @@ export async function assetOriginsInCache(cwd) {
   for (const file of await htmlFiles(root)) {
     // eslint-disable-next-line no-await-in-loop
     const text = await readFile(file, 'utf8').catch(() => '');
-    const scripts = [...text.matchAll(SCRIPT_TAG)].map(([, o]) => o).filter((o) => o !== origin);
+    const scripts = [...text.matchAll(SCRIPT_TAG)].map(([, o]) => originOf(o))
+      .filter((o) => o !== origin);
     for (const o of scripts) bump(o, 'scripts');
-    const refs = [...text.matchAll(HTML_URL)].map(([, o]) => o).filter((o) => o !== origin);
+    const refs = [...text.matchAll(HTML_URL)].map(([, o]) => originOf(o))
+      .filter((o) => o !== origin);
     for (const o of refs) bump(o, 'assets');
     for (const o of scripts) counts.get(o).assets -= 1;
   }

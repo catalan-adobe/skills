@@ -34,13 +34,13 @@ assets on disk, through the page-cache proxy, so every later step works offline.
    `redirect`: both are facts on the record, not failures. `unreachable` means no response:
    say so; do not retry by other means. Never fetch pages with `curl` or any HTTP client:
    only the browser, through the recipe, reads the site.
-5. Look before you report: the runner note ends with the other origins the cached pages
-   reference and whether each is stored. An origin that serves images or fonts (an image
-   CDN, often `images.` or `assets.` of the same brand) leaves them out of every offline
-   render: name it — `migration.mjs assets <origin>...` — then `pipeline cache fill`
-   (one more online pass over the cached pages; the pages come from the cache, only the
-   assets are fetched). Analytics, tag managers and chat widgets lose nothing offline:
-   leave them. Say what you named and why.
+5. Before `chrome` (a fill makes every capture stale): the runner note ends with the other
+   origins the pages reference (`//host` counted as https) and whether each is stored. One
+   serving images, fonts or the page's own scripts (an image CDN, a framework on a CDN)
+   leaves them out of every offline render: name it — `migration.mjs assets <origin>...`
+   — then `pipeline cache fill` (pages from the cache, only the assets fetched). An API a
+   script calls is not an asset: write it down. Analytics, tag managers and chat widgets
+   lose nothing offline. Say what you named and why.
 6. Never delete anything under `migration/cache/`; the proxy fetches only what is missing.
 
 ## Outputs
