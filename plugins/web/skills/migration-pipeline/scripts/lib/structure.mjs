@@ -679,7 +679,7 @@ export const treeOf = (n) => (n.kind === 'default_content' ? 'd' : n.kind[0])
 
 /** The lab command: every page of a selection, sequentially; compositions written. */
 export async function structure(cwd, selectionName, { io, dep } = {}) {
-  const { selections, composition } = await data(cwd);
+  const { selections, composition, website } = await data(cwd);
   const sel = await selections.read(cwd, selectionName);
   if (!sel) throw new Error(`no selection ${selectionName}`);
   const model = dep ?? deployment();
@@ -695,6 +695,9 @@ export async function structure(cwd, selectionName, { io, dep } = {}) {
     out.push({ id, candidates: s.candidates.length, bands: s.bands.length,
       tree: s.bands.map(treeOf).join(' '), tokens: s.usage.inputTokens });
   }
+  // The compositions written change what the website summary counts as composed: whoever
+  // changes the table refreshes the summary.
+  await website.refresh(cwd);
   return out;
 }
 

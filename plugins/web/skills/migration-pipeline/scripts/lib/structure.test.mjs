@@ -319,6 +319,8 @@ test('structurePage: asked, dug into until nothing is a container, composition r
     const out = await structure(cwd, 'ten', { io, dep: { model: 'fake' } });
     assert.deepEqual(out, [{ id: page.id, candidates: 8, bands: 3, tree: 'b d l[d d]',
       tokens: 6000 }], 'the article section holds one run of text: it is that run');
+    assert.equal((await (await data(cwd)).website.readWebsite(cwd)).counts.composed, 1,
+      'the website summary refreshed: the page now composed');
     assert.deepEqual(asked.map((a) => a.qs.includes('is_layout')),
       [false, false, true, false, false, false],
       'the layout asked only where parts sit side by side');
