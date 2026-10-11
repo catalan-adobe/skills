@@ -12,8 +12,8 @@ export async function discover(cwd) {
   const table = await pages.read(cwd);
   const inScope = table.pages.filter((p) => p.group !== null);
   if (!inScope.length) return { pass: false, note: 'no page in scope yet' };
-  const site = await website.readWebsite(cwd);
-  if (!site || site.updatedAt < table.updatedAt) {
+  // By content: a refresh with nothing new writes nothing, so dates say nothing here.
+  if (!(await website.isFresh(cwd))) {
     return { pass: false, note: 'website summary behind the table; run pipeline website' };
   }
   return { pass: true };

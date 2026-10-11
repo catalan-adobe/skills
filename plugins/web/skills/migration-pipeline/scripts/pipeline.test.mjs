@@ -82,6 +82,15 @@ test('discover writes the table, the website, a note with the proposal, and a ru
   assert.equal(n.author, 'runner');
   assert.match(await notes.body(cwd, n.id), /cache all/);
   assert.deepEqual(await CHECKS.discover(cwd), { pass: true });
+  // A table write that changes nothing the summary says leaves it fresh (a refresh then
+  // writes nothing); one that changes a count makes it behind until refreshed.
+  await pages.setReasons(cwd, 'chrome', { [table.pages[0].id]: [{ code: 'no-footer',
+    kind: 'flag' }] });
+  assert.deepEqual(await CHECKS.discover(cwd), { pass: true }, 'by content, not by date');
+  await pages.decide(cwd, `${O}docs/c`, 'out', 'not migrated');
+  assert.match((await CHECKS.discover(cwd)).note, /website summary behind the table/);
+  await website.refresh(cwd);
+  assert.deepEqual(await CHECKS.discover(cwd), { pass: true });
   const s = await state.compute(cwd, CHECKS);
   assert.equal(s.steps.find((x) => x.id === 'discover').state, 'done');
   assert.equal(s.steps.find((x) => x.id === 'cache').state, 'blocked', 'access first');

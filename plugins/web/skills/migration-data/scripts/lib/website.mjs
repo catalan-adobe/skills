@@ -189,10 +189,10 @@ register('website/fragments', 1, 'derived', {
 export const fragmentId = (placement, partOrName) => makeId('frg', `${placement}|${partOrName}`);
 
 /**
- * Rewrites website.json from the migration and the page table: discovery sources, counts
- * by verdict, cache and composition, the groups (in-scope pages only), a summary.
+ * The website summary as the migration and the page table make it now: discovery sources,
+ * counts by verdict, cache and composition, the groups (in-scope pages only), a summary.
  */
-export async function refresh(cwd) {
+async function summarise(cwd) {
   const migration = await openMigration(cwd);
   const { pages } = await readTable(cwd);
   const inScope = pages.filter((p) => p.group !== null);
@@ -223,14 +223,31 @@ export async function refresh(cwd) {
   const summary = `${migration.source.scope}: ${counts.inScope} URLs in scope`
     + ` (${pages.length} known) in ${groups.length} groups; ${counts.in} in, ${counts.out} out,`
     + ` ${counts.undecided} undecided; ${counts.cached} cached, ${counts.composed} composed.`;
-  const next = { schema: WEBSITE_SCHEMA, summary, source: migration.source, discovery, counts,
+  return { schema: WEBSITE_SCHEMA, summary, source: migration.source, discovery, counts,
     groups };
-  // Nothing new is not a change: written only when it differs, so what is rendered from
-  // it (the report) is not made stale by a refresh.
-  const store = openStore(cwd);
-  const { updatedAt, ...was } = (await store.read(WEBSITE_FILE, WEBSITE_SCHEMA)) ?? {};
+}
+
+const stored = async (cwd) => {
+  const { updatedAt, ...was } = (await openStore(cwd).read(WEBSITE_FILE, WEBSITE_SCHEMA))
+    ?? {};
+  return { was, updatedAt };
+};
+
+/** Whether website.json says what the table says now — by content, not by date. */
+export async function isFresh(cwd) {
+  const { was } = await stored(cwd);
+  return JSON.stringify(was) === JSON.stringify(await summarise(cwd));
+}
+
+/**
+ * Rewrites website.json from the migration and the page table — only when it differs:
+ * nothing new is not a change, so what is rendered from it (the report) stays fresh.
+ */
+export async function refresh(cwd) {
+  const next = await summarise(cwd);
+  const { was, updatedAt } = await stored(cwd);
   if (JSON.stringify(was) === JSON.stringify(next)) return { ...was, updatedAt };
-  return store.write(WEBSITE_FILE, next);
+  return openStore(cwd).write(WEBSITE_FILE, next);
 }
 
 export const readWebsite = (cwd) => openStore(cwd).read(WEBSITE_FILE, WEBSITE_SCHEMA);
