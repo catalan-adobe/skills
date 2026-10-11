@@ -39,6 +39,8 @@ someone looks. Tier: low.
      a script fills from an endpoint the cache has not got, a form from another origin
      (`assets`, then `cache fill`), or a page that really is a shell (decide it).
 3. The flags park; they never exclude. The operator's word on a page wins over both.
+   A page System 1 fails on in two runs in a row is flagged `unread` (the same failure
+   twice is not transient): rerun once after a failure, never more; look at it yourself.
 4. Look before you report, as always: three or four screenshots from the normal bucket
    too — the model is not the only reader of the page.
 
@@ -49,9 +51,9 @@ someone looks. Tier: low.
 
 ## Done
 
-Fails while a run is alive, while a page with a screenshot has no triage of that picture
-with these questions (a recapture, or a change to the questions, makes the old one
-stale), or — with that said — while the environment names no model.
+Fails while a run is alive, while a page has no screenshot yet (chrome first), while a
+page with a screenshot has no triage of that picture with these questions (a recapture or
+new questions make the old one stale) and is not `unread`, or while no model is named.
 
 ```bash
 node <skill>/scripts/pipeline.mjs state --text

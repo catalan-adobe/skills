@@ -32,6 +32,7 @@ export const REASONS = {
   broken: 'an error, a blank page, a login or cookie wall or a bot check, not content',
   'too-tall': 'the rendered page is taller than a browser can screenshot whole',
   misread: 'the screenshot disagrees with what the DOM claims is painted: look before judging',
+  unread: 'System 1 could not answer on the page twice in a row: look at it',
   operator: 'the operator decided',
 };
 export const REASON_CODES = Object.keys(REASONS);

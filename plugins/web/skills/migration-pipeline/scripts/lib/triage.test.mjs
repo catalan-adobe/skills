@@ -6,7 +6,7 @@ import path from 'node:path';
 import { data } from './data.mjs';
 import { ask } from './system1.mjs';
 import {
-  QUESTIONS, asked, bucketOf, check, flag, opinions, pending, slices, workerMain,
+  QUESTIONS, asked, bucketOf, check, flag, opinions, pending, slices, stuck, workerMain,
 } from './triage.mjs';
 
 const O = 'https://site.example/';
@@ -64,6 +64,10 @@ test('the questions are three and frozen; slices follow the height and the budge
   const b = await slices(tall, '/t.jpg');
   assert.deepEqual([b.images.length, b.scale], [4, 0.5], 'twice four slices: scaled by half');
   assert.deepEqual(tall.calls[0].resize, [640, 3072]);
+  const sliver = fakeSharp(1541);
+  await slices(sliver, '/l.jpg');
+  assert.deepEqual(sliver.calls.map((c) => c.extract.height), [768, 773],
+    '1541 px: the 5 px tail joins the slice above — System 1 refused a 1280 × 5 image');
   const heavy = fakeSharp(1000, { bytesPerSlice: 200000 });
   const c = await slices(heavy, '/h.jpg', { budget: 300000 });
   assert.equal(c.quality, 20, 'quality lowered to the floor when the body would be refused');
@@ -108,7 +112,12 @@ test('the worker: every screenshot looked at once, flags beside chrome\'s, bucke
   await pages.setReasons(cwd, 'chrome', { [id('c')]: [{ code: 'no-footer', kind: 'flag' }],
     [id('d')]: [{ code: 'no-header', kind: 'flag' }] });
   assert.equal((await pending(cwd)).length, 5, 'the page without a screenshot is not looked at');
-  assert.match((await check(cwd)).note, /5 page\(s\) to look at/);
+  assert.match((await check(cwd)).note, /1 page\(s\) without a screenshot: chrome first/,
+    'triage waits for chrome: done before the pictures exist would be done on nothing');
+  await pages.setReasons(cwd, 'chrome', { [id('c')]: [{ code: 'no-footer', kind: 'flag' }],
+    [id('d')]: [{ code: 'no-header', kind: 'flag' }],
+    [id('no-shot')]: [{ code: 'too-tall', kind: 'flag' }] });
+  assert.match((await check(cwd)).note, /5 page\(s\) to look at/, 'a page too tall has none');
   const answersFor = { a: [0.95, 0.9, 0.02, 0.1], b: [0.9, 0.9, 0.8, 0.1], c: [0.9, 0.2, 0.1, 0.1],
     d: [0.9, 0.9, 0.05, 0.1], e: [0.95, 0.95, 0.1, 0.85] };
   const askedFor = [];
@@ -124,7 +133,8 @@ test('the worker: every screenshot looked at once, flags beside chrome\'s, bucke
   };
   const out = await workerMain(cwd, { io });
   assert.deepEqual(askedFor, [3, 3, 3, 3, 3]);
-  assert.match(out.summary, /^5 page\(s\) looked at \(0 failed, 15000 input tokens\); of all/);
+  assert.match(out.summary,
+    /^5 of 5 page\(s\) looked at \(0 failed, 15000 input tokens\); of all/);
   assert.match(out.summary, /of all triaged: 1 normal, 1 odd, 1 review, 1 broken, 1 empty\./);
   const t = await triage.read(cwd, id('a'));
   assert.deepEqual([t.method.model, t.answers, t.images.slices],
@@ -183,3 +193,30 @@ test('failures: a page that fails is recorded; five in a row end the run', async
   assert.equal(run.failed.length, 5);
   assert.equal((await pending(cwd)).length, 6, 'nothing written: all still to look at');
 });
+
+test('unread: a page that fails in two runs in a row is flagged, and the step can end',
+  async () => {
+    const cwd = await project([{ path: 'a' }, { path: 'b' }]);
+    const { pages, runs } = await data(cwd);
+    const id = (p) => pages.pageId(`${O}${p}`);
+    const io = { model: 'clef', sharp: fakeSharp(1000), now: () => new Date(AT),
+      ask: async () => {
+        if ((await runs.newest(cwd, 'triage')).current === id('b')) {
+          throw new Error('System 1 502: invalid_model_output');
+        }
+        return { answers: { header: 0.9, footer: 0.9, broken: 0.1, empty: 0.1 },
+          usage: { inputTokens: 10 } };
+      } };
+    const first = await workerMain(cwd, { io });
+    assert.match(first.summary, /^1 of 2 page\(s\) looked at \(1 failed/);
+    assert.deepEqual([(await check(cwd)).pass, (await stuck(cwd)).size], [false, 0],
+      'once is not yet stuck: it may be transient');
+    await workerMain(cwd, { io });
+    assert.deepEqual([...(await stuck(cwd)).keys()], [id('b')]);
+    const b = await pages.get(cwd, id('b'));
+    assert.deepEqual(b.verdict.reasons.map((r) => [r.code, r.kind, r.by]),
+      [['unread', 'flag', 'triage']]);
+    const c = await check(cwd);
+    assert.equal(c.pass, true, 'parked, the step ends');
+    assert.match(c.note, /1 page\(s\) unread by System 1 twice/);
+  });

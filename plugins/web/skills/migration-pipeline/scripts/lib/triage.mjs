@@ -14,6 +14,9 @@ export const METHOD = 'system1';
 export const WIDTH = 1280;
 export const SLICE = 768;
 export const MAX_SLICES = 4;
+// A last slice thinner than this joins the one above: System 1 refuses a 1280 × 5 image (a
+// 1541 px page had been cut 768 + 768 + 5, and failed every time).
+export const MIN_TAIL = 128;
 export const BODY_BUDGET = 500000;
 export const QUALITIES = [80, 70, 60, 50, 40, 30, 20];
 const LOOK = 'Judge by what is visible in the images, which are the page cut into slices from'
@@ -39,7 +42,8 @@ export const asked = () => Object.fromEntries(Object.entries(QUESTIONS)
 
 /**
  * The screenshot cut top to bottom into at most four slices of 1280 × 768 (one image is
- * about what the service keeps at full resolution), 1:1 up to 3 072 px, scaled down above;
+ * about what the service keeps at full resolution), the last a little taller rather than a
+ * sliver, 1:1 up to 3 072 px, scaled down above;
  * JPEG quality lowered in steps only while the request body would be refused.
  */
 export async function slices(sharp, shot, { budget = BODY_BUDGET } = {}) {
@@ -47,7 +51,8 @@ export async function slices(sharp, shot, { budget = BODY_BUDGET } = {}) {
   const scale = Math.min(1, (MAX_SLICES * SLICE) / meta.height, WIDTH / meta.width);
   const w = Math.round(meta.width * scale);
   const h = Math.round(meta.height * scale);
-  const n = Math.max(1, Math.ceil(h / SLICE));
+  const cut = Math.max(1, Math.ceil(h / SLICE));
+  const n = cut > 1 && h - (cut - 1) * SLICE < MIN_TAIL ? cut - 1 : cut;
   for (const quality of QUALITIES) {
     const images = [];
     let bytes = 0;
@@ -55,7 +60,7 @@ export async function slices(sharp, shot, { budget = BODY_BUDGET } = {}) {
       const top = i * SLICE;
       // eslint-disable-next-line no-await-in-loop
       const buf = await sharp(shot).resize(w, h, { fit: 'fill' })
-        .extract({ left: 0, top, width: w, height: Math.min(SLICE, h - top) })
+        .extract({ left: 0, top, width: w, height: i === n - 1 ? h - top : SLICE })
         .jpeg({ quality }).toBuffer();
       bytes += buf.length;
       images.push(`data:image/jpeg;base64,${buf.toString('base64')}`);
@@ -164,23 +169,38 @@ export async function workerMain(cwd, { io: given } = {}) {
     }
     const buckets = await flag(cwd);
     const counts = Object.entries(buckets).map(([b, list]) => `${list.length} ${b}`).join(', ');
-    const summary = `${todo.length} page(s) looked at (${failures.length} failed, ${tokens} input`
-      + ` tokens); of all triaged: ${counts}.`;
+    const summary = `${todo.length - failures.length} of ${todo.length} page(s) looked at`
+      + ` (${failures.length} failed, ${tokens} input tokens); of all triaged: ${counts}.`;
     await notes.add(cwd, { step: 'triage', author: 'runner', summary,
       body: renderNote(buckets, summary, io.model) });
     await runs.finish(cwd, run.id, { state: 'done', summary });
     return { run: run.id, summary, buckets };
   } catch (err) {
     await runs.finish(cwd, run.id, { state: 'failed', error: firstLine(err.message),
-      summary: `${done} of ${todo.length} looked at before the failure` });
+      summary: `${done - failures.length} of ${todo.length} looked at before the failure` });
     throw err;
   }
+}
+
+/**
+ * The pages System 1 could not answer on in the last two runs: the same failure twice is
+ * not transient. They are flagged `unread`, parked until someone looks; the step can end.
+ */
+export async function stuck(cwd) {
+  const { runs } = await data(cwd);
+  const [a, b] = (await runs.list(cwd, { step: 'triage' })).slice(-2);
+  if (!a || !b) return new Map();
+  const before = new Set((a.failed ?? []).map((f) => f.id));
+  return new Map((b.failed ?? []).filter((f) => before.has(f.id)).map((f) => [f.id, f.error]));
 }
 
 /** Sets the triage flags from every triage on record; returns the pages by bucket. */
 export async function flag(cwd) {
   const { pages, triage, website } = await data(cwd);
   const flags = {};
+  for (const [id, error] of await stuck(cwd)) {
+    flags[id] = [{ code: 'unread', kind: 'flag', detail: `twice: ${error}`.slice(0, 200) }];
+  }
   const triaged = new Set();
   for (const id of await triage.list(cwd)) {
     // eslint-disable-next-line no-await-in-loop
@@ -233,11 +253,21 @@ export async function check(cwd) {
   if (newest && ['queued', 'running'].includes(runs.liveness(newest))) {
     return { pass: false, note: `looking at ${newest.current ?? 'pages'}` };
   }
-  if (!(await readablePages(cwd)).length) {
-    return { pass: false, note: 'no cached page to look at yet' };
+  const readable = await readablePages(cwd);
+  if (!readable.length) return { pass: false, note: 'no cached page to look at yet' };
+  const { trees } = await data(cwd);
+  const shots = await Promise.all(readable.map((p) => readFile(path.join(cwd, 'migration',
+    trees.shotFile(p.id))).then(() => true, () => false)));
+  // A page too tall for one picture has none, and is parked already.
+  const unshot = readable.filter((p, i) => !shots[i]
+    && !p.verdict.reasons.some((r) => r.code === 'too-tall')).length;
+  if (unshot) return { pass: false, note: `${unshot} page(s) without a screenshot: chrome first` };
+  const parked = await stuck(cwd);
+  const todo = (await pending(cwd)).filter((t) => !parked.has(t.page.id));
+  if (!todo.length) {
+    return { pass: true, ...(parked.size ? { note: `${parked.size} page(s) unread by System 1`
+      + ' twice: flagged unread, to look at' } : {}) };
   }
-  const todo = await pending(cwd);
-  if (!todo.length) return { pass: true };
   try {
     deployment();
   } catch (err) {
