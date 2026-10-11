@@ -18,9 +18,10 @@ written once as `website/access.json`. Two phases, two sibling skills. Tier: med
    `notes`). When no headless configuration loads the site, write a note saying so with
    the signals and the options (`migration.mjs note access agent "…"`) and stop: the
    operator decides. When the main content is not in the initial HTML, say so in `notes`.
-2. **Prep.** `node <skill>/scripts/pipeline.mjs access prep` opens the home page and two
-   picked from other groups with the recipe, runs page-prep's detection and a residual
-   check, and takes a viewport screenshot of each (`migration/.work/access/prep-<n>.png`):
+2. **Prep.** `node <skill>/scripts/pipeline.mjs access prep` opens with the recipe the home
+   page, the deepest page and one of middle depth elsewhere (other templates), runs
+   page-prep's detection and a residual check, and takes a viewport screenshot of each
+   (`migration/.work/access/prep-<n>.png`):
    a consent manager it recognises becomes a hide rule in `page-prep.json`; what a
    heuristic or the residual check found is listed under `toJudge`. **Read every
    screenshot.** In `page-prep.json` add what still covers the page — `{ "selector",

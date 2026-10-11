@@ -111,3 +111,24 @@ export async function pick(cwd, { count = 2, exclude = [], audit = 0, write } = 
   });
   return { picks: out, selection: selection.name, pages: selection.pages.length };
 }
+
+/**
+ * The pages to look at overlays on, beside the home page: the deepest page in scope (a
+ * content template: where a gate or a modal of a kind of page lives), then one at the
+ * median depth under another parent path (a listing, a section). Not one per top-level
+ * group: those are often languages, all of one template.
+ */
+export function prepPicks(pages, scope, count = 2) {
+  const candidates = pages.filter((p) => p.group !== null && p.verdict.status !== 'out'
+    && isPage(p.url));
+  const segments = (p) => stratum(p.url, scope).split('|')[0] * 1;
+  const parent = (p) => new URL(p.url).pathname.replace(/\/[^/]*\/?$/, '');
+  const deep = [...candidates].sort((a, b) => segments(b) - segments(a) || byHash(a, b));
+  const picks = deep.slice(0, 1);
+  const median = deep.length ? segments(deep[Math.floor(deep.length / 2)]) : 0;
+  const rest = deep.filter((p) => !picks.some((q) => parent(q) === parent(p)))
+    .sort((a, b) => Math.abs(segments(a) - median) - Math.abs(segments(b) - median)
+      || byHash(a, b));
+  return [...picks, ...rest].slice(0, count).map((p) => ({ id: p.id, url: p.url,
+    group: p.group }));
+}

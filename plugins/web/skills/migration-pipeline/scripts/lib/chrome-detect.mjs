@@ -91,18 +91,22 @@ function role(members, allPages, groupOf, tolerance) {
   const core = members.filter((m) => m.pages.length / regionPages.size >= CORE_SHARE
     || members.some((o) => o !== m && sameSlot(m, o, tolerance)));
   const optional = members.filter((m) => !core.includes(m));
+  // A variant is the set of selectors a page carries: the same elements at two positions
+  // (a header lower on some pages) are one design, not two.
   const signatures = new Map();
   for (const url of regionPages) {
-    const carried = core.filter((m) => m.pages.includes(url)).map((m) => m.key).sort();
+    const carried = [...new Set(core.filter((m) => m.pages.includes(url))
+      .map((m) => m.sample.selector))].sort();
     if (!carried.length) continue;
-    const key = carried.join('+');
+    const key = carried.join('\n'); // a selector may hold a '+'
     signatures.set(key, [...(signatures.get(key) ?? []), url]);
   }
   const variants = [...signatures.entries()]
     .sort((a, b) => b[1].length - a[1].length)
     .map(([key, pages], i) => {
-      const keys = new Set(key.split('+'));
-      const own = core.filter((m) => keys.has(m.key));
+      const selectors = new Set(key.split('\n'));
+      const own = core.filter((m) => selectors.has(m.sample.selector)
+        && m.pages.some((p) => pages.includes(p)));
       const extras = optional
         .map((m) => ({ ...member(m), onPages: m.pages.filter((p) => pages.includes(p)).length }))
         .filter((m) => m.onPages > 0);
@@ -179,6 +183,17 @@ export function chosenPart(chosen, allPages, groupOf) {
     const home = groups.find((g) => shared(g) >= 0.5 * c.pages.length);
     if (home) home.rest.push(c);
     else groups.push({ primary: c, pages: [...c.pages], rest: [] });
+  }
+  // Groups whose members have the same selectors are one design at two DOM positions or on
+  // two sets of pages (a header per language section): one variant, the pages joined.
+  const signature = (g) => [g.primary, ...g.rest].map((c) => c.sample.selector).sort().join('|');
+  for (let i = groups.length - 1; i > 0; i -= 1) {
+    const same = groups.findIndex((g, j) => j < i && signature(g) === signature(groups[i]));
+    if (same >= 0) {
+      groups[same].pages = [...new Set([...groups[same].pages, ...groups[i].pages])];
+      groups[same].rest.push(groups[i].primary, ...groups[i].rest);
+      groups.splice(i, 1);
+    }
   }
   const variants = groups.map(({ primary, pages, rest }, i) => {
     const onAll = rest.filter((c) => pages.every((p) => c.pages.includes(p)));

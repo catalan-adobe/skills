@@ -178,3 +178,15 @@ test('a choice of one part at two DOM positions: two variants, every page carryi
     ]);
     assert.deepEqual(part.without, ['e']);
   });
+
+test('a chosen part whose two positions have the same selectors is one design', () => {
+  const pages = ['a', 'b', 'c', 'd'];
+  const cand = (key, selector, on) => ({ key, anchored: 'top', fp: key, sample: { selector,
+    url: on[0], text: key }, selectors: [selector], tags: ['DIV'],
+    bounds: { y: 0, height: 30 }, support: on.length / pages.length, pages: on });
+  const part = chosenPart([cand('lang1', '#lang', ['a', 'b']), cand('menu1', '#menu', ['a', 'b']),
+    cand('lang2', '#lang', ['c', 'd']), cand('menu2', '#menu', ['c', 'd'])], pages, () => null);
+  assert.equal(part.variants.length, 1, 'one header, not two designs');
+  assert.deepEqual(part.variants[0].pages, ['a', 'b', 'c', 'd']);
+  assert.deepEqual(part.without, []);
+});

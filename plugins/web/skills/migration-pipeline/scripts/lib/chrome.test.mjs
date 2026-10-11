@@ -320,6 +320,18 @@ test('the worker: trees captured offline, chrome detected, written in EDS terms'
   const flagged = (await pages.read(cwd)).pages.filter((p) => p.verdict.reasons
     .some((r) => r.code === 'no-footer' && r.by === 'chrome')).length;
   assert.equal(flagged, 11, 'every page is without the footer the reader said there is none of');
+  // A choice naming a candidate the detection no longer has (pages captured again, other
+  // ids) does not pass unnoticed.
+  const footerId = sheet.candidates.find((c) => c.verdict === 'footer').id;
+  await chrome.choose(cwd, 'footer', [footerId], { by: 'test' });
+  await workerMain(cwd, { io: fakeIo(siteTree, { pageOf: (u) => numberOf(u) || 3 }) });
+  assert.deepEqual(await check(cwd), { pass: true });
+  const now = await chrome.readCandidates(cwd);
+  await chrome.writeCandidates(cwd, { method: now.method, summary: now.summary,
+    candidates: now.candidates.filter((c) => c.id !== footerId) });
+  assert.match((await check(cwd)).note, new RegExp(`chosen candidate\\(s\\) ${footerId} no`));
+  await chrome.writeCandidates(cwd, { method: now.method, summary: now.summary,
+    candidates: now.candidates });
   await chrome.choose(cwd, 'footer', [sheet.candidates.find((c) => c.verdict === 'footer').id],
     { by: 'test' });
   await workerMain(cwd, { io: fakeIo(siteTree, { pageOf: (u) => numberOf(u) || 3 }) });

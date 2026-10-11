@@ -46,8 +46,10 @@ async function captures(cwd) {
  *   4 — a fragment is located on a page by its optional members too, where present.
  *   5 — a fixed layer taller than a band (a mega menu's curtain) is no chrome.
  *   6 — a reader's choice of one part at two DOM positions is two variants of the part.
+ *   7 — a variant is the set of selectors a page carries: the same elements at two
+ *       positions are one design (one header, not two), chosen or found by the rules.
  */
-export const DETECT_VERSION = 6;
+export const DETECT_VERSION = 7;
 
 /** How many candidates the sheet shows, beyond the members themselves. */
 export const SHEET_SIZE = 16;
@@ -491,10 +493,29 @@ export async function check(cwd) {
     return { pass: false, note: 'no cached page to read yet' };
   }
   const work = await pending(cwd);
-  if (!work.length) return { pass: true };
   if (work[0] === 'detect') return { pass: false, note: 'trees changed since the last detection' };
-  return { pass: false, note: `${work.length} page(s) without a visual tree` };
+  if (work.length) return { pass: false, note: `${work.length} page(s) without a visual tree` };
+  // A choice names candidates by id; captured again, the pages may give other ids — the
+  // choice then silently chose less. Say so: choose again.
+  const lost = await lostChoices(cwd);
+  if (lost.length) {
+    return { pass: false, note: `chosen candidate(s) ${lost.join(' ')} no longer found (the`
+      + ' pages were captured again): pipeline chrome choose again' };
+  }
+  return { pass: true };
 }
+
+/** The ids a choice names that the latest detection no longer has. */
+export async function lostChoices(cwd) {
+  const { chrome } = await data(cwd);
+  const choice = await chrome.readChoice(cwd);
+  if (!choice) return [];
+  const sheet = await chrome.readCandidates(cwd);
+  const known = new Set((sheet?.candidates ?? []).map((c) => c.id));
+  return Object.values(choice.parts).flatMap((p) => p.candidates ?? [])
+    .filter((id) => !known.has(id));
+}
+
 
 /**
  * The real io: offline proxy, playwright-cli with the page-tree bundle injected — as many

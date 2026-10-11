@@ -16,7 +16,7 @@ import { command as workerCommand } from './lib/worker.mjs';
 import { CHECKS } from './lib/checks.mjs';
 import { data } from './lib/data.mjs';
 import { discover } from './lib/discover.mjs';
-import { pick, sample } from './lib/pick.mjs';
+import { pick, prepPicks, sample } from './lib/pick.mjs';
 import { structure } from './lib/structure.mjs';
 import { pixels } from './lib/pixels.mjs';
 import {
@@ -119,10 +119,10 @@ export async function setup(cwd, { shouldInstall, exec = defaultExec, nodeVersio
 
 /** `access prep`: the given pages, or the home page and two picked from other groups. */
 async function accessPrep(cwd, urls) {
-  const { migration } = await data(cwd);
-  const origin = (await migration.open(cwd)).source.origin;
+  const { migration, pages: table } = await data(cwd);
+  const { source } = await migration.open(cwd);
   const pages = urls.length ? urls
-    : [origin, ...(await pick(cwd, { count: 2 })).picks.map((p) => p.url)];
+    : [source.origin, ...prepPicks((await table.read(cwd)).pages, source.scope).map((p) => p.url)];
   const { cli, overlayDb } = await tools(cwd);
   const run = (args) => defaultIo.execFile(process.execPath, [overlayDb, ...args],
     { maxBuffer: 1 << 26 });

@@ -225,3 +225,20 @@ test('pick: one per largest group in turn, inside pages first, strata interleave
     assert.equal(plain.picks.length, 1);
     assert.equal(plain.selection, undefined);
   });
+
+test('prepPicks: the deepest page, then one of middle depth under another parent', async () => {
+  const { prepPicks } = await import('./lib/pick.mjs');
+  const rec = (path, group) => ({ id: `pag-${path.length}${group}`, url: `${O}${path}`, group,
+    verdict: { status: 'in', reasons: [] } });
+  const pages = [rec('de/start.html', 'de'), rec('fr/start.html', 'fr'),
+    rec('de/start/therapy/cvrm/patterns/home.html', 'de'),
+    rec('de/start/therapy/cvrm/patterns/test.html', 'de'),
+    rec('de/start/products/trixeo.html', 'de'), rec('fr/start/products/a.html', 'fr'),
+    rec('it/start/products/b.html', 'it'), rec('doc.pdf', ''),
+    { ...rec('en/start/x/y/z/w.html', 'en'), verdict: { status: 'out', reasons: [] } }];
+  const picks = prepPicks(pages, O).map((p) => p.url.replace(O, ''));
+  assert.equal(picks.length, 2);
+  assert.match(picks[0], /^de\/start\/therapy\/cvrm\/patterns\//, 'the deepest page in');
+  assert.match(picks[1], /\/start\/products\//, 'then the median depth, another parent');
+  assert.deepEqual(prepPicks([], O), []);
+});
