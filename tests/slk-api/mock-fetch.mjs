@@ -4,5 +4,7 @@ const port = process.env.SLK_TEST_MOCK_PORT;
 const realFetch = globalThis.fetch;
 globalThis.fetch = (url, init) => {
   const target = String(url).replace("https://slack.com", `http://127.0.0.1:${port}`);
-  return realFetch(target, init);
+  const ms = Number(process.env.SLK_TEST_TIMEOUT_MS);
+  const signal = ms ? AbortSignal.timeout(ms) : init?.signal;
+  return realFetch(target, { ...init, signal });
 };

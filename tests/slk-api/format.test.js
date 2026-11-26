@@ -56,6 +56,20 @@ describe("messageBody blocks", () => {
   });
 });
 
+describe("messageBody mixed blocks and attachments", () => {
+  const section = [{ type: "section", text: { text: "Build failed" } }];
+
+  it("falls back to top-level blocks when attachments carry no text", () => {
+    const m = { text: "", attachments: [{ image_url: "https://x/y.png" }], blocks: section };
+    assert.equal(messageBody(m), "Build failed");
+  });
+
+  it("keeps readable attachment text and still ignores empty ones", () => {
+    const m = { text: "", attachments: [{ image_url: "x" }, { fallback: "legacy" }], blocks: section };
+    assert.equal(messageBody(m), "legacy");
+  });
+});
+
 describe("userIds and formatTime", () => {
   it("finds mentioned users", () => assert.deepEqual(userIds("<@U1> <@W2|x>"), ["U1", "W2"]));
   it("formats a Slack ts as UTC", () => assert.equal(formatTime("1795615289.030329"), "2026-11-25 14:01"));

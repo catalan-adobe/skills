@@ -8,6 +8,7 @@ import { cleanText, formatTime, messageBody, userIds } from "./format.mjs";
 const USAGE = `Usage: slk-api.mjs <command> [args] [--ws <domain|team_id>] [--limit N] [--full]
   whoami                         check the saved sessions
   search <query>                 Slack search (supports in:#chan from:@user before:YYYY-MM-DD)
+                                 start the query with -- if it begins with "-": search -- "-from:@ci x"
   history <channelId>            latest messages of a channel
   thread <channelId> <ts>        a thread, parent first`;
 
@@ -16,14 +17,21 @@ const DATA_HOME = process.env.XDG_DATA_HOME || `${process.env.HOME}/.local/share
 const TOKEN_DIR = process.env.SLK_TOKEN_DIR || `${DATA_HOME}/slk/tokens`;
 const API_BASE = "https://slack.com/api";
 const REQUEST_TIMEOUT_MS = 15_000;
-const { positionals, values } = parseArgs({
-  allowPositionals: true,
-  options: {
-    ws: { type: "string" },
-    limit: { type: "string", default: "10" },
-    full: { type: "boolean", default: false },
-  },
-});
+let parsed;
+try {
+  parsed = parseArgs({
+    allowPositionals: true,
+    options: {
+      ws: { type: "string" },
+      limit: { type: "string", default: "10" },
+      full: { type: "boolean", default: false },
+    },
+  });
+} catch {
+  console.error(`error: unknown or incomplete option. A search that starts with "-" needs "--" before it.\n${USAGE}`);
+  process.exit(2);
+}
+const { positionals, values } = parsed;
 const [cmd, ...args] = positionals;
 if (!/^[1-9]\d*$/.test(values.limit)) {
   console.error(`error: --limit must be a positive whole number, got "${values.limit}"`);
@@ -33,6 +41,7 @@ if (!/^[1-9]\d*$/.test(values.limit)) {
 const EXPIRED_CODES = new Set(["invalid_auth", "token_expired", "token_revoked"]);
 
 class SessionExpiredError extends Error {}
+class TransportError extends Error {}
 
 class RateLimitError extends Error {
   constructor(ws, method, retryAfter) {
@@ -45,7 +54,7 @@ class RateLimitError extends Error {
 const isHeaderSafe = (v) => typeof v === "string" && v.length > 0 && !/[\x00-\x1f\x7f]/.test(v);
 const isValidSession = (s) =>
   s && ["access_token", "cookie", "team_id"].every((k) => isHeaderSafe(s[k])) &&
-  (s.domain === undefined || isHeaderSafe(s.domain));
+  (!s.domain || isHeaderSafe(s.domain));
 
 /** Returns the usable sessions. Warnings name the file and never show its content. */
 function loadWorkspaces() {
@@ -68,7 +77,7 @@ function loadWorkspaces() {
       session = null;
     }
     if (isValidSession(session)) {
-      sessions.push({ ...session, domain: session.domain ?? session.team_id });
+      sessions.push({ ...session, domain: session.domain || session.team_id });
     } else {
       console.error(`warning: skipping ${f}: not a valid slk session (reopen slk to refresh it)`);
     }
@@ -96,7 +105,7 @@ async function call(ws, method, params = {}) {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (e) {
-    throw new Error(`${ws.domain} ${method}: request failed (${e.name})`);
+    throw new TransportError(`${ws.domain} ${method}: request failed (${e.name})`);
   }
   if (res.status === 429) throw new RateLimitError(ws, method, res.headers.get("retry-after") ?? "?");
   const json = await res.json().catch(() => ({}));
@@ -126,9 +135,9 @@ async function resolveUsers(ws, ids) {
       if (e instanceof RateLimitError) {
         lookupsPaused.add(ws.team_id);
         console.error(`warning: ${ws.domain} name lookups paused, retry in ${e.retryAfter}s. Showing user IDs.`);
-      } else if (e instanceof SessionExpiredError) {
+      } else if (e instanceof SessionExpiredError || e instanceof TransportError) {
         lookupsPaused.add(ws.team_id);
-        console.error(`warning: ${e.message}. Showing user IDs.`);
+        console.error(`warning: ${ws.domain} name lookups paused (${e.message}). Showing user IDs.`);
       } else {
         names.set(id, id);
       }

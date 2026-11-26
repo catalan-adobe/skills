@@ -45,6 +45,9 @@ node "$SLK_API" history <channelId> [--limit N] # latest messages, oldest first
 node "$SLK_API" thread <channelId> <ts>         # a thread, parent first
 ```
 
+A query that starts with `-` (for example `-from:@ci`) needs `--` first, or the option parser rejects it:
+`node "$SLK_API" search --ws adobe -- "-from:@ci incident"`.
+
 Flags: `--ws <domain|team_id>` limits to one workspace (`slk --list-workspaces` shows them).
 `--full` turns off the 400-character cut on long messages.
 

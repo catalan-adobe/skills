@@ -43,6 +43,7 @@ before(async () => {
       const out = !cookieOk
         ? { ok: false, error: "invalid_auth" }
         : (handlers[method]?.(params, team) ?? { ok: false, error: "unknown_method" });
+      if (out.hang) return; // never answer, so the client's own timeout fires
       res.statusCode = out.status ?? 200;
       if (out.retryAfter) res.setHeader("retry-after", out.retryAfter);
       res.end(JSON.stringify(out.body ?? out));
@@ -396,4 +397,45 @@ describe("review round 3", () => {
       assert.equal(calls.length, 0);
     });
   }
+
+  it("accepts a session whose domain is an empty string and labels it by team ID", async () => {
+    reset();
+    handlers["auth.test"] = () => ({ ok: true, team: "Legacy", user: "me" });
+    const r = await run(["whoami", "--ws", "T1"], tokenDir({ "T1.json": session("T1", { domain: "" }) }));
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /T1: Legacy as me/);
+    assert.equal(calls.filter((c) => c.method === "auth.test").length, 1);
+  });
+
+  it("pauses name lookups after one timeout and still prints the messages", async () => {
+    reset();
+    handlers["conversations.history"] = () => ({
+      ok: true,
+      messages: ["U1", "U2", "U3"].map((u, i) => ({ ts: `${i + 1}.0`, user: u, text: `m${i}` })),
+    });
+    handlers["users.info"] = () => ({ hang: true });
+    const r = await run(["history", "C1"], one(), { env: { SLK_TEST_TIMEOUT_MS: "150" } });
+    assert.equal(r.status, 0);
+    assert.equal(calls.filter((c) => c.method === "users.info").length, 1);
+    assert.equal((r.stderr.match(/lookups paused/g) ?? []).length, 1);
+    assert.match(r.stdout, /U1 .*m0/);
+    assert.match(r.stdout, /U3 .*m2/);
+  });
+
+  it("accepts a search that starts with a hyphen after --", async () => {
+    reset();
+    handlers["search.messages"] = () => ({ ok: true, messages: { total: 0, matches: [] } });
+    const r = await run(["search", "--ws", "T1", "--", "-from:@ci", "incident"], one());
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(calls.find((c) => c.method === "search.messages").params.query, "-from:@ci incident");
+  });
+
+  it("turns an unknown option into a short usage message, not a stack trace", async () => {
+    reset();
+    const r = await run(["search", "-from:@ci incident"], one());
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /Usage:/);
+    assert.doesNotMatch(r.stderr, /node:internal|^\s+at .+\(.+:\d+:\d+\)/m);
+    assert.equal(calls.length, 0);
+  });
 });

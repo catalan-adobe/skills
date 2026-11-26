@@ -22,10 +22,10 @@ const blockTexts = (blocks = []) =>
 /** Message text. Bot posts often leave `text` empty and put the content in attachments or blocks. */
 export function messageBody(m) {
   if (m.text) return m.text;
-  const parts = (m.attachments ?? []).map(
-    (a) => a.fallback || a.text || a.title || blockTexts(a.blocks).filter(Boolean).join(" | "),
-  );
-  if (parts.length === 0) parts.push(blockTexts(m.blocks).filter(Boolean).join(" | "));
+  const fromAttachments = (m.attachments ?? [])
+    .map((a) => a.fallback || a.text || a.title || blockTexts(a.blocks).filter(Boolean).join(" | "))
+    .filter(Boolean);
+  const parts = fromAttachments.length > 0 ? fromAttachments : [blockTexts(m.blocks).filter(Boolean).join(" | ")];
   return parts.filter(Boolean).join(" | ");
 }
 
