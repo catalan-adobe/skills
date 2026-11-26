@@ -7,8 +7,8 @@ description: >
   history and thread reading. No Slack desktop restart, no debug port, no
   token setup. Use when the user asks to find, look up, search, or read
   something in Slack ("what did X say about Y", "find the thread about Z",
-  "check #channel", "search my Slack"). Use it even when they never say slk. Prefer
-  this over slack-cdp for read-only questions. Triggers on: slk, search slack,
+  "check #channel", "search my Slack"). Use it even when they never say slk, but
+  only when slk is installed and signed in. Otherwise use slack-cdp. Triggers on: slk, search slack,
   find in slack, slack thread, slack history, what was said in slack,
   slack permalink.
 ---
