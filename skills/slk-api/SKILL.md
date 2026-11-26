@@ -34,7 +34,7 @@ if [[ -z "$SLK_API" || ! -f "$SLK_API" ]]; then
 fi
 ```
 
-Needs Node 22+ and at least one workspace added with `slk --add-workspace`.
+Needs Node 22+ and at least one workspace added with `slk --add-workspace`. It finds sessions where slk keeps them (`$XDG_DATA_HOME/slk/tokens`, else `~/.local/share/slk/tokens`).
 
 ## Commands
 

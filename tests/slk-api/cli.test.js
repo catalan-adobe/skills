@@ -1,12 +1,13 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 const SCRIPT = path.resolve(import.meta.dirname, "../../skills/slk-api/scripts/slk-api.mjs");
+const PRELOAD = path.resolve(import.meta.dirname, "mock-fetch.mjs");
 const SECRET = "xoxc-SECRET-TOKEN-VALUE";
 
 const session = (team, extra = {}) => ({
@@ -34,7 +35,7 @@ before(async () => {
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
-      const method = req.url.replace("/", "");
+      const method = req.url.replace("/api/", "");
       const team = (req.headers.authorization ?? "").split("-").pop();
       const params = Object.fromEntries(new URLSearchParams(body));
       calls.push({ method, team, params });
@@ -48,14 +49,15 @@ before(async () => {
 });
 after(() => server.close());
 
-function run(args, dir, { slowStdout = false } = {}) {
+function run(args, dir, { slowStdout = false, env: extraEnv = {} } = {}) {
   const env = {
     ...process.env,
-    SLK_TOKEN_DIR: dir,
-    SLK_API_BASE: `http://127.0.0.1:${server.address().port}`,
+    ...(dir === undefined ? {} : { SLK_TOKEN_DIR: dir }),
+    SLK_TEST_MOCK_PORT: String(server.address().port),
+    ...extraEnv,
   };
   return new Promise((resolve) => {
-    const child = spawn("node", [SCRIPT, ...args], { env });
+    const child = spawn("node", ["--import", PRELOAD, SCRIPT, ...args], { env });
     let stdout = "";
     let stderr = "";
     if (slowStdout) child.stdout.pause();
@@ -221,4 +223,88 @@ describe("output", () => {
     assert.equal(r.status, 0);
     assert.equal(r.stdout.trim().split("\n").length, 200);
   });
+});
+
+describe("search", () => {
+  const dir = () => tokenDir({ "T1.json": session("T1"), "T2.json": session("T2") });
+  const match = (extra = {}) => ({
+    ts: "1795615289.0", permalink: "https://x.slack.com/archives/C1/p1", text: "found it",
+    channel: { id: "C1", name: "general" }, ...extra,
+  });
+
+  it("queries every workspace and passes the query and limit to Slack", async () => {
+    reset();
+    handlers["search.messages"] = () => ({ ok: true, messages: { total: 1, matches: [match({ username: "bob" })] } });
+    const r = await run(["search", "java in:#general", "--limit", "3"], dir());
+    assert.equal(r.status, 0);
+    const sent = calls.filter((c) => c.method === "search.messages");
+    assert.deepEqual(sent.map((c) => c.team).sort(), ["T1", "T2"]);
+    assert.ok(sent.every((c) => c.params.query === "java in:#general" && c.params.count === "3"));
+    assert.match(r.stdout, /#general \(C1\) bob ts=1795615289\.0/);
+    assert.match(r.stdout, /https:\/\/x\.slack\.com\/archives\/C1\/p1/);
+  });
+
+  it("uses the resolved name when a match has a user ID but no username", async () => {
+    reset();
+    handlers["search.messages"] = () => ({ ok: true, messages: { total: 1, matches: [match({ user: "U1" })] } });
+    handlers["users.info"] = () => ({ ok: true, user: { real_name: "Alice", profile: {} } });
+    const r = await run(["search", "x", "--ws", "T1"], dir());
+    assert.match(r.stdout, /#general \(C1\) Alice ts=/);
+    assert.doesNotMatch(r.stdout, /undefined/);
+  });
+
+  it("falls back to the user ID when the lookup fails", async () => {
+    reset();
+    handlers["search.messages"] = () => ({ ok: true, messages: { total: 1, matches: [match({ user: "U9" })] } });
+    const r = await run(["search", "x", "--ws", "T1"], dir());
+    assert.match(r.stdout, /\(C1\) U9 ts=/);
+  });
+});
+
+describe("workspace selection", () => {
+  it("rejects an empty --ws before any API call", async () => {
+    reset();
+    const r = await run(["search", "secret topic", "--ws", ""], tokenDir({ "T1.json": session("T1"), "T2.json": session("T2") }));
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /--ws is empty/);
+    assert.equal(calls.length, 0);
+  });
+});
+
+describe("session discovery and destination", () => {
+  it("finds sessions under XDG_DATA_HOME like slk does", async () => {
+    reset();
+    handlers["auth.test"] = () => ({ ok: true, team: "Xdg", user: "me" });
+    const home = mkdtempSync(path.join(tmpdir(), "xdg-"));
+    mkdirSync(path.join(home, "slk", "tokens"), { recursive: true });
+    writeFileSync(path.join(home, "slk", "tokens", "TX.json"), JSON.stringify(session("TX")));
+    const r = await run(["whoami"], undefined, { env: { SLK_TOKEN_DIR: "", XDG_DATA_HOME: home } });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /tx: Xdg as me/);
+  });
+
+  it("ignores SLK_API_BASE so credentials only go to slack.com", async () => {
+    reset();
+    let hits = 0;
+    const decoy = createServer((_q, res) => { hits++; res.end("{}"); });
+    await new Promise((r) => decoy.listen(0, "127.0.0.1", r));
+    handlers["auth.test"] = () => ({ ok: true, team: "Real", user: "me" });
+    const r = await run(["whoami"], tokenDir({ "T1.json": session("T1") }), {
+      env: { SLK_API_BASE: `http://127.0.0.1:${decoy.address().port}` },
+    });
+    decoy.close();
+    assert.equal(hits, 0);
+    assert.equal(r.status, 0);
+    assert.equal(calls.length, 1);
+  });
+
+  for (const code of ["invalid_auth", "token_expired", "token_revoked"]) {
+    it(`tells the user to refresh the session on ${code}`, async () => {
+      reset();
+      handlers["auth.test"] = () => ({ ok: false, error: code });
+      const r = await run(["whoami"], tokenDir({ "T1.json": session("T1") }));
+      assert.equal(r.status, 1);
+      assert.match(r.stderr, /reopen slk/);
+    });
+  }
 });

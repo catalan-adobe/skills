@@ -11,10 +11,10 @@ const USAGE = `Usage: slk-api.mjs <command> [args] [--ws <domain|team_id>] [--li
   history <channelId>            latest messages of a channel
   thread <channelId> <ts>        a thread, parent first`;
 
-const TOKEN_DIR = process.env.SLK_TOKEN_DIR ?? `${process.env.HOME}/.local/share/slk/tokens`;
-// Tests point this at a local mock. Any other host is ignored so credentials only go to Slack.
-const LOCAL_BASE = /^http:\/\/127\.0\.0\.1:\d+$/.test(process.env.SLK_API_BASE ?? "");
-const API_BASE = LOCAL_BASE ? process.env.SLK_API_BASE : "https://slack.com/api";
+// Same lookup as slk: XDG_DATA_HOME when set and not empty, else ~/.local/share.
+const DATA_HOME = process.env.XDG_DATA_HOME || `${process.env.HOME}/.local/share`;
+const TOKEN_DIR = process.env.SLK_TOKEN_DIR || `${DATA_HOME}/slk/tokens`;
+const API_BASE = "https://slack.com/api";
 const REQUEST_TIMEOUT_MS = 15_000;
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -25,6 +25,8 @@ const { positionals, values } = parseArgs({
   },
 });
 const [cmd, ...args] = positionals;
+
+const EXPIRED_CODES = new Set(["invalid_auth", "token_expired", "token_revoked"]);
 
 class RateLimitError extends Error {
   constructor(ws, method, retryAfter) {
@@ -40,6 +42,9 @@ const isValidSession = (s) =>
 
 /** Returns the usable sessions. Warnings name the file and never show its content. */
 function loadWorkspaces() {
+  if (values.ws !== undefined && values.ws.trim() === "") {
+    throw new Error("--ws is empty. Pass a workspace domain or team ID, or omit --ws.");
+  }
   let files;
   try {
     files = readdirSync(TOKEN_DIR).filter((f) => f.endsWith(".json"));
@@ -89,7 +94,7 @@ async function call(ws, method, params = {}) {
   if (res.status === 429) throw new RateLimitError(ws, method, res.headers.get("retry-after") ?? "?");
   const json = await res.json().catch(() => ({}));
   if (!json.ok) {
-    const hint = json.error === "invalid_auth" ? " (session expired: reopen slk to refresh it)" : "";
+    const hint = EXPIRED_CODES.has(json.error) ? " (session expired: reopen slk to refresh it)" : "";
     throw new Error(`${ws.domain} ${method}: ${json.error ?? `HTTP ${res.status}`}${hint}`);
   }
   return json;
@@ -119,6 +124,15 @@ async function resolveUsers(ws, ids) {
   return names;
 }
 
+/** Resolved display name, else the username Slack sent, else the user ID. */
+async function sender(ws, m) {
+  if (m.user) {
+    const name = (await resolveUsers(ws, [m.user])).get(m.user);
+    if (name && name !== m.user) return name;
+  }
+  return m.username ?? m.user ?? "?";
+}
+
 async function render(ws, m) {
   const raw = messageBody(m);
   const text = cleanText(raw, await resolveUsers(ws, [m.user, ...userIds(raw)].filter(Boolean)));
@@ -127,8 +141,7 @@ async function render(ws, m) {
 
 async function printMessages(ws, messages) {
   for (const m of messages) {
-    const who = (await resolveUsers(ws, [m.user])).get(m.user) ?? m.user ?? m.username ?? "?";
-    console.log(`${formatTime(m.ts)} ${who} (ts ${m.ts}): ${await render(ws, m)}`);
+    console.log(`${formatTime(m.ts)} ${await sender(ws, m)} (ts ${m.ts}): ${await render(ws, m)}`);
   }
 }
 
@@ -148,7 +161,7 @@ const commands = {
       });
       console.log(`== ${ws.domain}: ${messages.total} matches, showing ${messages.matches.length}`);
       for (const m of messages.matches) {
-        console.log(`${formatTime(m.ts)} #${m.channel.name} (${m.channel.id}) ${m.username} ts=${m.ts}`);
+        console.log(`${formatTime(m.ts)} #${m.channel.name} (${m.channel.id}) ${await sender(ws, m)} ts=${m.ts}`);
         console.log(`  ${m.permalink}\n  ${await render(ws, m)}`);
       }
     },
