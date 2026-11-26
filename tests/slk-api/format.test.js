@@ -31,6 +31,31 @@ describe("messageBody", () => {
   it("returns an empty string when there is nothing", () => assert.equal(messageBody({ text: "" }), ""));
 });
 
+describe("messageBody blocks", () => {
+  it("reads a Block Kit attachment with no legacy text", () => {
+    const m = {
+      text: "",
+      attachments: [{ blocks: [
+        { type: "section", text: { type: "mrkdwn", text: "Build 42 failed" },
+          fields: [{ type: "mrkdwn", text: "*Branch* main" }] },
+        { type: "divider" },
+        { type: "context", elements: [{ type: "mrkdwn", text: "ci-bot" }] },
+      ] }],
+    };
+    assert.equal(messageBody(m), "Build 42 failed | *Branch* main | ci-bot");
+  });
+
+  it("reads top-level blocks when text is empty", () => {
+    const m = { text: "", blocks: [{ type: "header", text: { type: "plain_text", text: "Deploy done" } }] };
+    assert.equal(messageBody(m), "Deploy done");
+  });
+
+  it("prefers legacy attachment text over blocks", () => {
+    const m = { text: "", attachments: [{ fallback: "legacy", blocks: [{ type: "section", text: { text: "blocks" } }] }] };
+    assert.equal(messageBody(m), "legacy");
+  });
+});
+
 describe("userIds and formatTime", () => {
   it("finds mentioned users", () => assert.deepEqual(userIds("<@U1> <@W2|x>"), ["U1", "W2"]));
   it("formats a Slack ts as UTC", () => assert.equal(formatTime("1795615289.030329"), "2026-11-25 14:01"));

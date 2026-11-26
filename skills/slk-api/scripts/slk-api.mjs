@@ -25,8 +25,14 @@ const { positionals, values } = parseArgs({
   },
 });
 const [cmd, ...args] = positionals;
+if (!/^[1-9]\d*$/.test(values.limit)) {
+  console.error(`error: --limit must be a positive whole number, got "${values.limit}"`);
+  process.exit(2);
+}
 
 const EXPIRED_CODES = new Set(["invalid_auth", "token_expired", "token_revoked"]);
+
+class SessionExpiredError extends Error {}
 
 class RateLimitError extends Error {
   constructor(ws, method, retryAfter) {
@@ -38,7 +44,8 @@ class RateLimitError extends Error {
 // Header values with control characters make fetch throw an error that quotes the value.
 const isHeaderSafe = (v) => typeof v === "string" && v.length > 0 && !/[\x00-\x1f\x7f]/.test(v);
 const isValidSession = (s) =>
-  s && ["access_token", "cookie", "domain", "team_id"].every((k) => isHeaderSafe(s[k]));
+  s && ["access_token", "cookie", "team_id"].every((k) => isHeaderSafe(s[k])) &&
+  (s.domain === undefined || isHeaderSafe(s.domain));
 
 /** Returns the usable sessions. Warnings name the file and never show its content. */
 function loadWorkspaces() {
@@ -61,7 +68,7 @@ function loadWorkspaces() {
       session = null;
     }
     if (isValidSession(session)) {
-      sessions.push(session);
+      sessions.push({ ...session, domain: session.domain ?? session.team_id });
     } else {
       console.error(`warning: skipping ${f}: not a valid slk session (reopen slk to refresh it)`);
     }
@@ -94,8 +101,11 @@ async function call(ws, method, params = {}) {
   if (res.status === 429) throw new RateLimitError(ws, method, res.headers.get("retry-after") ?? "?");
   const json = await res.json().catch(() => ({}));
   if (!json.ok) {
-    const hint = EXPIRED_CODES.has(json.error) ? " (session expired: reopen slk to refresh it)" : "";
-    throw new Error(`${ws.domain} ${method}: ${json.error ?? `HTTP ${res.status}`}${hint}`);
+    const detail = `${ws.domain} ${method}: ${json.error ?? `HTTP ${res.status}`}`;
+    if (EXPIRED_CODES.has(json.error)) {
+      throw new SessionExpiredError(`${detail} (session expired: reopen slk to refresh it)`);
+    }
+    throw new Error(detail);
   }
   return json;
 }
@@ -116,6 +126,9 @@ async function resolveUsers(ws, ids) {
       if (e instanceof RateLimitError) {
         lookupsPaused.add(ws.team_id);
         console.error(`warning: ${ws.domain} name lookups paused, retry in ${e.retryAfter}s. Showing user IDs.`);
+      } else if (e instanceof SessionExpiredError) {
+        lookupsPaused.add(ws.team_id);
+        console.error(`warning: ${e.message}. Showing user IDs.`);
       } else {
         names.set(id, id);
       }
@@ -154,7 +167,8 @@ const commands = {
     },
   },
   search: {
-    async run(ws, [query]) {
+    async run(ws, words) {
+      const query = words.join(" ");
       if (!query) throw new Error("search needs a query");
       const { messages } = await call(ws, "search.messages", {
         query, count: values.limit, sort: "timestamp",
@@ -170,8 +184,17 @@ const commands = {
     scoped: true,
     async run(ws, [channel]) {
       if (!channel) throw new Error("history needs a channel ID");
-      const { messages } = await call(ws, "conversations.history", { channel, limit: values.limit });
-      await printMessages(ws, messages.reverse());
+      const want = Number(values.limit);
+      const messages = [];
+      let cursor = "";
+      do {
+        const page = await call(ws, "conversations.history", {
+          channel, limit: String(want - messages.length), cursor,
+        });
+        messages.push(...page.messages);
+        cursor = page.response_metadata?.next_cursor ?? "";
+      } while (cursor && messages.length < want);
+      await printMessages(ws, messages.slice(0, want).reverse());
     },
   },
   thread: {

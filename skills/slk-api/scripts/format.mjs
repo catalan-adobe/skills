@@ -12,13 +12,21 @@ export function cleanText(text, names = new Map()) {
     .trim();
 }
 
-/** Message text, falling back to attachment text for bot posts that have an empty `text`. */
+const blockTexts = (blocks = []) =>
+  blocks.flatMap((b) => [
+    b.text?.text,
+    ...(b.fields ?? []).map((f) => f.text),
+    ...(b.elements ?? []).map((e) => e.text),
+  ]);
+
+/** Message text. Bot posts often leave `text` empty and put the content in attachments or blocks. */
 export function messageBody(m) {
   if (m.text) return m.text;
-  return (m.attachments ?? [])
-    .map((a) => a.fallback || a.text || a.title)
-    .filter(Boolean)
-    .join(" | ");
+  const parts = (m.attachments ?? []).map(
+    (a) => a.fallback || a.text || a.title || blockTexts(a.blocks).filter(Boolean).join(" | "),
+  );
+  if (parts.length === 0) parts.push(blockTexts(m.blocks).filter(Boolean).join(" | "));
+  return parts.filter(Boolean).join(" | ");
 }
 
 export function userIds(text) {

@@ -39,7 +39,10 @@ before(async () => {
       const team = (req.headers.authorization ?? "").split("-").pop();
       const params = Object.fromEntries(new URLSearchParams(body));
       calls.push({ method, team, params });
-      const out = handlers[method]?.(params, team) ?? { ok: false, error: "unknown_method" };
+      const cookieOk = (req.headers.cookie ?? "") === `d=xoxd-SECRET-COOKIE-${team}`;
+      const out = !cookieOk
+        ? { ok: false, error: "invalid_auth" }
+        : (handlers[method]?.(params, team) ?? { ok: false, error: "unknown_method" });
       res.statusCode = out.status ?? 200;
       if (out.retryAfter) res.setHeader("retry-after", out.retryAfter);
       res.end(JSON.stringify(out.body ?? out));
@@ -305,6 +308,92 @@ describe("session discovery and destination", () => {
       const r = await run(["whoami"], tokenDir({ "T1.json": session("T1") }));
       assert.equal(r.status, 1);
       assert.match(r.stderr, /reopen slk/);
+    });
+  }
+});
+
+describe("review round 3", () => {
+  const one = () => tokenDir({ "T1.json": session("T1") });
+  const ana = () => ({ ok: true, user: { real_name: "Ana", profile: {} } });
+
+  it("accepts a legacy session without a domain and labels it by team ID", async () => {
+    reset();
+    handlers["auth.test"] = () => ({ ok: true, team: "Legacy", user: "me" });
+    const { domain: _omit, ...legacy } = session("T1");
+    const r = await run(["whoami", "--ws", "T1"], tokenDir({ "T1.json": legacy }));
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /T1: Legacy as me/);
+  });
+
+  it("follows the cursor until --limit messages are collected, oldest first", async () => {
+    reset();
+    handlers["users.info"] = ana;
+    handlers["conversations.history"] = (p) =>
+      p.cursor === "c2"
+        ? { ok: true, messages: [{ ts: "1.0", user: "U1", text: "one" }] }
+        : {
+            ok: true,
+            messages: [{ ts: "3.0", user: "U1", text: "three" }, { ts: "2.0", user: "U1", text: "two" }],
+            response_metadata: { next_cursor: "c2" },
+          };
+    const r = await run(["history", "C1", "--limit", "3"], one());
+    assert.equal(r.status, 0);
+    const order = ["one", "two", "three"].map((t) => r.stdout.indexOf(t));
+    assert.ok(order[0] >= 0 && order[0] < order[1] && order[1] < order[2], r.stdout);
+    assert.equal(calls.filter((c) => c.method === "conversations.history")[1].params.limit, "1");
+  });
+
+  it("does not report an empty channel when the first page is empty but a cursor exists", async () => {
+    reset();
+    handlers["users.info"] = ana;
+    handlers["conversations.history"] = (p) =>
+      p.cursor
+        ? { ok: true, messages: [{ ts: "1.0", user: "U1", text: "late page" }] }
+        : { ok: true, messages: [], response_metadata: { next_cursor: "c2" } };
+    const r = await run(["history", "C1", "--limit", "3"], one());
+    assert.match(r.stdout, /late page/);
+  });
+
+  it("stops at --limit without asking for another page", async () => {
+    reset();
+    handlers["users.info"] = ana;
+    handlers["conversations.history"] = () => ({
+      ok: true,
+      messages: [{ ts: "2.0", user: "U1", text: "b" }, { ts: "1.0", user: "U1", text: "a" }],
+      response_metadata: { next_cursor: "more" },
+    });
+    await run(["history", "C1", "--limit", "2"], one());
+    assert.equal(calls.filter((c) => c.method === "conversations.history").length, 1);
+  });
+
+  it("warns once and stops name lookups when the session expires mid-read", async () => {
+    reset();
+    handlers["conversations.history"] = () => ({
+      ok: true,
+      messages: ["U1", "U2", "U3"].map((u, i) => ({ ts: `${i + 1}.0`, user: u, text: `m${i}` })),
+    });
+    handlers["users.info"] = () => ({ ok: false, error: "token_revoked" });
+    const r = await run(["history", "C1"], one());
+    assert.equal(calls.filter((c) => c.method === "users.info").length, 1);
+    assert.equal((r.stderr.match(/reopen slk/g) ?? []).length, 1);
+    assert.match(r.stdout, /U1 .*m0/);
+    assert.match(r.stdout, /U3 .*m2/);
+  });
+
+  it("joins extra search words instead of dropping them", async () => {
+    reset();
+    handlers["search.messages"] = () => ({ ok: true, messages: { total: 0, matches: [] } });
+    await run(["search", "incident", "in:#ops", "--ws", "T1"], one());
+    assert.equal(calls.find((c) => c.method === "search.messages").params.query, "incident in:#ops");
+  });
+
+  for (const bad of ["abc", "0", "1.5"]) {
+    it(`rejects --limit ${bad} before any API call`, async () => {
+      reset();
+      const r = await run(["history", "C1", "--limit", bad], one());
+      assert.equal(r.status, 2);
+      assert.match(r.stderr, /--limit must be a positive whole number/);
+      assert.equal(calls.length, 0);
     });
   }
 });
