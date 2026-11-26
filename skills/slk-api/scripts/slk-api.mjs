@@ -3,7 +3,7 @@
 // Credentials are read at runtime. No error path may include their contents.
 import { readFileSync, readdirSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { cleanText, formatTime, messageBody, userIds } from "./format.mjs";
+import { cleanText, formatTime, messageBody, stripControl, userIds } from "./format.mjs";
 
 const USAGE = `Usage: slk-api.mjs <command> [args] [--ws <domain|team_id>] [--limit N] [--full]
   whoami                         check the saved sessions
@@ -25,6 +25,7 @@ try {
       ws: { type: "string" },
       limit: { type: "string", default: "10" },
       full: { type: "boolean", default: false },
+      help: { type: "boolean", short: "h", default: false },
     },
   });
 } catch {
@@ -32,6 +33,10 @@ try {
   process.exit(2);
 }
 const { positionals, values } = parsed;
+if (values.help) {
+  console.log(USAGE);
+  process.exit(0);
+}
 const [cmd, ...args] = positionals;
 if (!/^[1-9]\d*$/.test(values.limit)) {
   console.error(`error: --limit must be a positive whole number, got "${values.limit}"`);
@@ -108,7 +113,16 @@ async function call(ws, method, params = {}) {
     throw new TransportError(`${ws.domain} ${method}: request failed (${e.name})`);
   }
   if (res.status === 429) throw new RateLimitError(ws, method, res.headers.get("retry-after") ?? "?");
-  const json = await res.json().catch(() => ({}));
+  let json;
+  try {
+    json = await res.json();
+  } catch (e) {
+    // A stalled or cut-off body hits the same deadline as a stalled request. A non-JSON body is not a transport failure.
+    if (e.name === "TimeoutError" || e.name === "AbortError" || e.code === "UND_ERR_BODY_TIMEOUT" || e instanceof TypeError) {
+      throw new TransportError(`${ws.domain} ${method}: response failed (${e.name})`);
+    }
+    json = {};
+  }
   if (!json.ok) {
     const detail = `${ws.domain} ${method}: ${json.error ?? `HTTP ${res.status}`}`;
     if (EXPIRED_CODES.has(json.error)) {
@@ -150,9 +164,9 @@ async function resolveUsers(ws, ids) {
 async function sender(ws, m) {
   if (m.user) {
     const name = (await resolveUsers(ws, [m.user])).get(m.user);
-    if (name && name !== m.user) return name;
+    if (name && name !== m.user) return stripControl(name).replace(/\s+/g, " ").trim();
   }
-  return m.username ?? m.user ?? "?";
+  return stripControl(m.username ?? m.user ?? "?").replace(/\s+/g, " ").trim();
 }
 
 async function render(ws, m) {
@@ -184,8 +198,8 @@ const commands = {
       });
       console.log(`== ${ws.domain}: ${messages.total} matches, showing ${messages.matches.length}`);
       for (const m of messages.matches) {
-        console.log(`${formatTime(m.ts)} #${m.channel.name} (${m.channel.id}) ${await sender(ws, m)} ts=${m.ts}`);
-        console.log(`  ${m.permalink}\n  ${await render(ws, m)}`);
+        console.log(`${formatTime(m.ts)} #${stripControl(m.channel.name)} (${stripControl(m.channel.id)}) ${await sender(ws, m)} ts=${m.ts}`);
+        console.log(`  ${stripControl(m.permalink)}\n  ${await render(ws, m)}`);
       }
     },
   },

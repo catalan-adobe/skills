@@ -44,6 +44,11 @@ before(async () => {
         ? { ok: false, error: "invalid_auth" }
         : (handlers[method]?.(params, team) ?? { ok: false, error: "unknown_method" });
       if (out.hang) return; // never answer, so the client's own timeout fires
+      if (out.stallBody) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.write('{"ok":');
+        return; // headers sent, body never finished
+      }
       res.statusCode = out.status ?? 200;
       if (out.retryAfter) res.setHeader("retry-after", out.retryAfter);
       res.end(JSON.stringify(out.body ?? out));
@@ -68,7 +73,11 @@ function run(args, dir, { slowStdout = false, env: extraEnv = {} } = {}) {
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
     if (slowStdout) setTimeout(() => child.stdout.resume(), 300);
-    child.on("close", (status) => resolve({ status, stdout, stderr }));
+    const killer = setTimeout(() => child.kill("SIGKILL"), 8000);
+    child.on("close", (status) => {
+      clearTimeout(killer);
+      resolve({ status, stdout, stderr });
+    });
   });
 }
 
@@ -436,6 +445,54 @@ describe("review round 3", () => {
     assert.equal(r.status, 2);
     assert.match(r.stderr, /Usage:/);
     assert.doesNotMatch(r.stderr, /node:internal|^\s+at .+\(.+:\d+:\d+\)/m);
+    assert.equal(calls.length, 0);
+  });
+
+  it("pauses name lookups after a body stall, not one timeout per author", async () => {
+    reset();
+    handlers["conversations.history"] = () => ({
+      ok: true,
+      messages: ["U1", "U2", "U3"].map((u, i) => ({ ts: `${i + 1}.0`, user: u, text: `m${i}` })),
+    });
+    handlers["users.info"] = () => ({ stallBody: true });
+    const r = await run(["history", "C1"], one(), { env: { SLK_TEST_TIMEOUT_MS: "150" } });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(calls.filter((c) => c.method === "users.info").length, 1);
+    assert.equal((r.stderr.match(/lookups paused/g) ?? []).length, 1);
+    assert.match(r.stdout, /U1 .*m0/);
+    assert.match(r.stdout, /U3 .*m2/);
+  });
+
+  it("strips terminal control characters from everything it prints", async () => {
+    reset();
+    const ESC = String.fromCharCode(27);
+    handlers["conversations.history"] = () => ({
+      ok: true,
+      messages: [{ ts: "1.0", user: "U1", text: `${ESC}[31mred${ESC}[0m and \u0007bell` }],
+    });
+    handlers["users.info"] = () => ({ ok: true, user: { real_name: `Eve${ESC}[2J\nforged line`, profile: {} } });
+    handlers["search.messages"] = () => ({
+      ok: true,
+      messages: { total: 1, matches: [{
+        ts: "1.0", username: `bot${ESC}]0;title\u0007`, permalink: `https://x/p${ESC}[1m`,
+        text: `hi${ESC}[31m`, channel: { id: "C1", name: `chan${ESC}[2J` },
+      }] },
+    });
+    const h = await run(["history", "C1"], one());
+    const q = await run(["search", "x", "--ws", "T1"], one());
+    for (const out of [h.stdout, q.stdout]) {
+      assert.doesNotMatch(out, /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/);
+    }
+    assert.match(h.stdout, /red and bell/);
+    assert.equal(h.stdout.trim().split("\n").length, 1, "a display name must not forge a second line");
+  });
+
+  it("prints usage and exits 0 for --help without touching sessions", async () => {
+    reset();
+    const r = await run(["--help"], tokenDir({}));
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Usage:/);
+    assert.equal(r.stderr, "");
     assert.equal(calls.length, 0);
   });
 });

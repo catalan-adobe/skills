@@ -1,8 +1,16 @@
 const ENTITIES = { "&amp;": "&", "&lt;": "<", "&gt;": ">" };
+// Whole CSI (colors, cursor) and OSC (window title) sequences, so no "[31m" residue stays visible.
+const ANSI_SEQUENCE = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?/g;
+// C0 and C1 control characters, except tab and newline which cleanText collapses anyway.
+const CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
+
+/** Removes control characters so Slack text cannot move the cursor, recolor or retitle the terminal. */
+export const stripControl = (text) =>
+  String(text).replace(ANSI_SEQUENCE, "").replace(CONTROL_CHARS, "");
 
 /** Turn Slack message markup into plain text. `names` maps user IDs to display names. */
 export function cleanText(text, names = new Map()) {
-  return text
+  return stripControl(text)
     .replace(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g, (_, id) => `@${names.get(id) ?? id}`)
     .replace(/<#[A-Z0-9]+\|([^>]+)>/g, "#$1")
     .replace(/<(https?:[^|>]+)\|([^>]+)>/g, "$2 ($1)")
@@ -12,11 +20,19 @@ export function cleanText(text, names = new Map()) {
     .trim();
 }
 
+// Each element or block can carry its text as {text: "..."}, {text: {text: "..."}} or nothing.
+// Controls such as buttons carry a label object, so only strings are ever returned.
+const textOf = (node) => {
+  const t = node?.text;
+  if (typeof t === "string") return t;
+  return typeof t?.text === "string" ? t.text : undefined;
+};
+
 const blockTexts = (blocks = []) =>
   blocks.flatMap((b) => [
-    b.text?.text,
-    ...(b.fields ?? []).map((f) => f.text),
-    ...(b.elements ?? []).map((e) => e.text),
+    textOf(b),
+    ...(b.fields ?? []).map(textOf),
+    ...(b.type === "actions" ? [] : (b.elements ?? []).map(textOf)),
   ]);
 
 /** Message text. Bot posts often leave `text` empty and put the content in attachments or blocks. */
