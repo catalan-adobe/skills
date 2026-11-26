@@ -1,0 +1,7 @@
+{
+  "name": "catalan-adobe/slk-api",
+  "version": "0.1.0",
+  "description": "Search and read Slack from the terminal, read-only, by reusing the login the slk TUI saved. Full-history search, channel history and threads across all slk workspaces.",
+  "private": false,
+  "skills": "skills"
+}

@@ -203,6 +203,18 @@ without Slack running.
 
 See [SKILL.md](skills/slack-cdp/SKILL.md) for details.
 
+### slk-api
+
+Search and read Slack from the terminal, read-only. Reuses the login
+saved by the [slk](https://github.com/gammons/slk) TUI to call Slack's
+Web API directly: full-history search with Slack's query modifiers,
+channel history and threads, across every workspace slk knows. No Slack
+desktop restart, debug port or token setup.
+
+**Dependencies:** Node 22+, [slk](https://github.com/gammons/slk) with at least one workspace added
+
+See [SKILL.md](skills/slk-api/SKILL.md) for details.
+
 ### kite-teleport
 
 Teleport a Kite task session to local Claude Code. Takes a teleport
