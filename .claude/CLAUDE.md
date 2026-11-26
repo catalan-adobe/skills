@@ -75,6 +75,7 @@ All skills lint clean. All published to tessl registry. Run `tessl skill lint sk
 | `page-prep` | Detect and remove webpage overlays for clean interaction |
 | `browser-universal` | Detect browser layer and load commands for layer-agnostic interaction |
 | `slack-cdp` | Control Slack via CDP or headless API tokens |
+| `slk-api` | Read-only Slack search, history and threads using the slk TUI session |
 | `news-digest` | Google News RSS digests with full article extraction via playwright-cli |
 | `kite-teleport` | Teleport Kite task sessions to local Claude Code |
 | `spectrum-2-web` | Design and build web UIs with Spectrum 2 + Spectrum Web Components |
